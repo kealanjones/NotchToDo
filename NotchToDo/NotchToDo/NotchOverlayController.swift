@@ -7,6 +7,8 @@ class NotchOverlayController: ObservableObject {
     private var overlayView: NotchOverlayView?
     private var isVisible = false
     
+    @Published var isVerticallyExpanding = false
+    
     init() {
         setupOverlayWindow()
     }
@@ -28,9 +30,9 @@ class NotchOverlayController: ObservableObject {
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = false
         
-        // Create SwiftUI view
-        self.overlayView = NotchOverlayView()
-        let hostingView = NSHostingView(rootView: self.overlayView!)
+            // Create SwiftUI view
+            self.overlayView = NotchOverlayView(controller: self)
+            let hostingView = NSHostingView(rootView: self.overlayView!)
         window.contentView = hostingView
         
         self.overlayWindow = window
@@ -75,9 +77,6 @@ class NotchOverlayController: ObservableObject {
         window.makeKeyAndOrderFront(nil)
         isVisible = true
         
-        // Start auto-trigger for gradient
-        overlayView?.autoTriggerGradient()
-        
         // Stage 1: Extend width-wise
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
@@ -90,21 +89,20 @@ class NotchOverlayController: ObservableObject {
                 print("Starting vertical expansion with green gradient")
                 print("overlayView is nil: \(self.overlayView == nil)")
                 
-                // Trigger gradient with proper SwiftUI update
-                if let overlayView = self.overlayView {
-                    print("Calling setVerticallyExpanding on overlayView")
-                    overlayView.setVerticallyExpanding(true)
-                } else {
-                    print("ERROR: overlayView is nil!")
-                }
-                
                 // Stage 2: Extend lengthwise
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.2
                     context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0) // Smooth ease-out
                     window.animator().setFrame(finalFrame, display: true)
                 } completionHandler: {
-                    // Animation complete - keep green gradient visible
+                    // Animation complete - keep gradient visible
+                }
+                
+                // Trigger gradient with a tiny delay to start right when vertical expansion begins
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                    print("Setting isVerticallyExpanding to true in controller")
+                    self.isVerticallyExpanding = true
+                    print("Controller isVerticallyExpanding is now: \(self.isVerticallyExpanding)")
                 }
             }
         }
@@ -112,9 +110,13 @@ class NotchOverlayController: ObservableObject {
     
     func hideOverlay() {
         guard let window = overlayWindow, isVisible else { return }
-        
+
         window.orderOut(nil)
         isVisible = false
+        
+        // Reset gradient state for next time
+        isVerticallyExpanding = false
+        print("Reset isVerticallyExpanding to false for next opening")
     }
     
     func setState(_ state: ListenState) {

@@ -12,8 +12,9 @@ struct NotchOverlayView: View {
     @State private var listenState: ListenState = .idle
     @State private var inputRMS: Float = 0.0
     @State private var tasks: [String] = []
-    @State var isVerticallyExpanding: Bool = false
     @State private var isHaloGlowing: Bool = false
+    
+    @ObservedObject var controller: NotchOverlayController
     
     var body: some View {
         VStack(spacing: 20) {
@@ -25,10 +26,17 @@ struct NotchOverlayView: View {
             )
             .frame(width: 100, height: 100)
             
-            // Status text
-            statusText
-                .font(.headline)
-                .foregroundColor(.white)
+                // Status text
+                VStack {
+                    statusText
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    
+                    // Debug indicator
+                    Text("Gradient: \(controller.isVerticallyExpanding ? "ON" : "OFF")")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
             
             // Task list
             if !tasks.isEmpty {
@@ -58,8 +66,8 @@ struct NotchOverlayView: View {
             }
             
             // Test controls (remove in production)
-            if case .idle = listenState {
-                VStack(spacing: 10) {
+            VStack(spacing: 10) {
+                if case .idle = listenState {
                     Button("Simulate Wake Word") {
                         setState(.listening)
                     }
@@ -97,6 +105,14 @@ struct NotchOverlayView: View {
                             }
                         )
                         
+                        Button(controller.isVerticallyExpanding ? "Turn Off Gradient" : "Test Gradient") {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                controller.isVerticallyExpanding.toggle()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .foregroundColor(controller.isVerticallyExpanding ? .red : .orange)
+                        
                     
                     if !tasks.isEmpty {
                         Button("Clear Tasks") {
@@ -106,6 +122,13 @@ struct NotchOverlayView: View {
                         .foregroundColor(.red)
                     }
                 }
+                
+                // Always show reset button
+                Button("Reset to Idle") {
+                    setState(.idle)
+                }
+                .buttonStyle(.bordered)
+                .foregroundColor(.red)
             }
         }
         .padding(.horizontal, 20)
@@ -119,21 +142,24 @@ struct NotchOverlayView: View {
                     .fill(.white.opacity(0.1))
                     .frame(height: 1)
                 
-                // Main content area with rounded bottom corners - always visible
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        isVerticallyExpanding ? 
-                        LinearGradient(
-                            colors: [.black, .black, .green],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ) : 
-                        LinearGradient(
-                            colors: [.black, .blue.opacity(1)],
-                            startPoint: .top,
-                            endPoint: .bottom
+                    // Main content area with rounded bottom corners - always visible
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
+                            controller.isVerticallyExpanding ? 
+                            LinearGradient(
+                                colors: [.black, .blue],
+                                startPoint: UnitPoint(x: 0.5, y: 0.3),
+                                endPoint: .bottom
+                            ) : 
+                            LinearGradient(
+                                colors: [.black, .black],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
+                        .onAppear {
+                            print("RoundedRectangle appeared, isVerticallyExpanding: \(controller.isVerticallyExpanding)")
+                        }
                     .frame(width: 260)
                     .offset(y: -1) // Overlap the top border slightly
             }
@@ -171,18 +197,13 @@ struct NotchOverlayView: View {
         tasks.append(task)
     }
     
-    func setVerticallyExpanding(_ expanding: Bool) {
-        print("setVerticallyExpanding called with: \(expanding)")
-        isVerticallyExpanding = expanding
-        print("isVerticallyExpanding is now: \(isVerticallyExpanding)")
-    }
     
     // Auto-trigger gradient after a delay
     func autoTriggerGradient() {
         print("Auto-triggering gradient after delay")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             print("Auto-triggering gradient now")
-            self.isVerticallyExpanding = true
+            self.controller.isVerticallyExpanding = true
         }
     }
     
