@@ -30,6 +30,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(NSMenuItem(title: "Test Semi-Circle", action: #selector(testSemiCircle), keyEquivalent: ""))
             menu.addItem(NSMenuItem(title: "Hide Semi-Circle", action: #selector(hideSemiCircle), keyEquivalent: ""))
             menu.addItem(NSMenuItem(title: "Simulate New Project Request", action: #selector(simulateNewProjectRequest), keyEquivalent: ""))
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(NSMenuItem(title: "Kill App", action: #selector(killApp), keyEquivalent: ""))
             statusItem?.menu = menu
         }
     }
@@ -122,5 +124,10 @@ extension AppDelegate {
                 self.overlayController?.createNewProject(name: "New Project \(Int.random(in: 1...100))")
             }
         }
+    }
+    
+    @objc func killApp() {
+        print("💀 Killing app...")
+        NSApplication.shared.terminate(nil)
     }
 }

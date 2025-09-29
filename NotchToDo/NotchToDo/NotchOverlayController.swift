@@ -2,18 +2,19 @@ import Cocoa
 import SwiftUI
 import QuartzCore
 
-// MARK: - Project Orb Data Model
-class ProjectOrb: ObservableObject, Identifiable {
-    let id = UUID()
-    let name: String
-    let color: NSColor
-    @Published var taskCount: Int = 0
-    @Published var isVisible: Bool = false
-    
-    // Position around semi-circle rim
-    @Published var angle: Double = 0.0 // In radians
-    @Published var radius: Double = 0.0 // Distance from center
-    @Published var scale: Double = 1.0 // Scale factor for sizing
+    // MARK: - Project Orb Data Model
+    class ProjectOrb: ObservableObject, Identifiable {
+        let id = UUID()
+        let name: String
+        let color: NSColor
+        @Published var taskCount: Int = 0
+        @Published var isVisible: Bool = false
+        @Published var animationScale: Double = 0.0 // For growth animation
+        
+        // Position around semi-circle rim
+        @Published var angle: Double = 0.0 // In radians
+        @Published var radius: Double = 0.0 // Distance from center
+        @Published var scale: Double = 1.0 // Scale factor for sizing
     
     init(name: String, color: NSColor) {
         self.name = name
@@ -57,10 +58,11 @@ struct OrbColorPalette {
     }
 }
 
-// MARK: - Orb Manager
-class OrbManager: ObservableObject {
-    @Published var orbs: [ProjectOrb] = []
-    @Published var isVisible: Bool = false
+    // MARK: - Orb Manager
+    class OrbManager: ObservableObject {
+        @Published var orbs: [ProjectOrb] = []
+        @Published var isVisible: Bool = false
+        @Published var visibleOrbCount: Int = 0 // Track how many orbs are currently visible
     
         // Semi-circle dimensions for positioning - match actual circle
         private let semiCircleRadius: Double = 102.5
@@ -77,19 +79,108 @@ class OrbManager: ObservableObject {
         addTestOrbs()
     }
     
-    // MARK: - Orb Management
-    func createOrb(name: String) -> ProjectOrb {
-        let color = OrbColorPalette.getColor(for: name)
-        let orb = ProjectOrb(name: name, color: color)
+        // MARK: - Orb Management
+        func createOrb(name: String) -> ProjectOrb {
+            let color = OrbColorPalette.getColor(for: name)
+            let orb = ProjectOrb(name: name, color: color)
+            
+            // Add orb to the collection
+            orbs.append(orb)
+            
+            // If orbs are currently visible, animate the repositioning
+            if isVisible {
+                animateOrbRepositioning(newOrb: orb)
+            } else {
+                // If not visible, just update positions normally
+                updateOrbPositions()
+            }
+            
+            print("🎯 Created orb '\(name)' - total orbs: \(orbs.count)")
+            print("🎯 Orb details: name=\(orb.name), color=\(orb.color), visible=\(orb.isVisible)")
+            return orb
+        }
         
-        // Add orb and update positions without animation (we're not in SwiftUI context)
-        orbs.append(orb)
-        updateOrbPositions()
+        private func animateOrbRepositioning(newOrb: ProjectOrb) {
+            // Store current positions for existing orbs (excluding the new one)
+            var oldPositions: [UUID: (angle: Double, radius: Double)] = [:]
+            for orb in orbs {
+                if orb.id != newOrb.id {
+                    oldPositions[orb.id] = (angle: orb.angle, radius: orb.radius)
+                }
+            }
+            
+            // Calculate new positions WITHOUT applying them to orbs yet
+            let newPositions = calculateNewOrbPositions()
+            
+            // Store the target positions for the new orb
+            let newOrbTargetAngle = newPositions[newOrb.id]?.angle ?? 0.0
+            let newOrbTargetRadius = newPositions[newOrb.id]?.radius ?? semiCircleRadius
+            
+            // Reset new orb to invisible and zero scale
+            newOrb.isVisible = false
+            newOrb.animationScale = 0.0
+            
+            // Animate existing orbs to new positions
+            let animationDuration = 0.8
+            let startTime = CACurrentMediaTime()
+            
+            let timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
+                let elapsed = CACurrentMediaTime() - startTime
+                let progress = min(elapsed / animationDuration, 1.0)
+                
+                // Use ease-out curve for smooth movement
+                let easedProgress = 1.0 - pow(1.0 - progress, 2.0)
+                
+                // Animate existing orbs (excluding the new one)
+                for orb in self.orbs {
+                    if orb.id != newOrb.id, 
+                       let oldPos = oldPositions[orb.id],
+                       let newPos = newPositions[orb.id] {
+                        // Interpolate between old and new positions
+                        orb.angle = oldPos.angle + (newPos.angle - oldPos.angle) * easedProgress
+                        orb.radius = oldPos.radius + (newPos.radius - oldPos.radius) * easedProgress
+                        orb.scale = newPos.scale // Update scale immediately
+                    }
+                }
+                
+                if progress >= 1.0 {
+                    timer.invalidate()
+                    
+                    // Start the new orb's growth animation after repositioning is complete
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        newOrb.isVisible = true
+                        newOrb.animationScale = 0.0
+                        // Set new orb to its target position
+                        newOrb.angle = newOrbTargetAngle
+                        newOrb.radius = newOrbTargetRadius
+                        newOrb.scale = newPositions[newOrb.id]?.scale ?? 1.0
+                        self.animateOrbGrowth(orb: newOrb, duration: 0.6)
+                    }
+                }
+            }
+        }
         
-        print("🎯 Created orb '\(name)' - total orbs: \(orbs.count)")
-        print("🎯 Orb details: name=\(orb.name), color=\(orb.color), visible=\(orb.isVisible)")
-        return orb
-    }
+        private func calculateNewOrbPositions() -> [UUID: (angle: Double, radius: Double, scale: Double)] {
+            guard !orbs.isEmpty else { return [:] }
+            
+            let orbCount = orbs.count
+            // Position orbs only in the bottom 120 degrees of the circle
+            let startAngle = 3.67 // Start at 210 degrees (bottom-left)
+            let endAngle = 5.76 // End at 330 degrees (bottom-right)
+            let angleStep = (endAngle - startAngle) / Double(max(1, orbCount - 1))
+            
+            // Calculate scale based on number of orbs
+            let scale = calculateOrbScale(for: orbCount)
+            
+            var positions: [UUID: (angle: Double, radius: Double, scale: Double)] = [:]
+            
+            for (index, orb) in orbs.enumerated() {
+                let angle = startAngle + angleStep * Double(index)
+                positions[orb.id] = (angle: angle, radius: semiCircleRadius, scale: scale)
+            }
+            
+            return positions
+        }
     
     func removeOrb(_ orb: ProjectOrb) {
         orbs.removeAll { $0.id == orb.id }
@@ -164,21 +255,55 @@ class OrbManager: ObservableObject {
         }
     }
     
-    // MARK: - Visibility Control
-    func showOrbs() {
-        print("🎯 showOrbs() called - setting isVisible to true")
-        isVisible = true
-        for orb in orbs {
-            orb.isVisible = true
+        // MARK: - Visibility Control
+        func showOrbs() {
+            print("🎯 showOrbs() called - starting staggered orb appearance")
+            isVisible = true
+            visibleOrbCount = 0
+            
+            // Reset all orbs to invisible and zero scale
+            for orb in orbs {
+                orb.isVisible = false
+                orb.animationScale = 0.0
+            }
+            
+            // Show orbs one by one with a delay and growth animation
+            for (index, orb) in orbs.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.3) {
+                    orb.isVisible = true
+                    self.visibleOrbCount = index + 1
+                    print("🎯 Orb \(index) appeared - visible count: \(self.visibleOrbCount)")
+                    
+                    // Animate growth from 0 to 1
+                    self.animateOrbGrowth(orb: orb, duration: 0.6)
+                }
+            }
         }
-    }
-    
-    func hideOrbs() {
-        isVisible = false
-        for orb in orbs {
-            orb.isVisible = false
+        
+        private func animateOrbGrowth(orb: ProjectOrb, duration: Double) {
+            let startTime = CACurrentMediaTime()
+            let timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
+                let elapsed = CACurrentMediaTime() - startTime
+                let progress = min(elapsed / duration, 1.0)
+                
+                // Use ease-out curve for smooth growth
+                let easedProgress = 1.0 - pow(1.0 - progress, 3.0)
+                orb.animationScale = easedProgress
+                
+                if progress >= 1.0 {
+                    timer.invalidate()
+                    orb.animationScale = 1.0
+                }
+            }
         }
-    }
+        
+        func hideOrbs() {
+            isVisible = false
+            visibleOrbCount = 0
+            for orb in orbs {
+                orb.isVisible = false
+            }
+        }
 }
 
 extension NSScreen {
@@ -245,9 +370,10 @@ class NotchOverlayController: ObservableObject {
             window.backgroundColor = NSColor.clear
             window.hasShadow = false
             window.level = .screenSaver
-            window.ignoresMouseEvents = true
+            window.ignoresMouseEvents = false
             window.collectionBehavior = [.canJoinAllSpaces, .stationary]
             window.isMovable = false
+            window.acceptsMouseMovedEvents = true
             
             // Ensure no black elements show through
             window.contentView?.wantsLayer = true
@@ -467,9 +593,9 @@ class NotchOverlayController: ObservableObject {
             print("🎯 Showing semi-circle for first time")
             showSemiCircle()
         } else {
-            // If semi-circle is already visible, just show the orbs
-            print("🎯 Semi-circle already visible, just showing orbs")
-            orbManager.showOrbs()
+            // If semi-circle is already visible, just trigger a redraw
+            // The createOrb method will handle the repositioning animation
+            print("🎯 Semi-circle already visible, orbs will reposition automatically")
             semiCircleView?.needsDisplay = true
             
             // Force a more explicit redraw
@@ -493,6 +619,8 @@ class NotchOverlayController: ObservableObject {
     }
     
     private func setupSemiCircle() {
+        print("🎯 setupSemiCircle() called")
+        
         // Create semi-circle window - smaller size
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 327, height: 168), // 10 pixels bigger
@@ -505,17 +633,37 @@ class NotchOverlayController: ObservableObject {
         window.backgroundColor = NSColor.clear
         window.hasShadow = false
         window.level = .screenSaver
-        window.ignoresMouseEvents = true
+        window.ignoresMouseEvents = false // Fixed: Allow mouse events
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = false
+        window.acceptsMouseMovedEvents = true // Fixed: Accept mouse moved events
+        
+        print("🎯 Semi-circle window created with frame: \(window.frame)")
+        print("🎯 Window level: \(window.level.rawValue)")
+        print("🎯 Window ignoresMouseEvents: \(window.ignoresMouseEvents)")
+        print("🎯 Window acceptsMouseMovedEvents: \(window.acceptsMouseMovedEvents)")
+        
+        // Ensure no black elements show through
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         
         // Create semi-circle view with orbs
         let semiCircleView = SemiCircleWithOrbsView(orbManager: orbManager)
         window.contentView = semiCircleView
         
+        print("🎯 Semi-circle view created and set as content view")
+        
         self.semiCircleWindow = window
         self.semiCircleView = semiCircleView // Store reference
         positionSemiCircle(window)
+        
+        // Set up mouse tracking immediately after view is created
+        DispatchQueue.main.async {
+            semiCircleView.setupMouseTracking()
+            print("🖱️ Mouse tracking setup attempted in setupSemiCircle")
+        }
+        
+        print("🎯 Semi-circle setup complete - window stored: \(self.semiCircleWindow != nil)")
     }
     
     private func positionSemiCircle(_ window: NSWindow) {
@@ -532,7 +680,15 @@ class NotchOverlayController: ObservableObject {
     }
     
     private func showSemiCircle() {
-        guard let window = semiCircleWindow else { return }
+        guard let window = semiCircleWindow else { 
+            print("🚨 ERROR: semiCircleWindow is nil!")
+            return 
+        }
+        
+        print("🎯 showSemiCircle() called - window exists: \(window != nil)")
+        print("🎯 Window frame: \(window.frame)")
+        print("🎯 Window level: \(window.level.rawValue)")
+        print("🎯 Window isVisible: \(window.isVisible)")
         
         // Start with semi-circle hidden and scaled down from center top
         let finalFrame = window.frame
@@ -544,6 +700,9 @@ class NotchOverlayController: ObservableObject {
         window.setFrame(startFrame, display: false)
         window.alphaValue = 0.0
         window.makeKeyAndOrderFront(nil)
+        
+        print("🎯 Window made key and ordered front")
+        print("🎯 Window isVisible after makeKeyAndOrderFront: \(window.isVisible)")
         
         // Mark as visible
         isSemiCircleVisible = true
@@ -562,6 +721,12 @@ class NotchOverlayController: ObservableObject {
                 self.orbManager.showOrbs()
                 // Force redraw of the semi-circle view
                 self.semiCircleView?.needsDisplay = true
+                
+                // Set up mouse tracking after everything is visible
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.semiCircleView?.setupMouseTracking()
+                    print("🖱️ Mouse tracking setup attempted after semi-circle show")
+                }
             }
         }
     }
@@ -1023,11 +1188,16 @@ class SemiCircleView: NSView {
         private let orbManager: OrbManager
         private var animationTimer: Timer?
         private var animationPhase: Double = 0.0
+        private var hoveredOrbId: UUID? = nil
+        private var mouseTrackingArea: NSTrackingArea?
         
         init(orbManager: OrbManager) {
             self.orbManager = orbManager
             super.init(frame: NSRect.zero)
             startAnimation()
+            
+            // Enable mouse events
+            self.wantsLayer = true
         }
     
         required init?(coder: NSCoder) {
@@ -1036,6 +1206,141 @@ class SemiCircleView: NSView {
         
         deinit {
             animationTimer?.invalidate()
+        }
+        
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil {
+                print("🖱️ View moved to window, setting up mouse tracking")
+                DispatchQueue.main.async {
+                    self.setupMouseTracking()
+                }
+            }
+        }
+        
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+            print("🖱️ acceptsFirstMouse called")
+            return true
+        }
+        
+        override var acceptsFirstResponder: Bool {
+            print("🖱️ acceptsFirstResponder called")
+            return true
+        }
+        
+        func setupMouseTracking() {
+            // Remove existing tracking area first
+            if let existingArea = mouseTrackingArea {
+                removeTrackingArea(existingArea)
+            }
+            
+            // Create tracking area for mouse events with correct options
+            mouseTrackingArea = NSTrackingArea(
+                rect: bounds,
+                options: [.activeInActiveApp, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
+                owner: self,
+                userInfo: nil
+            )
+            addTrackingArea(mouseTrackingArea!)
+            print("🖱️ Mouse tracking area set up with bounds: \(bounds)")
+            print("🖱️ Tracking area options: activeInActiveApp, mouseEnteredAndExited, mouseMoved, inVisibleRect")
+        }
+        
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            
+            if let trackingArea = mouseTrackingArea {
+                removeTrackingArea(trackingArea)
+            }
+            
+            mouseTrackingArea = NSTrackingArea(
+                rect: bounds,
+                options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved],
+                owner: self,
+                userInfo: nil
+            )
+            addTrackingArea(mouseTrackingArea!)
+            print("🖱️ Tracking areas updated with bounds: \(bounds)")
+        }
+        
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            print("🖱️ Frame size changed to: \(newSize)")
+            // Set up mouse tracking when frame is properly sized
+            if newSize.width > 0 && newSize.height > 0 {
+                DispatchQueue.main.async {
+                    self.setupMouseTracking()
+                }
+            }
+        }
+        
+        override func mouseMoved(with event: NSEvent) {
+            let mouseLocation = convert(event.locationInWindow, from: nil)
+            print("🖱️ Mouse moved to: \(mouseLocation) in bounds: \(bounds)")
+            checkOrbHover(at: mouseLocation)
+        }
+        
+        override func mouseEntered(with event: NSEvent) {
+            print("🖱️ Mouse ENTERED the semi-circle view!")
+        }
+        
+        override func mouseExited(with event: NSEvent) {
+            print("🖱️ Mouse EXITED the semi-circle view!")
+            // Mouse left the view, clear hover
+            if hoveredOrbId != nil {
+                hoveredOrbId = nil
+                needsDisplay = true
+            }
+        }
+        
+        override func mouseDown(with event: NSEvent) {
+            print("🖱️ Mouse CLICKED in semi-circle view!")
+        }
+        
+        override func mouseUp(with event: NSEvent) {
+            let mouseLocation = convert(event.locationInWindow, from: nil)
+            print("🖱️ Mouse up at: \(mouseLocation)")
+        }
+        
+        private func checkOrbHover(at location: NSPoint) {
+            let centerX = bounds.midX
+            let centerY = bounds.maxY - 10
+            let radius = min(bounds.width, bounds.height) / 2 + 18.5
+            
+            print("🖱️ Checking hover at \(location), bounds: \(bounds), center: (\(centerX), \(centerY)), radius: \(radius)")
+            print("🖱️ Total orbs to check: \(orbManager.orbs.count)")
+            
+            var newHoveredOrbId: UUID? = nil
+            
+            for (index, orb) in orbManager.orbs.enumerated() {
+                guard orb.isVisible && orb.animationScale > 0 else { 
+                    print("🖱️ Orb \(index) not visible or no scale (visible: \(orb.isVisible), scale: \(orb.animationScale))")
+                    continue 
+                }
+                
+                let x = centerX + radius * cos(orb.angle)
+                let y = centerY + radius * sin(orb.angle)
+                let size = 40.0 * orb.scale * orb.animationScale
+                
+                // Check if mouse is within orb bounds (with some padding for easier hovering)
+                let orbRect = NSRect(x: x - size/2.0 - 10.0, y: y - size/2.0 - 10.0, width: size + 20.0, height: size + 20.0)
+                
+                print("🖱️ Orb \(index) at (\(x), \(y)) size \(size), rect: \(orbRect)")
+                print("🖱️ Mouse location \(location) contains check: \(orbRect.contains(location))")
+                
+                if orbRect.contains(location) {
+                    newHoveredOrbId = orb.id
+                    print("🖱️ Hovering over orb \(index)!")
+                    break
+                }
+            }
+            
+            // Update hover state if it changed
+            if newHoveredOrbId != hoveredOrbId {
+                print("🖱️ Hover state changed from \(String(describing: hoveredOrbId)) to \(String(describing: newHoveredOrbId))")
+                hoveredOrbId = newHoveredOrbId
+                needsDisplay = true
+            }
         }
         
         private func startAnimation() {
@@ -1101,18 +1406,24 @@ class SemiCircleView: NSView {
         print("🎯 Drawing at center: (\(centerX), \(centerY)), radius: \(radius)")
         
         for (index, orb) in orbManager.orbs.enumerated() {
-            print("🎯 Orb \(index): visible=\(orb.isVisible), angle=\(orb.angle), scale=\(orb.scale)")
-            
-            guard orb.isVisible else { continue }
+            print("🎯 Orb \(index): visible=\(orb.isVisible), angle=\(orb.angle), scale=\(orb.scale), animationScale=\(orb.animationScale)")
             
             let x = centerX + radius * cos(orb.angle)
             let y = centerY + radius * sin(orb.angle)
-            let size = 40.0 * orb.scale
+            let baseSize = 40.0 * orb.scale
+            let animatedSize = baseSize * orb.animationScale // Apply growth animation
             
-            print("🎯 Drawing orb at (\(x), \(y)) with size \(size)")
+            // Apply hover effect - grow by 15% when hovered
+            let hoverScale: Double = (hoveredOrbId == orb.id) ? 1.15 : 1.0
+            let finalSize = animatedSize * hoverScale
             
-            // Create modern, dynamic orb with multiple layers
-            drawModernOrb(context: context, x: x, y: y, size: size, color: orb.color, taskCount: orb.taskCount, scale: orb.scale, animationPhase: animationPhase, orbIndex: index)
+            print("🎯 Drawing orb at (\(x), \(y)) with size \(finalSize), animationScale: \(orb.animationScale), hovered: \(hoveredOrbId == orb.id)")
+            
+            // Only draw if orb is visible and has some scale
+            if orb.isVisible && orb.animationScale > 0 {
+                // Create modern, dynamic orb with multiple layers
+                drawModernOrb(context: context, x: x, y: y, size: finalSize, color: orb.color, taskCount: orb.taskCount, scale: orb.scale * orb.animationScale * hoverScale, animationPhase: animationPhase, orbIndex: index)
+            }
         }
     }
     
