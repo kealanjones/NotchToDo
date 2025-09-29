@@ -1070,7 +1070,7 @@ class SemiCircleWithOrbsView: NSView {
         context.fillPath()
     }
     
-    private func drawOrbs(in context: CGContext) {
+        private func drawOrbs(in context: CGContext) {
         print("🎯 Drawing orbs - isVisible: \(orbManager.isVisible), orbCount: \(orbManager.orbs.count)")
         
         guard orbManager.isVisible else { 
@@ -1095,38 +1095,120 @@ class SemiCircleWithOrbsView: NSView {
             
             print("🎯 Drawing orb at (\(x), \(y)) with size \(size)")
             
-            // Draw orb circle
-            let orbPath = CGMutablePath()
-            orbPath.addEllipse(in: CGRect(x: x - size/2, y: y - size/2, width: size, height: size))
+            // Create modern, dynamic orb with multiple layers
+            drawModernOrb(context: context, x: x, y: y, size: size, color: orb.color, taskCount: orb.taskCount, scale: orb.scale)
+        }
+    }
+    
+    private func drawModernOrb(context: CGContext, x: Double, y: Double, size: Double, color: NSColor, taskCount: Int, scale: Double) {
+        let orbRect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
+        
+        // Create gradient for the orb
+        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                colors: [
+                                    color.withAlphaComponent(0.9).cgColor,
+                                    color.withAlphaComponent(0.7).cgColor,
+                                    color.withAlphaComponent(0.5).cgColor
+                                ] as CFArray,
+                                locations: [0.0, 0.6, 1.0])!
+        
+        // 1. Outer glow - multiple layers for depth
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: 0), blur: 25, color: color.withAlphaComponent(0.4).cgColor)
+        context.setFillColor(color.withAlphaComponent(0.3).cgColor)
+        context.addEllipse(in: orbRect.insetBy(dx: -8, dy: -8))
+        context.fillPath()
+        context.restoreGState()
+        
+        // 2. Mid-range glow
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: 0), blur: 15, color: color.withAlphaComponent(0.5).cgColor)
+        context.setFillColor(color.withAlphaComponent(0.4).cgColor)
+        context.addEllipse(in: orbRect.insetBy(dx: -4, dy: -4))
+        context.fillPath()
+        context.restoreGState()
+        
+        // 3. Main orb with gradient
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: 6), blur: 12, color: color.withAlphaComponent(0.6).cgColor)
+        context.addEllipse(in: orbRect)
+        context.clip()
+        context.drawLinearGradient(gradient,
+                                 start: CGPoint(x: orbRect.minX, y: orbRect.minY),
+                                 end: CGPoint(x: orbRect.maxX, y: orbRect.maxY),
+                                 options: [])
+        context.restoreGState()
+        
+        // 4. Inner highlight for 3D effect
+        let highlightRect = orbRect.insetBy(dx: size * 0.15, dy: size * 0.15)
+        let highlightGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                         colors: [
+                                            NSColor.white.withAlphaComponent(0.6).cgColor,
+                                            NSColor.white.withAlphaComponent(0.1).cgColor,
+                                            NSColor.clear.cgColor
+                                         ] as CFArray,
+                                         locations: [0.0, 0.5, 1.0])!
+        
+        context.saveGState()
+        context.addEllipse(in: highlightRect)
+        context.clip()
+        context.drawRadialGradient(highlightGradient,
+                                 startCenter: CGPoint(x: highlightRect.midX - size * 0.1, y: highlightRect.midY - size * 0.1),
+                                 startRadius: 0,
+                                 endCenter: CGPoint(x: highlightRect.midX, y: highlightRect.midY),
+                                 endRadius: highlightRect.width / 2,
+                                 options: [])
+        context.restoreGState()
+        
+        // 5. Animated pulsing ring (if we had animation context)
+        let pulseSize = size * 1.3
+        let pulseRect = CGRect(x: x - pulseSize/2, y: y - pulseSize/2, width: pulseSize, height: pulseSize)
+        
+        context.saveGState()
+        context.setStrokeColor(color.withAlphaComponent(0.3).cgColor)
+        context.setLineWidth(2.0)
+        context.addEllipse(in: pulseRect)
+        context.strokePath()
+        context.restoreGState()
+        
+        // 6. Task count badge with modern styling
+        if taskCount > 0 {
+            let badgeSize = 18.0 * scale
+            let badgeRect = CGRect(x: x + size/3, y: y - size/3, width: badgeSize, height: badgeSize)
             
-            context.setFillColor(orb.color.cgColor)
-            context.addPath(orbPath)
-            context.fillPath()
+            // Badge background with gradient
+            let badgeGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                         colors: [
+                                            NSColor.black.withAlphaComponent(0.9).cgColor,
+                                            NSColor.black.withAlphaComponent(0.7).cgColor
+                                         ] as CFArray,
+                                         locations: [0.0, 1.0])!
             
-            // Add shadow
-            context.setShadow(offset: CGSize(width: 0, height: 4), blur: 8, color: orb.color.withAlphaComponent(0.6).cgColor)
-            context.addPath(orbPath)
-            context.fillPath()
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: 2), blur: 4, color: NSColor.black.withAlphaComponent(0.5).cgColor)
+            context.addEllipse(in: badgeRect)
+            context.clip()
+            context.drawLinearGradient(badgeGradient,
+                                     start: CGPoint(x: badgeRect.minX, y: badgeRect.minY),
+                                     end: CGPoint(x: badgeRect.maxX, y: badgeRect.maxY),
+                                     options: [])
+            context.restoreGState()
             
-            // Draw task count if > 0
-            if orb.taskCount > 0 {
-                let textRect = CGRect(x: x + size/4, y: y - size/4, width: 20 * orb.scale, height: 20 * orb.scale)
-                
-                // Background circle for task count
-                let bgPath = CGMutablePath()
-                bgPath.addEllipse(in: textRect)
-                context.setFillColor(NSColor.black.withAlphaComponent(0.7).cgColor)
-                context.addPath(bgPath)
-                context.fillPath()
-                
-                // Task count text
-                let text = "\(orb.taskCount)" as NSString
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 12 * orb.scale, weight: .bold),
-                    .foregroundColor: NSColor.white
-                ]
-                text.draw(in: textRect, withAttributes: attributes)
-            }
+            // Badge text with modern font
+            let text = "\(taskCount)" as NSString
+            let font = NSFont.systemFont(ofSize: 10 * scale, weight: .bold)
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.white,
+                .strokeColor: NSColor.black.withAlphaComponent(0.3),
+                .strokeWidth: -0.5
+            ]
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(x: badgeRect.midX - textSize.width/2, 
+                                y: badgeRect.midY - textSize.height/2, 
+                                width: textSize.width, 
+                                height: textSize.height)
+            text.draw(in: textRect, withAttributes: attributes)
         }
     }
 }
