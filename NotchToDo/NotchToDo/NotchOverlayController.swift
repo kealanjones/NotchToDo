@@ -13,13 +13,16 @@ class NotchOverlayController: ObservableObject {
     private var overlayWindow: NSWindow?
     private var overlayView: NotchOverlayView?
     private var notchIndicatorWindow: NSWindow?
+    private var semiCircleWindow: NSWindow?
     private var isVisible = false
+
     
     @Published var isVerticallyExpanding = false
     
     init() {
         setupOverlayWindow()
         setupNotchIndicator()
+        setupSemiCircle()
     }
     
     private func setupOverlayWindow() {
@@ -47,38 +50,38 @@ class NotchOverlayController: ObservableObject {
         self.overlayWindow = window
     }
     
-    private func setupNotchIndicator() {
-        // Create notch indicator window
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 100, height: 50),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        
-        window.isOpaque = false
-        window.backgroundColor = NSColor.clear
-        window.hasShadow = false
-        window.level = .screenSaver
-        window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        window.isMovable = false
-        
-        // Ensure no black elements show through
-        window.contentView?.wantsLayer = true
-        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
-        
-        // Create notch indicator view with actual notch info
-        let notchView = NotchIndicatorView()
-        if let screen = NSScreen.main {
-            notchView.notchInfo = getNotchInfo(for: screen)
+        private func setupNotchIndicator() {
+            // Create notch indicator window
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 100, height: 50),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            
+            window.isOpaque = false
+            window.backgroundColor = NSColor.clear
+            window.hasShadow = false
+            window.level = .screenSaver
+            window.ignoresMouseEvents = true
+            window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+            window.isMovable = false
+            
+            // Ensure no black elements show through
+            window.contentView?.wantsLayer = true
+            window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+            
+            // Create notch indicator view with actual notch info
+            let notchView = NotchIndicatorView()
+            if let screen = NSScreen.main {
+                notchView.notchInfo = getNotchInfo(for: screen)
+            }
+            window.contentView = notchView
+            
+            self.notchIndicatorWindow = window
+            positionNotchIndicator(window)
+            // Don't show immediately - only when wake word is detected
         }
-        window.contentView = notchView
-        
-        self.notchIndicatorWindow = window
-        positionNotchIndicator(window)
-        window.makeKeyAndOrderFront(nil)
-    }
     
     private func positionNotchIndicator(_ window: NSWindow) {
         guard let screen = NSScreen.main else { return }
@@ -211,6 +214,108 @@ class NotchOverlayController: ObservableObject {
         overlayView?.addTask(task)
     }
     
+    func activateNotchTrace() {
+        // Show notch indicator and start trace
+        if let window = notchIndicatorWindow {
+            window.makeKeyAndOrderFront(nil)
+            
+            // Reset and restart the trace animation
+            if let notchView = window.contentView as? NotchIndicatorView {
+                notchView.resetAndStartTrace()
+            }
+            
+            // After trace completes, show semi-circle with less gap
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                self.showSemiCircle()
+                
+                // Hide semi-circle after a few seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    self.hideSemiCircle()
+                }
+            }
+        }
+    }
+    
+    private func hideSemiCircle() {
+        guard let window = semiCircleWindow else { return }
+        
+        // Animate semi-circle disappearing
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.3
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
+            window.animator().alphaValue = 0.0
+        } completionHandler: {
+            window.orderOut(nil)
+        }
+    }
+    
+    func testSemiCircle() {
+        showSemiCircle()
+    }
+    
+    private func setupSemiCircle() {
+        // Create semi-circle window - ever so slightly smaller size
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 150),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.isOpaque = false
+        window.backgroundColor = NSColor.clear
+        window.hasShadow = false
+        window.level = .screenSaver
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.isMovable = false
+        
+        // Create semi-circle view
+        let semiCircleView = SemiCircleView()
+        window.contentView = semiCircleView
+        
+        self.semiCircleWindow = window
+        positionSemiCircle(window)
+    }
+    
+    private func positionSemiCircle(_ window: NSWindow) {
+        guard let screen = NSScreen.main else { return }
+        
+        let screenFrame = screen.frame
+        let notchInfo = getNotchInfo(for: screen)
+        
+        // Position semi-circle slightly lower and bigger
+        let x = screenFrame.midX - window.frame.width / 2
+        let y = screenFrame.maxY - notchInfo.height - window.frame.height + 60 // Move down 20px from previous position
+        
+        window.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+    
+    private func showSemiCircle() {
+        guard let window = semiCircleWindow else { return }
+        
+        // Start with semi-circle hidden and scaled down from center top
+        let finalFrame = window.frame
+        let centerTopX = finalFrame.midX
+        let centerTopY = finalFrame.maxY
+        
+        // Start with tiny frame at center top
+        let startFrame = NSRect(x: centerTopX - 5, y: centerTopY - 5, width: 10, height: 10)
+        window.setFrame(startFrame, display: false)
+        window.alphaValue = 0.0
+        window.makeKeyAndOrderFront(nil)
+        
+        // Animate expansion from center top
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.6
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
+            
+            // Animate both frame expansion and fade in
+            window.animator().setFrame(finalFrame, display: true)
+            window.animator().alphaValue = 1.0
+        }
+    }
+    
     
     private func positionWindowAtNotch(_ window: NSWindow) {
         guard let screen = NSScreen.main else { return }
@@ -303,7 +408,17 @@ class NotchIndicatorView: NSView {
         animationTimer?.invalidate()
     }
     
+    func resetAndStartTrace() {
+        // Reset animation phase and restart
+        pulsePhase = 0.0
+        startPulsingAnimation()
+    }
+    
         private func startPulsingAnimation() {
+            // Stop any existing animation first
+            animationTimer?.invalidate()
+            animationTimer = nil
+            
             animationTimer = Timer.scheduledTimer(withTimeInterval: 0.018, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 self.pulsePhase += 0.38  // Slightly faster
@@ -606,6 +721,50 @@ class NotchIndicatorView: NSView {
         default:
             return NSPoint(x: notchRect.midX, y: notchRect.midY)
         }
+    }
+}
+
+// MARK: - Semi-Circle View
+class SemiCircleView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        // Clear background
+        context.clear(dirtyRect)
+        
+        // Create semi-circle path - positioned to look like it's coming from notch
+        let centerX = bounds.midX
+        let centerY = bounds.maxY - 20 // Move center up so arc starts from top
+        let radius = min(bounds.width, bounds.height) / 2 + 20 // Bigger radius
+        
+        let path = CGMutablePath()
+        // Create a wider arc that looks like it's emerging from the notch
+        path.addArc(center: CGPoint(x: centerX, y: centerY), 
+                   radius: radius, 
+                   startAngle: .pi * 0.8, // Start a bit before 180 degrees
+                   endAngle: .pi * 0.2,   // End a bit after 0 degrees
+                   clockwise: false)
+        path.closeSubpath()
+        
+        // Fill with black
+        context.setFillColor(NSColor.black.cgColor)
+        context.addPath(path)
+        context.fillPath()
+        
+        // Add subtle shadow
+        context.setShadow(offset: CGSize(width: 0, height: -5), blur: 10, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+        context.addPath(path)
+        context.fillPath()
     }
 }
 

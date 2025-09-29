@@ -22,6 +22,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "NotchTo-Do")
             button.action = #selector(statusBarButtonClicked)
             button.target = self
+            
+            // Add test menu
+            let menu = NSMenu()
+            menu.addItem(NSMenuItem(title: "Simulate Wake Word", action: #selector(simulateWakeWord), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Simulate Transcript", action: #selector(simulateTranscript), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Test Semi-Circle", action: #selector(testSemiCircle), keyEquivalent: ""))
+            statusItem?.menu = menu
         }
     }
     
@@ -54,6 +61,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func handleWakeWordTriggered() {
+        // Trigger notch trace activation first
+        overlayController?.activateNotchTrace()
+        
+        // Then set listening state
         overlayController?.setState(.listening)
         try? speechRecognizer?.start()
     }
@@ -85,5 +96,9 @@ extension AppDelegate {
     
     @objc func simulateTranscript() {
         handleFinalTranscript("add buy milk")
+    }
+    
+    @objc func testSemiCircle() {
+        overlayController?.testSemiCircle()
     }
 }
