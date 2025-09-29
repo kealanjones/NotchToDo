@@ -28,6 +28,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(NSMenuItem(title: "Simulate Wake Word", action: #selector(simulateWakeWord), keyEquivalent: ""))
             menu.addItem(NSMenuItem(title: "Simulate Transcript", action: #selector(simulateTranscript), keyEquivalent: ""))
             menu.addItem(NSMenuItem(title: "Test Semi-Circle", action: #selector(testSemiCircle), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Hide Semi-Circle", action: #selector(hideSemiCircle), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Simulate New Project Request", action: #selector(simulateNewProjectRequest), keyEquivalent: ""))
             statusItem?.menu = menu
         }
     }
@@ -100,5 +102,25 @@ extension AppDelegate {
     
     @objc func testSemiCircle() {
         overlayController?.testSemiCircle()
+    }
+    
+    @objc func hideSemiCircle() {
+        overlayController?.hideSemiCircle()
+    }
+    
+    @objc func simulateNewProjectRequest() {
+        // Check if semi-circle is already visible
+        if overlayController?.isSemiCircleVisible == true {
+            // Semi-circle is already visible, just add a new project
+            overlayController?.createNewProject(name: "New Project \(Int.random(in: 1...100))")
+        } else {
+            // Semi-circle not visible, do full sequence: wake word -> semi-circle -> new project
+            handleWakeWordTriggered()
+            
+            // After a short delay, simulate creating a new project
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.overlayController?.createNewProject(name: "New Project \(Int.random(in: 1...100))")
+            }
+        }
     }
 }

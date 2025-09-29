@@ -2,6 +2,185 @@ import Cocoa
 import SwiftUI
 import QuartzCore
 
+// MARK: - Project Orb Data Model
+class ProjectOrb: ObservableObject, Identifiable {
+    let id = UUID()
+    let name: String
+    let color: NSColor
+    @Published var taskCount: Int = 0
+    @Published var isVisible: Bool = false
+    
+    // Position around semi-circle rim
+    @Published var angle: Double = 0.0 // In radians
+    @Published var radius: Double = 0.0 // Distance from center
+    @Published var scale: Double = 1.0 // Scale factor for sizing
+    
+    init(name: String, color: NSColor) {
+        self.name = name
+        self.color = color
+    }
+    
+    func addTask() {
+        taskCount += 1
+    }
+    
+    func removeTask() {
+        taskCount = max(0, taskCount - 1)
+    }
+}
+
+// MARK: - Color Palette System
+struct OrbColorPalette {
+    static let colors: [NSColor] = [
+        NSColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0), // Blue
+        NSColor(red: 0.8, green: 0.2, blue: 0.2, alpha: 1.0), // Red
+        NSColor(red: 0.2, green: 0.8, blue: 0.2, alpha: 1.0), // Green
+        NSColor(red: 0.8, green: 0.6, blue: 0.2, alpha: 1.0), // Orange
+        NSColor(red: 0.6, green: 0.2, blue: 0.8, alpha: 1.0), // Purple
+        NSColor(red: 0.2, green: 0.8, blue: 0.8, alpha: 1.0), // Cyan
+        NSColor(red: 0.8, green: 0.2, blue: 0.8, alpha: 1.0), // Magenta
+        NSColor(red: 0.6, green: 0.6, blue: 0.6, alpha: 1.0), // Gray
+    ]
+    
+    static func getColor(for index: Int) -> NSColor {
+        return colors[index % colors.count]
+    }
+    
+    static func getColor(for name: String) -> NSColor {
+        // Use a more stable hash that won't change between runs
+        let data = name.data(using: .utf8) ?? Data()
+        let hash = data.withUnsafeBytes { bytes in
+            return bytes.bindMemory(to: UInt8.self).reduce(0) { $0 &+ UInt($1) }
+        }
+        let index = Int(hash) % colors.count
+        return colors[index]
+    }
+}
+
+// MARK: - Orb Manager
+class OrbManager: ObservableObject {
+    @Published var orbs: [ProjectOrb] = []
+    @Published var isVisible: Bool = false
+    
+        // Semi-circle dimensions for positioning - match actual circle
+        private let semiCircleRadius: Double = 102.5
+        private let semiCircleCenterX: Double = 163.5
+        private let semiCircleCenterY: Double = 79.0
+    
+    // Orb sizing
+    private let baseOrbSize: Double = 40.0
+    private let minOrbSize: Double = 20.0
+    private let maxOrbs: Int = 6
+    
+    init() {
+        // Add some test orbs for development
+        addTestOrbs()
+    }
+    
+    // MARK: - Orb Management
+    func createOrb(name: String) -> ProjectOrb {
+        let color = OrbColorPalette.getColor(for: name)
+        let orb = ProjectOrb(name: name, color: color)
+        
+        // Add orb and update positions without animation (we're not in SwiftUI context)
+        orbs.append(orb)
+        updateOrbPositions()
+        
+        print("🎯 Created orb '\(name)' - total orbs: \(orbs.count)")
+        print("🎯 Orb details: name=\(orb.name), color=\(orb.color), visible=\(orb.isVisible)")
+        return orb
+    }
+    
+    func removeOrb(_ orb: ProjectOrb) {
+        orbs.removeAll { $0.id == orb.id }
+        updateOrbPositions()
+    }
+    
+    func addTaskToOrb(_ orb: ProjectOrb) {
+        orb.addTask()
+    }
+    
+    func removeTaskFromOrb(_ orb: ProjectOrb) {
+        orb.removeTask()
+    }
+    
+        // MARK: - Positioning and Scaling
+        private func updateOrbPositions() {
+            guard !orbs.isEmpty else { return }
+            
+            let orbCount = orbs.count
+            // Position orbs only in the bottom 120 degrees of the circle
+            // Bottom 120 degrees means from 210° to 330° (or 3.67 to 5.76 radians)
+            let startAngle = 3.67 // Start at 210 degrees (bottom-left)
+            let endAngle = 5.76 // End at 330 degrees (bottom-right)
+            let angleStep = (endAngle - startAngle) / Double(max(1, orbCount - 1)) // Distribute across bottom 120 degrees
+        
+        // Calculate scale based on number of orbs
+        let scale = calculateOrbScale(for: orbCount)
+        
+        for (index, orb) in orbs.enumerated() {
+            let angle = startAngle + angleStep * Double(index)
+            let x = semiCircleCenterX + semiCircleRadius * cos(angle)
+            let y = semiCircleCenterY + semiCircleRadius * sin(angle)
+            
+            orb.angle = angle
+            orb.radius = semiCircleRadius
+            orb.scale = scale
+            orb.isVisible = true
+        }
+    }
+    
+    private func calculateOrbScale(for count: Int) -> Double {
+        guard count > 0 else { return 1.0 }
+        
+        // Scale down as more orbs are added
+        let maxScale = 1.0
+        let minScale = minOrbSize / baseOrbSize
+        
+        if count <= 3 {
+            return maxScale
+        } else if count <= maxOrbs {
+            let scaleFactor = 1.0 - (Double(count - 3) / Double(maxOrbs - 3)) * (maxScale - minScale)
+            return max(minScale, scaleFactor)
+        } else {
+            return minScale
+        }
+    }
+    
+    // MARK: - Test Data
+    private func addTestOrbs() {
+        let testOrbs = [
+            "Marathon Prep",
+            "Marketing Strategy",
+            "Home Renovation"
+        ]
+        
+        for name in testOrbs {
+            let orb = createOrb(name: name)
+            // Add some test tasks
+            for _ in 0..<Int.random(in: 1...5) {
+                orb.addTask()
+            }
+        }
+    }
+    
+    // MARK: - Visibility Control
+    func showOrbs() {
+        print("🎯 showOrbs() called - setting isVisible to true")
+        isVisible = true
+        for orb in orbs {
+            orb.isVisible = true
+        }
+    }
+    
+    func hideOrbs() {
+        isVisible = false
+        for orb in orbs {
+            orb.isVisible = false
+        }
+    }
+}
+
 extension NSScreen {
     var hasTopNotchDesign: Bool {
         guard #available(macOS 12, *) else { return false }
@@ -14,7 +193,10 @@ class NotchOverlayController: ObservableObject {
     private var overlayView: NotchOverlayView?
     private var notchIndicatorWindow: NSWindow?
     private var semiCircleWindow: NSWindow?
+    private var semiCircleView: SemiCircleWithOrbsView? // Added
     private var isVisible = false
+    var isSemiCircleVisible = false // Added
+    private var orbManager = OrbManager()
 
     
     @Published var isVerticallyExpanding = false
@@ -28,7 +210,7 @@ class NotchOverlayController: ObservableObject {
     private func setupOverlayWindow() {
         // Create borderless window
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 270, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 250, height: 400),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -228,16 +410,19 @@ class NotchOverlayController: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 self.showSemiCircle()
                 
-                // Hide semi-circle after a few seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                    self.hideSemiCircle()
-                }
+                // Semi-circle stays visible for development - no timeout
             }
         }
     }
     
-    private func hideSemiCircle() {
+    func hideSemiCircle() {
         guard let window = semiCircleWindow else { return }
+        
+        // Mark as not visible
+        isSemiCircleVisible = false
+        
+        // Hide orbs first
+        orbManager.hideOrbs()
         
         // Animate semi-circle disappearing
         NSAnimationContext.runAnimationGroup { context in
@@ -253,10 +438,64 @@ class NotchOverlayController: ObservableObject {
         showSemiCircle()
     }
     
+    func createNewProject(name: String) {
+        print("🎯 Creating new project: \(name)")
+        print("🎯 Current orb count before: \(orbManager.orbs.count)")
+        
+        // Check if we've reached the maximum number of orbs
+        if orbManager.orbs.count >= 6 {
+            print("🎯 Maximum number of orbs (6) reached. Cannot create new project.")
+            showMaximumOrbsNotification()
+            return
+        }
+        
+        // Create a new orb for this project
+        let newOrb = orbManager.createOrb(name: name)
+        
+        // Add some random tasks to make it look realistic
+        let taskCount = Int.random(in: 1...4)
+        for _ in 0..<taskCount {
+            newOrb.addTask()
+        }
+        
+        print("🎯 Current orb count after: \(orbManager.orbs.count)")
+        print("🎯 Semi-circle visible: \(isSemiCircleVisible)")
+        print("🎯 Semi-circle window visible: \(semiCircleWindow?.isVisible ?? false)")
+        
+        // Show the semi-circle with orbs if it's not already visible
+        if semiCircleWindow?.isVisible != true {
+            print("🎯 Showing semi-circle for first time")
+            showSemiCircle()
+        } else {
+            // If semi-circle is already visible, just show the orbs
+            print("🎯 Semi-circle already visible, just showing orbs")
+            orbManager.showOrbs()
+            semiCircleView?.needsDisplay = true
+            
+            // Force a more explicit redraw
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.semiCircleView?.needsDisplay = true
+            }
+        }
+        
+        print("🎯 Created project '\(name)' with \(taskCount) tasks")
+    }
+    
+    private func showMaximumOrbsNotification() {
+        // Create a notification to show the user they've reached the maximum
+        let notification = NSUserNotification()
+        notification.title = "Maximum Project Orbs Reached"
+        notification.informativeText = "You can only have 6 project orbs at a time. Remove an existing project to create a new one."
+        notification.soundName = NSUserNotificationDefaultSoundName
+        
+        // Deliver the notification
+        NSUserNotificationCenter.default.deliver(notification)
+    }
+    
     private func setupSemiCircle() {
-        // Create semi-circle window - ever so slightly smaller size
+        // Create semi-circle window - smaller size
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 150),
+            contentRect: NSRect(x: 0, y: 0, width: 327, height: 168), // 10 pixels bigger
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -270,11 +509,12 @@ class NotchOverlayController: ObservableObject {
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = false
         
-        // Create semi-circle view
-        let semiCircleView = SemiCircleView()
+        // Create semi-circle view with orbs
+        let semiCircleView = SemiCircleWithOrbsView(orbManager: orbManager)
         window.contentView = semiCircleView
         
         self.semiCircleWindow = window
+        self.semiCircleView = semiCircleView // Store reference
         positionSemiCircle(window)
     }
     
@@ -284,9 +524,9 @@ class NotchOverlayController: ObservableObject {
         let screenFrame = screen.frame
         let notchInfo = getNotchInfo(for: screen)
         
-        // Position semi-circle slightly lower and bigger
+        // Position semi-circle further down, showing only bottom portion
         let x = screenFrame.midX - window.frame.width / 2
-        let y = screenFrame.maxY - notchInfo.height - window.frame.height + 60 // Move down 20px from previous position
+        let y = screenFrame.maxY - notchInfo.height - window.frame.height + 48 // 4 pixels further down
         
         window.setFrameOrigin(NSPoint(x: x, y: y))
     }
@@ -305,6 +545,9 @@ class NotchOverlayController: ObservableObject {
         window.alphaValue = 0.0
         window.makeKeyAndOrderFront(nil)
         
+        // Mark as visible
+        isSemiCircleVisible = true
+        
         // Animate expansion from center top
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.6
@@ -313,6 +556,13 @@ class NotchOverlayController: ObservableObject {
             // Animate both frame expansion and fade in
             window.animator().setFrame(finalFrame, display: true)
             window.animator().alphaValue = 1.0
+        } completionHandler: {
+            // Show orbs after semi-circle appears
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self.orbManager.showOrbs()
+                // Force redraw of the semi-circle view
+                self.semiCircleView?.needsDisplay = true
+            }
         }
     }
     
@@ -751,8 +1001,8 @@ class SemiCircleView: NSView {
         // Create a wider arc that looks like it's emerging from the notch
         path.addArc(center: CGPoint(x: centerX, y: centerY), 
                    radius: radius, 
-                   startAngle: .pi * 0.8, // Start a bit before 180 degrees
-                   endAngle: .pi * 0.2,   // End a bit after 0 degrees
+                   startAngle: 0, // Start at 0 degrees
+                   endAngle: 2 * .pi, // Full circle (360 degrees)
                    clockwise: false)
         path.closeSubpath()
         
@@ -765,6 +1015,119 @@ class SemiCircleView: NSView {
         context.setShadow(offset: CGSize(width: 0, height: -5), blur: 10, color: NSColor.black.withAlphaComponent(0.3).cgColor)
         context.addPath(path)
         context.fillPath()
+    }
+}
+
+// MARK: - Semi-Circle with Orbs View
+class SemiCircleWithOrbsView: NSView {
+    private let orbManager: OrbManager
+    
+    init(orbManager: OrbManager) {
+        self.orbManager = orbManager
+        super.init(frame: NSRect.zero)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        // Clear background
+        context.clear(dirtyRect)
+        
+        // Draw semi-circle background
+        drawSemiCircle(in: context)
+        
+        // Draw orbs around the rim
+        drawOrbs(in: context)
+    }
+    
+    private func drawSemiCircle(in context: CGContext) {
+        let centerX = bounds.midX
+        let centerY = bounds.maxY - 10 // Move center up so arc starts from top
+        let radius = min(bounds.width, bounds.height) / 2 + 18.5 // 10 pixels bigger radius
+        
+        let path = CGMutablePath()
+        path.addArc(center: CGPoint(x: centerX, y: centerY), 
+                   radius: radius, 
+                   startAngle: 0, // Start at 0 degrees
+                   endAngle: 2 * .pi, // Full circle (360 degrees)
+                   clockwise: false)
+        path.closeSubpath()
+        
+        // Fill with black
+        context.setFillColor(NSColor.black.cgColor)
+        context.addPath(path)
+        context.fillPath()
+        
+        // Add subtle shadow
+        context.setShadow(offset: CGSize(width: 0, height: -5), blur: 10, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+        context.addPath(path)
+        context.fillPath()
+    }
+    
+    private func drawOrbs(in context: CGContext) {
+        print("🎯 Drawing orbs - isVisible: \(orbManager.isVisible), orbCount: \(orbManager.orbs.count)")
+        
+        guard orbManager.isVisible else { 
+            print("🎯 Orbs not visible, skipping draw")
+            return 
+        }
+        
+        let centerX = bounds.midX
+        let centerY = bounds.maxY - 10 // Match the circle center
+        let radius = min(bounds.width, bounds.height) / 2 + 18.5 // Match the circle radius
+        
+        print("🎯 Drawing at center: (\(centerX), \(centerY)), radius: \(radius)")
+        
+        for (index, orb) in orbManager.orbs.enumerated() {
+            print("🎯 Orb \(index): visible=\(orb.isVisible), angle=\(orb.angle), scale=\(orb.scale)")
+            
+            guard orb.isVisible else { continue }
+            
+            let x = centerX + radius * cos(orb.angle)
+            let y = centerY + radius * sin(orb.angle)
+            let size = 40.0 * orb.scale
+            
+            print("🎯 Drawing orb at (\(x), \(y)) with size \(size)")
+            
+            // Draw orb circle
+            let orbPath = CGMutablePath()
+            orbPath.addEllipse(in: CGRect(x: x - size/2, y: y - size/2, width: size, height: size))
+            
+            context.setFillColor(orb.color.cgColor)
+            context.addPath(orbPath)
+            context.fillPath()
+            
+            // Add shadow
+            context.setShadow(offset: CGSize(width: 0, height: 4), blur: 8, color: orb.color.withAlphaComponent(0.6).cgColor)
+            context.addPath(orbPath)
+            context.fillPath()
+            
+            // Draw task count if > 0
+            if orb.taskCount > 0 {
+                let textRect = CGRect(x: x + size/4, y: y - size/4, width: 20 * orb.scale, height: 20 * orb.scale)
+                
+                // Background circle for task count
+                let bgPath = CGMutablePath()
+                bgPath.addEllipse(in: textRect)
+                context.setFillColor(NSColor.black.withAlphaComponent(0.7).cgColor)
+                context.addPath(bgPath)
+                context.fillPath()
+                
+                // Task count text
+                let text = "\(orb.taskCount)" as NSString
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 12 * orb.scale, weight: .bold),
+                    .foregroundColor: NSColor.white
+                ]
+                text.draw(in: textRect, withAttributes: attributes)
+            }
+        }
     }
 }
 
