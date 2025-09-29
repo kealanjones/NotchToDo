@@ -1018,20 +1018,36 @@ class SemiCircleView: NSView {
     }
 }
 
-// MARK: - Semi-Circle with Orbs View
-class SemiCircleWithOrbsView: NSView {
-    private let orbManager: OrbManager
+    // MARK: - Semi-Circle with Orbs View
+    class SemiCircleWithOrbsView: NSView {
+        private let orbManager: OrbManager
+        private var animationTimer: Timer?
+        private var animationPhase: Double = 0.0
+        
+        init(orbManager: OrbManager) {
+            self.orbManager = orbManager
+            super.init(frame: NSRect.zero)
+            startAnimation()
+        }
     
-    init(orbManager: OrbManager) {
-        self.orbManager = orbManager
-        super.init(frame: NSRect.zero)
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    override func draw(_ dirtyRect: NSRect) {
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+        
+        deinit {
+            animationTimer?.invalidate()
+        }
+        
+        private func startAnimation() {
+            animationTimer?.invalidate()
+            animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                self.animationPhase += 0.05
+                self.needsDisplay = true
+            }
+        }
+        
+        override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         
         guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -1096,50 +1112,75 @@ class SemiCircleWithOrbsView: NSView {
             print("🎯 Drawing orb at (\(x), \(y)) with size \(size)")
             
             // Create modern, dynamic orb with multiple layers
-            drawModernOrb(context: context, x: x, y: y, size: size, color: orb.color, taskCount: orb.taskCount, scale: orb.scale)
+            drawModernOrb(context: context, x: x, y: y, size: size, color: orb.color, taskCount: orb.taskCount, scale: orb.scale, animationPhase: animationPhase, orbIndex: index)
         }
     }
     
-    private func drawModernOrb(context: CGContext, x: Double, y: Double, size: Double, color: NSColor, taskCount: Int, scale: Double) {
+    private func drawModernOrb(context: CGContext, x: Double, y: Double, size: Double, color: NSColor, taskCount: Int, scale: Double, animationPhase: Double, orbIndex: Int) {
+        // Calculate gentle, evolving effects based on animation phase and orb index
+        let orbPhase = animationPhase + Double(orbIndex) * 0.3 // Offset each orb's animation
+        
+        // Create unique random paths for each orb's highlight movement
+        let randomSeed1 = Double(orbIndex) * 2.3 + 1.7 // Unique seed for each orb
+        let randomSeed2 = Double(orbIndex) * 1.9 + 3.1 // Different seed for Y movement
+        let randomSeed3 = Double(orbIndex) * 0.8 + 2.5 // Speed variation seed
+        
+        let gentleRotation = orbPhase * 0.1 // Very slow, gentle rotation
+        let internalFlow = sin(orbPhase * 0.15) * 0.05 // Slower, more noticeable internal movement
+        let colorShift = sin(orbPhase * 0.2) * 0.1 // Gentle color evolution
+        
         let orbRect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
         
-        // Create gradient for the orb
+        // Create evolving gradient for the orb with gentle color shifts
+        let evolvedColor = NSColor(
+            red: min(1.0, color.redComponent + colorShift),
+            green: min(1.0, color.greenComponent + colorShift * 0.5),
+            blue: min(1.0, color.blueComponent + colorShift * 0.3),
+            alpha: color.alphaComponent
+        )
+        
         let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                 colors: [
-                                    color.withAlphaComponent(0.9).cgColor,
-                                    color.withAlphaComponent(0.7).cgColor,
-                                    color.withAlphaComponent(0.5).cgColor
+                                    evolvedColor.withAlphaComponent(0.9).cgColor,
+                                    evolvedColor.withAlphaComponent(0.7).cgColor,
+                                    evolvedColor.withAlphaComponent(0.5).cgColor
                                 ] as CFArray,
                                 locations: [0.0, 0.6, 1.0])!
         
-        // 1. Outer glow - multiple layers for depth
+        // 1. Outer glow - gentle, evolving atmosphere
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: 0), blur: 25, color: color.withAlphaComponent(0.4).cgColor)
-        context.setFillColor(color.withAlphaComponent(0.3).cgColor)
+        context.setShadow(offset: CGSize(width: 0, height: 0), blur: 25, color: evolvedColor.withAlphaComponent(0.4).cgColor)
+        context.setFillColor(evolvedColor.withAlphaComponent(0.3).cgColor)
         context.addEllipse(in: orbRect.insetBy(dx: -8, dy: -8))
         context.fillPath()
         context.restoreGState()
         
-        // 2. Mid-range glow
+        // 2. Mid-range glow - subtle evolution
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: 0), blur: 15, color: color.withAlphaComponent(0.5).cgColor)
-        context.setFillColor(color.withAlphaComponent(0.4).cgColor)
+        context.setShadow(offset: CGSize(width: 0, height: 0), blur: 15, color: evolvedColor.withAlphaComponent(0.5).cgColor)
+        context.setFillColor(evolvedColor.withAlphaComponent(0.4).cgColor)
         context.addEllipse(in: orbRect.insetBy(dx: -4, dy: -4))
         context.fillPath()
         context.restoreGState()
         
-        // 3. Main orb with gradient
+        // 3. Main orb with evolving gradient and gentle rotation
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: 6), blur: 12, color: color.withAlphaComponent(0.6).cgColor)
+        context.setShadow(offset: CGSize(width: 0, height: 6), blur: 12, color: evolvedColor.withAlphaComponent(0.6).cgColor)
         context.addEllipse(in: orbRect)
         context.clip()
+        
+        // Apply gentle rotation to the gradient
+        context.translateBy(x: orbRect.midX, y: orbRect.midY)
+        context.rotate(by: gentleRotation)
+        context.translateBy(x: -orbRect.midX, y: -orbRect.midY)
+        
         context.drawLinearGradient(gradient,
                                  start: CGPoint(x: orbRect.minX, y: orbRect.minY),
                                  end: CGPoint(x: orbRect.maxX, y: orbRect.maxY),
                                  options: [])
         context.restoreGState()
         
-        // 4. Inner highlight for 3D effect
+        // 4. Internal flowing highlight for 3D effect
         let highlightRect = orbRect.insetBy(dx: size * 0.15, dy: size * 0.15)
         let highlightGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                          colors: [
@@ -1152,26 +1193,53 @@ class SemiCircleWithOrbsView: NSView {
         context.saveGState()
         context.addEllipse(in: highlightRect)
         context.clip()
+        
+        // Apply unique random circular flow movement to highlight for each orb
+        let flowRadius = size * (0.15 + sin(randomSeed1) * 0.08) // Varying radius per orb
+        let flowSpeed = 0.25 + sin(randomSeed3) * 0.12 // Varying speed per orb (even quicker)
+        let flowX = cos(orbPhase * flowSpeed + randomSeed1) * flowRadius // Unique X movement
+        let flowY = sin(orbPhase * flowSpeed + randomSeed2) * flowRadius // Unique Y movement
+        
         context.drawRadialGradient(highlightGradient,
-                                 startCenter: CGPoint(x: highlightRect.midX - size * 0.1, y: highlightRect.midY - size * 0.1),
+                                 startCenter: CGPoint(x: highlightRect.midX - size * 0.1 + flowX, y: highlightRect.midY - size * 0.1 + flowY),
                                  startRadius: 0,
-                                 endCenter: CGPoint(x: highlightRect.midX, y: highlightRect.midY),
+                                 endCenter: CGPoint(x: highlightRect.midX + flowX, y: highlightRect.midY + flowY),
                                  endRadius: highlightRect.width / 2,
                                  options: [])
         context.restoreGState()
         
-        // 5. Animated pulsing ring (if we had animation context)
-        let pulseSize = size * 1.3
-        let pulseRect = CGRect(x: x - pulseSize/2, y: y - pulseSize/2, width: pulseSize, height: pulseSize)
+        // 5. Gentle internal energy rings
+        for i in 0..<2 {
+            let ringPhase = orbPhase + Double(i) * 1.5
+            let ringSize = size * (1.1 + sin(ringPhase * 0.4) * 0.05) // Very subtle size variation
+            let ringRect = CGRect(x: x - ringSize/2, y: y - ringSize/2, width: ringSize, height: ringSize)
+            
+            context.saveGState()
+            let ringAlpha = 0.15 + sin(ringPhase * 0.6) * 0.05 // Gentle alpha variation
+            context.setStrokeColor(evolvedColor.withAlphaComponent(ringAlpha).cgColor)
+            context.setLineWidth(1.0)
+            context.addEllipse(in: ringRect)
+            context.strokePath()
+            context.restoreGState()
+        }
         
-        context.saveGState()
-        context.setStrokeColor(color.withAlphaComponent(0.3).cgColor)
-        context.setLineWidth(2.0)
-        context.addEllipse(in: pulseRect)
-        context.strokePath()
-        context.restoreGState()
+        // 6. Internal flowing energy particles
+        for i in 0..<4 {
+            let particlePhase = orbPhase + Double(i) * 1.2
+            let particleRadius = size * 0.3 + sin(particlePhase * 0.8) * size * 0.1
+            let particleX = x + cos(particlePhase * 0.5) * particleRadius
+            let particleY = y + sin(particlePhase * 0.5) * particleRadius
+            let particleSize = 1.5 + sin(particlePhase * 1.2) * 0.5
+            let particleAlpha = 0.3 + sin(particlePhase * 0.9) * 0.2
+            
+            context.saveGState()
+            context.setFillColor(evolvedColor.withAlphaComponent(particleAlpha).cgColor)
+            context.addEllipse(in: CGRect(x: particleX - particleSize/2, y: particleY - particleSize/2, width: particleSize, height: particleSize))
+            context.fillPath()
+            context.restoreGState()
+        }
         
-        // 6. Task count badge with modern styling
+        // 7. Task count badge with gentle evolution
         if taskCount > 0 {
             let badgeSize = 18.0 * scale
             let badgeRect = CGRect(x: x + size/3, y: y - size/3, width: badgeSize, height: badgeSize)
