@@ -163,7 +163,6 @@ struct NotchOverlayView: View {
                     .frame(width: 260)
                     .offset(y: -1) // Overlap the top border slightly
             }
-            .shadow(color: .black.opacity(0.08), radius: 20, x: 0, y: 8)
         )
     }
     
