@@ -337,6 +337,7 @@ class NotchOverlayController: ObservableObject {
     private var semiCircleWindow: NSWindow?
     private var semiCircleView: SemiCircleWithOrbsView? // Added
     private var taskCardWindow: NSWindow? // Added for task card
+    private var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
     private var isVisible = false
     var isSemiCircleVisible = false // Added
     private var orbManager = OrbManager()
@@ -590,28 +591,51 @@ class NotchOverlayController: ObservableObject {
             return 
         }
         
+        // Check if clicking the same orb that's already open - toggle off
+        if let currentOrb = currentOpenOrb, currentOrb.id == orb.id {
+            print("🎯 Toggling off task card for orb: \(orb.name)")
+            hideTaskCard()
+            return
+        }
+        
         print("🎯 Showing task card for orb: \(orb.name)")
         
         // Update the task card view with orb's tasks
         if let taskCardView = window.contentView as? TaskCardView {
-            taskCardView.updateTasks(orb.tasks, projectName: orb.name)
+            taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color)
         }
         
-        // Position the card below the orb (basic positioning for now)
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.frame
-        let x = screenFrame.midX - window.frame.width / 2
-        let y = screenFrame.maxY - 200 // Position it below the notch area
-        window.setFrameOrigin(NSPoint(x: x, y: y))
+        // Position the card below the semi-circle
+        guard let screen = NSScreen.main,
+              let semiCircleWindow = semiCircleWindow else { return }
         
-        // Show the window
+        let screenFrame = screen.frame
+        let semiCircleFrame = semiCircleWindow.frame
+        
+        // Position card below the semi-circle with some gap
+        let cardWidth = window.frame.width
+        let cardHeight = window.frame.height
+        let gap: CGFloat = 20
+        
+        let x = semiCircleFrame.midX - cardWidth / 2
+        let y = semiCircleFrame.minY - cardHeight - gap
+        
+        // Ensure the card stays on screen
+        let finalX = max(10, min(x, screenFrame.width - cardWidth - 10))
+        let finalY = max(10, min(y, screenFrame.height - cardHeight - 10))
+        
+        window.setFrameOrigin(NSPoint(x: finalX, y: finalY))
+        
+        // Show the window and track the current orb
         window.makeKeyAndOrderFront(nil)
-        print("🎯 Task card shown at position: \(window.frame)")
+        currentOpenOrb = orb
+        print("🎯 Task card shown at position: \(window.frame) below semi-circle at: \(semiCircleFrame)")
     }
     
     func hideTaskCard() {
         guard let window = taskCardWindow else { return }
         window.orderOut(nil)
+        currentOpenOrb = nil
         print("🎯 Task card hidden")
     }
     
@@ -731,7 +755,7 @@ class NotchOverlayController: ObservableObject {
         window.isOpaque = false
         window.backgroundColor = NSColor.clear
         window.hasShadow = true
-        window.level = .floating
+        window.level = .screenSaver  // Higher than semi-circle's .screenSaver level
         window.ignoresMouseEvents = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = false
@@ -1558,152 +1582,136 @@ class SemiCircleView: NSView {
     }
     
     private func drawModernOrb(context: CGContext, x: Double, y: Double, size: Double, color: NSColor, taskCount: Int, scale: Double, animationPhase: Double, orbIndex: Int) {
-        // Calculate gentle, evolving effects based on animation phase and orb index
-        let orbPhase = animationPhase + Double(orbIndex) * 0.3 // Offset each orb's animation
-        
-        // Create unique random paths for each orb's highlight movement
-        let randomSeed1 = Double(orbIndex) * 2.3 + 1.7 // Unique seed for each orb
-        let randomSeed2 = Double(orbIndex) * 1.9 + 3.1 // Different seed for Y movement
-        let randomSeed3 = Double(orbIndex) * 0.8 + 2.5 // Speed variation seed
-        
-        let gentleRotation = orbPhase * 0.1 // Very slow, gentle rotation
-        let internalFlow = sin(orbPhase * 0.15) * 0.05 // Slower, more noticeable internal movement
-        let colorShift = sin(orbPhase * 0.2) * 0.1 // Gentle color evolution
-        
+        // Calculate liquid glass effects based on animation phase and orb index
+        let orbPhase = animationPhase + Double(orbIndex) * 0.3
         let orbRect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
         
-        // Create evolving gradient for the orb with gentle color shifts
-        let evolvedColor = NSColor(
-            red: min(1.0, color.redComponent + colorShift),
-            green: min(1.0, color.greenComponent + colorShift * 0.5),
-            blue: min(1.0, color.blueComponent + colorShift * 0.3),
-            alpha: color.alphaComponent
-        )
-        
-        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                colors: [
-                                    evolvedColor.withAlphaComponent(0.9).cgColor,
-                                    evolvedColor.withAlphaComponent(0.7).cgColor,
-                                    evolvedColor.withAlphaComponent(0.5).cgColor
-                                ] as CFArray,
-                                locations: [0.0, 0.6, 1.0])!
-        
-        // 1. Outer glow - gentle, evolving atmosphere
+        // 1. Outer liquid glass glow - soft, diffused
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: 0), blur: 25, color: evolvedColor.withAlphaComponent(0.4).cgColor)
-        context.setFillColor(evolvedColor.withAlphaComponent(0.3).cgColor)
-        context.addEllipse(in: orbRect.insetBy(dx: -8, dy: -8))
-        context.fillPath()
+        let glowSize = size * 1.8
+        let glowRect = CGRect(x: x - glowSize/2, y: y - glowSize/2, width: glowSize, height: glowSize)
+        let glowGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                    colors: [
+                                        color.withAlphaComponent(0.3).cgColor,
+                                        color.withAlphaComponent(0.1).cgColor,
+                                        NSColor.clear.cgColor
+                                    ] as CFArray,
+                                    locations: [0.0, 0.6, 1.0])!
+        
+        context.drawRadialGradient(glowGradient,
+                                 startCenter: CGPoint(x: x, y: y),
+                                 startRadius: 0,
+                                 endCenter: CGPoint(x: x, y: y),
+                                 endRadius: glowSize/2,
+                                 options: [])
         context.restoreGState()
         
-        // 2. Mid-range glow - subtle evolution
+        // 2. Main liquid glass orb with glass morphism effect
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: 0), blur: 15, color: evolvedColor.withAlphaComponent(0.5).cgColor)
-        context.setFillColor(evolvedColor.withAlphaComponent(0.4).cgColor)
-        context.addEllipse(in: orbRect.insetBy(dx: -4, dy: -4))
-        context.fillPath()
-        context.restoreGState()
-        
-        // 3. Main orb with evolving gradient and gentle rotation
-        context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: 6), blur: 12, color: evolvedColor.withAlphaComponent(0.6).cgColor)
         context.addEllipse(in: orbRect)
         context.clip()
         
-        // Apply gentle rotation to the gradient
-        context.translateBy(x: orbRect.midX, y: orbRect.midY)
-        context.rotate(by: gentleRotation)
-        context.translateBy(x: -orbRect.midX, y: -orbRect.midY)
+        // Glass background with subtle color variation
+        let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                     colors: [
+                                        color.withAlphaComponent(0.25).cgColor,
+                                        color.withAlphaComponent(0.15).cgColor,
+                                        color.withAlphaComponent(0.1).cgColor
+                                     ] as CFArray,
+                                     locations: [0.0, 0.5, 1.0])!
         
-        context.drawLinearGradient(gradient,
+        context.drawLinearGradient(glassGradient,
                                  start: CGPoint(x: orbRect.minX, y: orbRect.minY),
                                  end: CGPoint(x: orbRect.maxX, y: orbRect.maxY),
                                  options: [])
         context.restoreGState()
         
-        // 4. Internal flowing highlight for 3D effect
-        let highlightRect = orbRect.insetBy(dx: size * 0.15, dy: size * 0.15)
-        let highlightGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                         colors: [
-                                            NSColor.white.withAlphaComponent(0.6).cgColor,
-                                            NSColor.white.withAlphaComponent(0.1).cgColor,
-                                            NSColor.clear.cgColor
-                                         ] as CFArray,
-                                         locations: [0.0, 0.5, 1.0])!
+        // 3. Liquid glass highlight - flowing and dynamic
+        let highlightSize = size * 0.6
+        let highlightRect = CGRect(x: x - highlightSize/2, y: y - highlightSize/2, width: highlightSize, height: highlightSize)
         
         context.saveGState()
         context.addEllipse(in: highlightRect)
         context.clip()
         
-        // Apply unique random circular flow movement to highlight for each orb
-        let flowRadius = size * (0.15 + sin(randomSeed1) * 0.08) // Varying radius per orb
-        let flowSpeed = 0.25 + sin(randomSeed3) * 0.12 // Varying speed per orb (even quicker)
-        let flowX = cos(orbPhase * flowSpeed + randomSeed1) * flowRadius // Unique X movement
-        let flowY = sin(orbPhase * flowSpeed + randomSeed2) * flowRadius // Unique Y movement
+        // Flowing highlight position
+        let flowX = cos(orbPhase * 0.3) * size * 0.1
+        let flowY = sin(orbPhase * 0.2) * size * 0.1
+        
+        let highlightGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                         colors: [
+                                            NSColor.white.withAlphaComponent(0.8).cgColor,
+                                            NSColor.white.withAlphaComponent(0.4).cgColor,
+                                            NSColor.white.withAlphaComponent(0.1).cgColor,
+                                            NSColor.clear.cgColor
+                                         ] as CFArray,
+                                         locations: [0.0, 0.3, 0.7, 1.0])!
         
         context.drawRadialGradient(highlightGradient,
-                                 startCenter: CGPoint(x: highlightRect.midX - size * 0.1 + flowX, y: highlightRect.midY - size * 0.1 + flowY),
+                                 startCenter: CGPoint(x: highlightRect.midX - size * 0.15 + flowX, y: highlightRect.midY - size * 0.15 + flowY),
                                  startRadius: 0,
                                  endCenter: CGPoint(x: highlightRect.midX + flowX, y: highlightRect.midY + flowY),
-                                 endRadius: highlightRect.width / 2,
+                                 endRadius: highlightSize/2,
                                  options: [])
         context.restoreGState()
         
-        // 5. Gentle internal energy rings
-        for i in 0..<2 {
-            let ringPhase = orbPhase + Double(i) * 1.5
-            let ringSize = size * (1.1 + sin(ringPhase * 0.4) * 0.05) // Very subtle size variation
-            let ringRect = CGRect(x: x - ringSize/2, y: y - ringSize/2, width: ringSize, height: ringSize)
-            
-            context.saveGState()
-            let ringAlpha = 0.15 + sin(ringPhase * 0.6) * 0.05 // Gentle alpha variation
-            context.setStrokeColor(evolvedColor.withAlphaComponent(ringAlpha).cgColor)
-            context.setLineWidth(1.0)
-            context.addEllipse(in: ringRect)
-            context.strokePath()
-            context.restoreGState()
-        }
+        // 4. Liquid glass border - subtle and flowing
+        context.saveGState()
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.6).cgColor)
+        context.setLineWidth(1.5)
+        context.addEllipse(in: orbRect.insetBy(dx: 0.75, dy: 0.75))
+        context.strokePath()
+        context.restoreGState()
         
-        // 6. Internal flowing energy particles
-        for i in 0..<4 {
-            let particlePhase = orbPhase + Double(i) * 1.2
-            let particleRadius = size * 0.3 + sin(particlePhase * 0.8) * size * 0.1
-            let particleX = x + cos(particlePhase * 0.5) * particleRadius
-            let particleY = y + sin(particlePhase * 0.5) * particleRadius
-            let particleSize = 1.5 + sin(particlePhase * 1.2) * 0.5
-            let particleAlpha = 0.3 + sin(particlePhase * 0.9) * 0.2
+        // 5. Internal liquid flow - subtle moving particles
+        for i in 0..<3 {
+            let particlePhase = orbPhase + Double(i) * 1.0
+            let particleRadius = size * 0.2 + sin(particlePhase * 0.5) * size * 0.05
+            let particleX = x + cos(particlePhase * 0.4) * particleRadius
+            let particleY = y + sin(particlePhase * 0.3) * particleRadius
+            let particleSize = 2.0 + sin(particlePhase * 0.8) * 1.0
+            let particleAlpha = 0.4 + sin(particlePhase * 0.6) * 0.2
             
             context.saveGState()
-            context.setFillColor(evolvedColor.withAlphaComponent(particleAlpha).cgColor)
+            context.setFillColor(NSColor.white.withAlphaComponent(particleAlpha).cgColor)
             context.addEllipse(in: CGRect(x: particleX - particleSize/2, y: particleY - particleSize/2, width: particleSize, height: particleSize))
             context.fillPath()
             context.restoreGState()
         }
         
-        // 7. Task count badge with gentle evolution
+        // 6. Task count badge with liquid glass styling
         if taskCount > 0 {
             let badgeSize = 18.0 * scale
             let badgeRect = CGRect(x: x + size/3, y: y - size/3, width: badgeSize, height: badgeSize)
             
-            // Badge background with gradient
-            let badgeGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                         colors: [
-                                            NSColor.black.withAlphaComponent(0.9).cgColor,
-                                            NSColor.black.withAlphaComponent(0.7).cgColor
-                                         ] as CFArray,
-                                         locations: [0.0, 1.0])!
-            
+            // Glass morphism badge background
             context.saveGState()
-            context.setShadow(offset: CGSize(width: 0, height: 2), blur: 4, color: NSColor.black.withAlphaComponent(0.5).cgColor)
             context.addEllipse(in: badgeRect)
             context.clip()
+            
+            let badgeGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                         colors: [
+                                            NSColor.black.withAlphaComponent(0.8).cgColor,
+                                            NSColor.black.withAlphaComponent(0.6).cgColor,
+                                            NSColor.black.withAlphaComponent(0.4).cgColor
+                                         ] as CFArray,
+                                         locations: [0.0, 0.5, 1.0])!
+            
             context.drawLinearGradient(badgeGradient,
                                      start: CGPoint(x: badgeRect.minX, y: badgeRect.minY),
                                      end: CGPoint(x: badgeRect.maxX, y: badgeRect.maxY),
                                      options: [])
             context.restoreGState()
             
-            // Badge text with modern font
+            // Badge border
+            context.saveGState()
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
+            context.setLineWidth(0.5)
+            context.addEllipse(in: badgeRect.insetBy(dx: 0.25, dy: 0.25))
+            context.strokePath()
+            context.restoreGState()
+            
+            // Badge text
             let text = "\(taskCount)" as NSString
             let font = NSFont.systemFont(ofSize: 10 * scale, weight: .bold)
             let attributes: [NSAttributedString.Key: Any] = [
@@ -1758,23 +1766,35 @@ extension NotchIndicatorView {
 class TaskCardView: NSView {
     private var tasks: [Task] = []
     private var projectName: String = ""
+    private var orbColor: NSColor = .systemBlue
+    private var animationPhase: Double = 0.0
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
+        startAnimation()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
+        startAnimation()
     }
     
-    func updateTasks(_ tasks: [Task], projectName: String) {
+    func updateTasks(_ tasks: [Task], projectName: String, orbColor: NSColor) {
         self.tasks = tasks
         self.projectName = projectName
+        self.orbColor = orbColor
         self.needsDisplay = true
+    }
+    
+    private func startAnimation() {
+        Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
+            self.animationPhase += 0.02
+            self.needsDisplay = true
+        }
     }
     
     override func draw(_ dirtyRect: NSRect) {
@@ -1782,58 +1802,247 @@ class TaskCardView: NSView {
         
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        // Draw basic card background
-        let cardRect = bounds.insetBy(dx: 10, dy: 10)
-        context.setFillColor(NSColor.controlBackgroundColor.cgColor)
-        context.fill(cardRect)
+        let cardRect = bounds.insetBy(dx: 8, dy: 8)
         
-        // Draw border
-        context.setStrokeColor(NSColor.separatorColor.cgColor)
-        context.setLineWidth(1.0)
-        context.stroke(cardRect)
+        // 1. Outer liquid glass glow
+        context.saveGState()
+        let glowSize = 20.0
+        let glowRect = cardRect.insetBy(dx: -glowSize, dy: -glowSize)
+        let glowGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                    colors: [
+                                        NSColor.black.withAlphaComponent(0.25).cgColor,
+                                        NSColor.black.withAlphaComponent(0.15).cgColor,
+                                        NSColor.clear.cgColor
+                                    ] as CFArray,
+                                    locations: [0.0, 0.6, 1.0])!
         
-        // Draw project name
-        let titleRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 40, width: cardRect.width - 40, height: 30)
-        let titleFont = NSFont.systemFont(ofSize: 16, weight: .bold)
+        context.drawRadialGradient(glowGradient,
+                                 startCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
+                                 startRadius: 0,
+                                 endCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
+                                 endRadius: glowRect.width/2,
+                                 options: [])
+        context.restoreGState()
+        
+        // 2. Main glass morphism card background
+        context.saveGState()
+        let roundedRect = NSBezierPath(roundedRect: cardRect, xRadius: 16, yRadius: 16)
+        roundedRect.addClip()
+        
+        // Glass background with high opacity for better blur
+        let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                     colors: [
+                                        NSColor.black.withAlphaComponent(0.95).cgColor,
+                                        NSColor.black.withAlphaComponent(0.90).cgColor,
+                                        NSColor.black.withAlphaComponent(0.85).cgColor
+                                     ] as CFArray,
+                                     locations: [0.0, 0.5, 1.0])!
+        
+        context.drawLinearGradient(glassGradient,
+                                 start: CGPoint(x: cardRect.minX, y: cardRect.minY),
+                                 end: CGPoint(x: cardRect.maxX, y: cardRect.maxY),
+                                 options: [])
+        context.restoreGState()
+        
+        // 3. Flowing liquid glass highlight
+        context.saveGState()
+        let highlightRect = cardRect.insetBy(dx: 4, dy: 4)
+        let highlightPath = NSBezierPath(roundedRect: highlightRect, xRadius: 12, yRadius: 12)
+        highlightPath.addClip()
+        
+        // Flowing highlight position
+        let flowX = cos(animationPhase * 0.3) * cardRect.width * 0.1
+        let flowY = sin(animationPhase * 0.2) * cardRect.height * 0.1
+        
+        let highlightGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                         colors: [
+                                            NSColor.white.withAlphaComponent(0.3).cgColor,
+                                            NSColor.white.withAlphaComponent(0.1).cgColor,
+                                            NSColor.white.withAlphaComponent(0.05).cgColor,
+                                            NSColor.clear.cgColor
+                                         ] as CFArray,
+                                         locations: [0.0, 0.3, 0.7, 1.0])!
+        
+        context.drawRadialGradient(highlightGradient,
+                                 startCenter: CGPoint(x: highlightRect.midX - cardRect.width * 0.2 + flowX, y: highlightRect.midY - cardRect.height * 0.2 + flowY),
+                                 startRadius: 0,
+                                 endCenter: CGPoint(x: highlightRect.midX + flowX, y: highlightRect.midY + flowY),
+                                 endRadius: highlightRect.width/2,
+                                 options: [])
+        context.restoreGState()
+        
+        // 4. Project header with glass styling
+        drawProjectHeader(in: context, cardRect: cardRect)
+        
+        // 5. Task list with modern glass styling
+        drawTaskList(in: context, cardRect: cardRect)
+        
+        // 6. Subtle internal liquid particles
+        drawLiquidParticles(in: context, cardRect: cardRect)
+    }
+    
+    private func drawProjectHeader(in context: CGContext, cardRect: NSRect) {
+        let headerRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 60, width: cardRect.width - 40, height: 50)
+        
+        // Glass morphism header background with orb color
+        context.saveGState()
+        let headerPath = NSBezierPath(roundedRect: headerRect, xRadius: 8, yRadius: 8)
+        headerPath.addClip()
+        
+        let headerGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                      colors: [
+                                        orbColor.withAlphaComponent(0.4).cgColor,
+                                        orbColor.withAlphaComponent(0.2).cgColor,
+                                        orbColor.withAlphaComponent(0.1).cgColor,
+                                        NSColor.clear.cgColor
+                                      ] as CFArray,
+                                      locations: [0.0, 0.3, 0.7, 1.0])!
+        
+        context.drawLinearGradient(headerGradient,
+                                 start: CGPoint(x: headerRect.minX, y: headerRect.minY),
+                                 end: CGPoint(x: headerRect.maxX, y: headerRect.maxY),
+                                 options: [])
+        context.restoreGState()
+        
+        // Header border with orb color
+        context.saveGState()
+        context.setStrokeColor(orbColor.withAlphaComponent(0.6).cgColor)
+        context.setLineWidth(0.5)
+        let headerBorderPath = NSBezierPath(roundedRect: headerRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 7, yRadius: 7)
+        headerBorderPath.stroke()
+        context.restoreGState()
+        
+        // Project name with glass text effect
+        let titleRect = CGRect(x: headerRect.minX + 15, y: headerRect.minY + 8, width: headerRect.width - 30, height: 24)
+        let titleFont = NSFont.systemFont(ofSize: 18, weight: .bold)
         let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: titleFont,
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: NSColor.white,
+            .strokeColor: NSColor.black.withAlphaComponent(0.3),
+            .strokeWidth: -0.5
         ]
         projectName.draw(in: titleRect, withAttributes: titleAttributes)
-        
-        // Draw tasks
-        let taskStartY = titleRect.minY - 20
-        let taskHeight: CGFloat = 25
-        let taskSpacing: CGFloat = 5
+    }
+    
+    private func drawTaskList(in context: CGContext, cardRect: NSRect) {
+        let taskStartY = cardRect.maxY - 100  // Much more space from header
+        let taskHeight: CGFloat = 35        // Slightly taller tasks
+        let taskSpacing: CGFloat = 12       // More spacing between tasks
         
         for (index, task) in tasks.enumerated() {
             let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing)
             let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
             
-            // Draw task checkbox
-            let checkboxRect = CGRect(x: taskRect.minX, y: taskRect.minY + 5, width: 15, height: 15)
-            context.setStrokeColor(NSColor.controlTextColor.cgColor)
-            context.setLineWidth(1.0)
-            context.stroke(checkboxRect)
-            
-            if task.isCompleted {
-                // Draw checkmark
-                context.setStrokeColor(NSColor.systemGreen.cgColor)
-                context.setLineWidth(2.0)
-                context.move(to: CGPoint(x: checkboxRect.minX + 3, y: checkboxRect.midY))
-                context.addLine(to: CGPoint(x: checkboxRect.midX, y: checkboxRect.minY + 3))
-                context.addLine(to: CGPoint(x: checkboxRect.maxX - 3, y: checkboxRect.maxY - 3))
-                context.strokePath()
+            // Skip tasks that would go below the card bounds
+            if taskY < cardRect.minY + 20 {
+                break
             }
             
-            // Draw task title
-            let taskTitleRect = CGRect(x: taskRect.minX + 25, y: taskRect.minY, width: taskRect.width - 25, height: taskRect.height)
-            let taskFont = NSFont.systemFont(ofSize: 14)
+            // Glass morphism task background
+            context.saveGState()
+            let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 6, yRadius: 6)
+            taskPath.addClip()
+            
+            let taskGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: [
+                                            NSColor.white.withAlphaComponent(0.1).cgColor,
+                                            NSColor.white.withAlphaComponent(0.05).cgColor,
+                                            NSColor.clear.cgColor
+                                        ] as CFArray,
+                                        locations: [0.0, 0.5, 1.0])!
+            
+            context.drawLinearGradient(taskGradient,
+                                     start: CGPoint(x: taskRect.minX, y: taskRect.minY),
+                                     end: CGPoint(x: taskRect.maxX, y: taskRect.maxY),
+                                     options: [])
+            context.restoreGState()
+            
+            // Task border
+            context.saveGState()
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.15).cgColor)
+            context.setLineWidth(0.5)
+            let taskBorderPath = NSBezierPath(roundedRect: taskRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 5, yRadius: 5)
+            taskBorderPath.stroke()
+            context.restoreGState()
+            
+            // Modern glass checkbox
+            drawGlassCheckbox(in: context, taskRect: taskRect, isCompleted: task.isCompleted, index: index)
+            
+            // Task title with glass text effect
+            let taskTitleRect = CGRect(x: taskRect.minX + 35, y: taskRect.minY + 8, width: taskRect.width - 40, height: 22)
+            let taskFont = NSFont.systemFont(ofSize: 14, weight: .medium)
             let taskAttributes: [NSAttributedString.Key: Any] = [
                 .font: taskFont,
-                .foregroundColor: task.isCompleted ? NSColor.secondaryLabelColor : NSColor.labelColor
+                .foregroundColor: task.isCompleted ? NSColor.white.withAlphaComponent(0.6) : NSColor.white,
+                .strokeColor: NSColor.black.withAlphaComponent(0.2),
+                .strokeWidth: -0.3
             ]
             task.title.draw(in: taskTitleRect, withAttributes: taskAttributes)
+        }
+    }
+    
+    private func drawGlassCheckbox(in context: CGContext, taskRect: NSRect, isCompleted: Bool, index: Int) {
+        let checkboxSize: CGFloat = 18
+        let checkboxRect = CGRect(x: taskRect.minX + 8, y: taskRect.minY + (taskRect.height - checkboxSize)/2, width: checkboxSize, height: checkboxSize)
+        
+        // Glass morphism checkbox background
+        context.saveGState()
+        let checkboxPath = NSBezierPath(roundedRect: checkboxRect, xRadius: 4, yRadius: 4)
+        checkboxPath.addClip()
+        
+        let checkboxGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: [
+                                            NSColor.white.withAlphaComponent(0.2).cgColor,
+                                            NSColor.white.withAlphaComponent(0.1).cgColor,
+                                            NSColor.clear.cgColor
+                                        ] as CFArray,
+                                        locations: [0.0, 0.5, 1.0])!
+        
+        context.drawLinearGradient(checkboxGradient,
+                                 start: CGPoint(x: checkboxRect.minX, y: checkboxRect.minY),
+                                 end: CGPoint(x: checkboxRect.maxX, y: checkboxRect.maxY),
+                                 options: [])
+        context.restoreGState()
+        
+        // Checkbox border
+        context.saveGState()
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
+        context.setLineWidth(1.0)
+        let checkboxBorderPath = NSBezierPath(roundedRect: checkboxRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 3, yRadius: 3)
+        checkboxBorderPath.stroke()
+        context.restoreGState()
+        
+        if isCompleted {
+            // Glass checkmark with flowing effect
+            context.saveGState()
+            context.setStrokeColor(NSColor.systemGreen.withAlphaComponent(0.9).cgColor)
+            context.setLineWidth(2.5)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            
+            let checkmarkPath = NSBezierPath()
+            checkmarkPath.move(to: CGPoint(x: checkboxRect.minX + 4, y: checkboxRect.midY))
+            checkmarkPath.line(to: CGPoint(x: checkboxRect.midX, y: checkboxRect.minY + 4))
+            checkmarkPath.line(to: CGPoint(x: checkboxRect.maxX - 4, y: checkboxRect.maxY - 4))
+            checkmarkPath.stroke()
+            context.restoreGState()
+        }
+    }
+    
+    private func drawLiquidParticles(in context: CGContext, cardRect: NSRect) {
+        // Subtle flowing particles for liquid effect
+        for i in 0..<5 {
+            let particlePhase = animationPhase + Double(i) * 1.2
+            let particleX = cardRect.minX + CGFloat(cos(particlePhase * 0.2) * cardRect.width * 0.3) + cardRect.width * 0.5
+            let particleY = cardRect.minY + CGFloat(sin(particlePhase * 0.15) * cardRect.height * 0.2) + cardRect.height * 0.5
+            let particleSize = 1.5 + CGFloat(sin(particlePhase * 0.8) * 0.8)
+            let particleAlpha = 0.3 + CGFloat(sin(particlePhase * 0.6) * 0.2)
+            
+            context.saveGState()
+            context.setFillColor(NSColor.white.withAlphaComponent(particleAlpha).cgColor)
+            context.addEllipse(in: CGRect(x: particleX - particleSize/2, y: particleY - particleSize/2, width: particleSize, height: particleSize))
+            context.fillPath()
+            context.restoreGState()
         }
     }
 }
