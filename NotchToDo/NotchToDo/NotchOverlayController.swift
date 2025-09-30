@@ -2,7 +2,18 @@ import Cocoa
 import SwiftUI
 import QuartzCore
 
-    // MARK: - Project Orb Data Model
+// MARK: - Task Data Model
+class Task: ObservableObject, Identifiable {
+    let id = UUID()
+    @Published var title: String
+    @Published var isCompleted: Bool = false
+    
+    init(title: String) {
+        self.title = title
+    }
+}
+
+// MARK: - Project Orb Data Model
     class ProjectOrb: ObservableObject, Identifiable {
         let id = UUID()
         let name: String
@@ -10,6 +21,7 @@ import QuartzCore
         @Published var taskCount: Int = 0
         @Published var isVisible: Bool = false
         @Published var animationScale: Double = 0.0 // For growth animation
+        @Published var tasks: [Task] = []
         
         // Position around semi-circle rim
         @Published var angle: Double = 0.0 // In radians
@@ -22,11 +34,16 @@ import QuartzCore
     }
     
     func addTask() {
-        taskCount += 1
+        let task = Task(title: "New Task \(taskCount + 1)")
+        tasks.append(task)
+        taskCount = tasks.count
     }
     
     func removeTask() {
-        taskCount = max(0, taskCount - 1)
+        if !tasks.isEmpty {
+            tasks.removeLast()
+            taskCount = tasks.count
+        }
     }
 }
 
@@ -319,6 +336,7 @@ class NotchOverlayController: ObservableObject {
     private var notchIndicatorWindow: NSWindow?
     private var semiCircleWindow: NSWindow?
     private var semiCircleView: SemiCircleWithOrbsView? // Added
+    private var taskCardWindow: NSWindow? // Added for task card
     private var isVisible = false
     var isSemiCircleVisible = false // Added
     private var orbManager = OrbManager()
@@ -330,6 +348,8 @@ class NotchOverlayController: ObservableObject {
         setupOverlayWindow()
         setupNotchIndicator()
         setupSemiCircle()
+        setupTaskCard()
+        setupNotificationObservers()
     }
     
     private func setupOverlayWindow() {
@@ -564,6 +584,37 @@ class NotchOverlayController: ObservableObject {
         showSemiCircle()
     }
     
+    func showTaskCard(for orb: ProjectOrb) {
+        guard let window = taskCardWindow else { 
+            print("🚨 ERROR: taskCardWindow is nil!")
+            return 
+        }
+        
+        print("🎯 Showing task card for orb: \(orb.name)")
+        
+        // Update the task card view with orb's tasks
+        if let taskCardView = window.contentView as? TaskCardView {
+            taskCardView.updateTasks(orb.tasks, projectName: orb.name)
+        }
+        
+        // Position the card below the orb (basic positioning for now)
+        guard let screen = NSScreen.main else { return }
+        let screenFrame = screen.frame
+        let x = screenFrame.midX - window.frame.width / 2
+        let y = screenFrame.maxY - 200 // Position it below the notch area
+        window.setFrameOrigin(NSPoint(x: x, y: y))
+        
+        // Show the window
+        window.makeKeyAndOrderFront(nil)
+        print("🎯 Task card shown at position: \(window.frame)")
+    }
+    
+    func hideTaskCard() {
+        guard let window = taskCardWindow else { return }
+        window.orderOut(nil)
+        print("🎯 Task card hidden")
+    }
+    
     func createNewProject(name: String) {
         print("🎯 Creating new project: \(name)")
         print("🎯 Current orb count before: \(orbManager.orbs.count)")
@@ -664,6 +715,53 @@ class NotchOverlayController: ObservableObject {
         }
         
         print("🎯 Semi-circle setup complete - window stored: \(self.semiCircleWindow != nil)")
+    }
+    
+    private func setupTaskCard() {
+        print("🎯 setupTaskCard() called")
+        
+        // Create task card window
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.isOpaque = false
+        window.backgroundColor = NSColor.clear
+        window.hasShadow = true
+        window.level = .floating
+        window.ignoresMouseEvents = false
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.isMovable = false
+        
+        // Create basic task card view
+        let taskCardView = TaskCardView()
+        window.contentView = taskCardView
+        
+        self.taskCardWindow = window
+        print("🎯 Task card setup complete - window stored: \(self.taskCardWindow != nil)")
+    }
+    
+    private func setupNotificationObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOrbClicked(_:)),
+            name: NSNotification.Name("OrbClicked"),
+            object: nil
+        )
+        print("🎯 Notification observers setup complete")
+    }
+    
+    @objc private func handleOrbClicked(_ notification: Notification) {
+        guard let orb = notification.object as? ProjectOrb else {
+            print("🚨 ERROR: Invalid orb object in notification")
+            return
+        }
+        
+        print("🎯 Received orb click notification for: \(orb.name)")
+        showTaskCard(for: orb)
     }
     
     private func positionSemiCircle(_ window: NSWindow) {
@@ -1294,12 +1392,44 @@ class SemiCircleView: NSView {
         }
         
         override func mouseDown(with event: NSEvent) {
-            print("🖱️ Mouse CLICKED in semi-circle view!")
+            let mouseLocation = convert(event.locationInWindow, from: nil)
+            print("🖱️ Mouse CLICKED in semi-circle view at: \(mouseLocation)")
+            
+            // Check if click is on an orb
+            if let clickedOrb = getClickedOrb(at: mouseLocation) {
+                print("🖱️ Clicked on orb: \(clickedOrb.name)")
+                // Notify the controller to show task card
+                NotificationCenter.default.post(name: NSNotification.Name("OrbClicked"), object: clickedOrb)
+            }
         }
         
         override func mouseUp(with event: NSEvent) {
             let mouseLocation = convert(event.locationInWindow, from: nil)
             print("🖱️ Mouse up at: \(mouseLocation)")
+        }
+        
+        private func getClickedOrb(at location: NSPoint) -> ProjectOrb? {
+            let centerX = bounds.midX
+            let centerY = bounds.maxY - 10
+            let radius = min(bounds.width, bounds.height) / 2 + 18.5
+            
+            for (index, orb) in orbManager.orbs.enumerated() {
+                guard orb.isVisible && orb.animationScale > 0 else { continue }
+                
+                let angle = orb.angle
+                let orbX = centerX + radius * cos(angle)
+                let orbY = centerY + radius * sin(angle)
+                let orbRadius = 15.0 * orb.scale * orb.animationScale
+                
+                let distance = sqrt(pow(location.x - orbX, 2) + pow(location.y - orbY, 2))
+                
+                if distance <= orbRadius {
+                    print("🖱️ Found clicked orb at index \(index): \(orb.name)")
+                    return orb
+                }
+            }
+            
+            return nil
         }
         
         private func checkOrbHover(at location: NSPoint) {
@@ -1621,5 +1751,89 @@ extension NotchIndicatorView {
         }
         
         return path
+    }
+}
+
+// MARK: - Task Card View
+class TaskCardView: NSView {
+    private var tasks: [Task] = []
+    private var projectName: String = ""
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        self.wantsLayer = true
+        self.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        self.wantsLayer = true
+        self.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+    
+    func updateTasks(_ tasks: [Task], projectName: String) {
+        self.tasks = tasks
+        self.projectName = projectName
+        self.needsDisplay = true
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        // Draw basic card background
+        let cardRect = bounds.insetBy(dx: 10, dy: 10)
+        context.setFillColor(NSColor.controlBackgroundColor.cgColor)
+        context.fill(cardRect)
+        
+        // Draw border
+        context.setStrokeColor(NSColor.separatorColor.cgColor)
+        context.setLineWidth(1.0)
+        context.stroke(cardRect)
+        
+        // Draw project name
+        let titleRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 40, width: cardRect.width - 40, height: 30)
+        let titleFont = NSFont.systemFont(ofSize: 16, weight: .bold)
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: NSColor.labelColor
+        ]
+        projectName.draw(in: titleRect, withAttributes: titleAttributes)
+        
+        // Draw tasks
+        let taskStartY = titleRect.minY - 20
+        let taskHeight: CGFloat = 25
+        let taskSpacing: CGFloat = 5
+        
+        for (index, task) in tasks.enumerated() {
+            let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing)
+            let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
+            
+            // Draw task checkbox
+            let checkboxRect = CGRect(x: taskRect.minX, y: taskRect.minY + 5, width: 15, height: 15)
+            context.setStrokeColor(NSColor.controlTextColor.cgColor)
+            context.setLineWidth(1.0)
+            context.stroke(checkboxRect)
+            
+            if task.isCompleted {
+                // Draw checkmark
+                context.setStrokeColor(NSColor.systemGreen.cgColor)
+                context.setLineWidth(2.0)
+                context.move(to: CGPoint(x: checkboxRect.minX + 3, y: checkboxRect.midY))
+                context.addLine(to: CGPoint(x: checkboxRect.midX, y: checkboxRect.minY + 3))
+                context.addLine(to: CGPoint(x: checkboxRect.maxX - 3, y: checkboxRect.maxY - 3))
+                context.strokePath()
+            }
+            
+            // Draw task title
+            let taskTitleRect = CGRect(x: taskRect.minX + 25, y: taskRect.minY, width: taskRect.width - 25, height: taskRect.height)
+            let taskFont = NSFont.systemFont(ofSize: 14)
+            let taskAttributes: [NSAttributedString.Key: Any] = [
+                .font: taskFont,
+                .foregroundColor: task.isCompleted ? NSColor.secondaryLabelColor : NSColor.labelColor
+            ]
+            task.title.draw(in: taskTitleRect, withAttributes: taskAttributes)
+        }
     }
 }

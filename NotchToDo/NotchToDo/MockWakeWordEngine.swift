@@ -27,3 +27,4 @@ class MockWakeWordEngine: WakeWordEngine {
         timer = nil
     }
 }
+
