@@ -1592,10 +1592,14 @@ class SemiCircleView: NSView {
         private var hoveredOrbId: UUID? = nil
         private var mouseTrackingArea: NSTrackingArea?
         
-        // Smooth hover animation properties
-        private var currentHoverScale: Double = 1.0
-        private var targetHoverScale: Double = 1.0
-        private var hoverAnimationTimer: Timer?
+    // Smooth hover animation properties
+    private var currentHoverScale: Double = 1.0
+    private var targetHoverScale: Double = 1.0
+    private var hoverAnimationTimer: Timer?
+    
+    // Hover tooltip properties
+    private var hoveredOrbForTooltip: ProjectOrb? = nil
+    private var tooltipAnimationPhase: Double = 0.0
         
         init(orbManager: OrbManager, controller: NotchOverlayController) {
             self.orbManager = orbManager
@@ -1786,6 +1790,7 @@ class SemiCircleView: NSView {
             // Check hover state for all orbs
             
             var newHoveredOrbId: UUID? = nil
+            var newHoveredOrb: ProjectOrb? = nil
             
             for (index, orb) in orbManager.orbs.enumerated() {
                 guard orb.isVisible && orb.animationScale > 0 else { 
@@ -1801,6 +1806,7 @@ class SemiCircleView: NSView {
                 
                 if orbRect.contains(location) {
                     newHoveredOrbId = orb.id
+                    newHoveredOrb = orb
                     break
                 }
             }
@@ -1808,10 +1814,19 @@ class SemiCircleView: NSView {
             // Update hover state if it changed
             if newHoveredOrbId != hoveredOrbId {
                 hoveredOrbId = newHoveredOrbId
+                hoveredOrbForTooltip = newHoveredOrb
                 
                 // Start smooth hover animation
                 targetHoverScale = (newHoveredOrbId != nil) ? 1.15 : 1.0
                 startHoverAnimation()
+                
+                // Start tooltip animation
+                if newHoveredOrb != nil {
+                    startTooltipAnimation()
+                } else {
+                    // Fade out tooltip when no orb is hovered
+                    tooltipAnimationPhase = 0.0
+                }
             }
         }
         
@@ -1839,6 +1854,25 @@ class SemiCircleView: NSView {
                     // Use ease-out cubic for smooth deceleration
                     let easingFactor = 0.15
                     self.currentHoverScale += difference * easingFactor
+                }
+                
+                self.needsDisplay = true
+            }
+        }
+        
+        private func startTooltipAnimation() {
+            // Animate tooltip fade in
+            tooltipAnimationPhase = 0.0
+            let tooltipTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] timer in
+                guard let self = self else { 
+                    timer.invalidate()
+                    return 
+                }
+                
+                self.tooltipAnimationPhase += 0.05
+                if self.tooltipAnimationPhase >= 1.0 {
+                    self.tooltipAnimationPhase = 1.0
+                    timer.invalidate()
                 }
                 
                 self.needsDisplay = true
@@ -1919,6 +1953,57 @@ class SemiCircleView: NSView {
                 drawModernOrb(context: context, x: x, y: y, size: finalSize, color: orb.color, taskCount: orb.taskCount, scale: orb.scale * orb.animationScale * hoverScale, animationPhase: animationPhase, orbIndex: index, isHovered: isHovered)
             }
         }
+        
+        // Draw tooltip for hovered orb
+        if let hoveredOrb = hoveredOrbForTooltip, tooltipAnimationPhase > 0 {
+            drawTooltip(context: context, for: hoveredOrb, at: centerX, centerY: centerY, radius: radius)
+        }
+    }
+    
+    private func drawTooltip(context: CGContext, for orb: ProjectOrb, at centerX: Double, centerY: Double, radius: Double) {
+        // Calculate orb position
+        let x = centerX + radius * cos(orb.angle)
+        let y = centerY + radius * sin(orb.angle)
+        let size = 40.0 * orb.scale * orb.animationScale
+        
+        // Position tooltip below the orb
+        let tooltipY = y - size/2 - 25
+        let tooltipWidth: CGFloat = 120
+        let tooltipHeight: CGFloat = 24
+        let tooltipX = x - tooltipWidth/2
+        
+        // Create tooltip rectangle with rounded corners
+        let tooltipRect = NSRect(x: tooltipX, y: tooltipY, width: tooltipWidth, height: tooltipHeight)
+        let tooltipPath = NSBezierPath(roundedRect: tooltipRect, xRadius: 8, yRadius: 8)
+        
+        // Apply fade animation
+        let alpha = tooltipAnimationPhase * 0.9 // Slightly transparent even at full opacity
+        
+        // Draw subtle black background with slight transparency
+        context.saveGState()
+        context.setFillColor(NSColor.black.withAlphaComponent(alpha * 0.8).cgColor)
+        tooltipPath.fill()
+        
+        // Draw subtle border
+        context.setStrokeColor(NSColor.white.withAlphaComponent(alpha * 0.3).cgColor)
+        context.setLineWidth(0.5)
+        tooltipPath.stroke()
+        context.restoreGState()
+        
+        // Draw project name text
+        let textRect = tooltipRect.insetBy(dx: 8, dy: 4)
+        let font = NSFont(name: "SF Pro Text", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white.withAlphaComponent(alpha),
+            .paragraphStyle: {
+                let style = NSMutableParagraphStyle()
+                style.alignment = .center
+                return style
+            }()
+        ]
+        
+        orb.name.draw(in: textRect, withAttributes: textAttributes)
     }
     
     private func drawModernOrb(context: CGContext, x: Double, y: Double, size: Double, color: NSColor, taskCount: Int, scale: Double, animationPhase: Double, orbIndex: Int, isHovered: Bool) {
