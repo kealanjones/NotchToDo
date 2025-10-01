@@ -3,17 +3,17 @@ import SwiftUI
 import QuartzCore
 
 // MARK: - Task Data Model
-class Task: ObservableObject, Identifiable {
-    let id = UUID()
-    @Published var title: String
+    class Task: ObservableObject, Identifiable {
+        let id = UUID()
+        @Published var title: String
     @Published var isCompleted: Bool = false
-    
+        
     init(title: String) {
-        self.title = title
+            self.title = title
+        }
     }
-}
 
-// MARK: - Project Orb Data Model
+    // MARK: - Project Orb Data Model
     class ProjectOrb: ObservableObject, Identifiable {
         let id = UUID()
         let name: String
@@ -278,9 +278,14 @@ struct OrbColorPalette {
             isVisible = true
             visibleOrbCount = 0
             
-            // Reset all orbs to invisible and zero scale
+            // Check if orbs are already visible and animated (not just reset to invisible)
+            let orbsAlreadyVisible = orbs.allSatisfy { $0.isVisible && $0.animationScale > 0.5 }
+            print("🎯 Orbs already visible and animated: \(orbsAlreadyVisible)")
+            
+            if !orbsAlreadyVisible {
+                // Reset all orbs to invisible and zero scale
             for orb in orbs {
-                orb.isVisible = false
+                    orb.isVisible = false
                 orb.animationScale = 0.0
             }
             
@@ -294,6 +299,15 @@ struct OrbColorPalette {
                     // Animate growth from 0 to 1
                     self.animateOrbGrowth(orb: orb, duration: 0.6)
                 }
+                }
+            } else {
+                print("🎯 Orbs already visible and animated, ensuring full scale")
+                // Ensure all orbs are fully scaled and visible
+                for orb in orbs {
+                    orb.isVisible = true
+                    orb.animationScale = 1.0
+                }
+                visibleOrbCount = orbs.count
             }
         }
         
@@ -341,6 +355,11 @@ class NotchOverlayController: ObservableObject {
     private var isVisible = false
     var isSemiCircleVisible = false // Added
     private var orbManager = OrbManager()
+    
+        // Auto-fade timer system
+        private var fadeTimer: Timer?
+        private let fadeDelay: TimeInterval = 10.0
+        private var isFaded: Bool = false
 
     
     @Published var isVerticallyExpanding = false
@@ -586,6 +605,10 @@ class NotchOverlayController: ObservableObject {
     }
     
     func showTaskCard(for orb: ProjectOrb) {
+        print("🎯 showTaskCard() called for orb: \(orb.name)")
+        print("🎯 taskCardWindow exists: \(taskCardWindow != nil)")
+        print("🎯 currentOpenOrb: \(currentOpenOrb?.name ?? "none")")
+        
         guard let window = taskCardWindow else { 
             print("🚨 ERROR: taskCardWindow is nil!")
             return 
@@ -599,10 +622,14 @@ class NotchOverlayController: ObservableObject {
         }
         
         print("🎯 Showing task card for orb: \(orb.name)")
+        print("🎯 Orb has \(orb.tasks.count) tasks")
         
         // Update the task card view with orb's tasks
         if let taskCardView = window.contentView as? TaskCardView {
+            print("🎯 Updating task card view with tasks")
             taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color)
+        } else {
+            print("🚨 ERROR: taskCardView is not TaskCardView!")
         }
         
         // Position the card below the semi-circle
@@ -637,6 +664,155 @@ class NotchOverlayController: ObservableObject {
         window.orderOut(nil)
         currentOpenOrb = nil
         print("🎯 Task card hidden")
+    }
+    
+    // MARK: - Auto-Fade System
+    
+    func resetFadeTimer() {
+        // Cancel existing timer
+        fadeTimer?.invalidate()
+        fadeTimer = nil
+        
+        print("🔄 resetFadeTimer() called - isFaded: \(isFaded)")
+        
+        // If we were faded, show everything again
+        if isFaded {
+            print("🔄 Elements were faded, calling showAllElements()")
+            showAllElements()
+        }
+        
+        // Start new timer
+        fadeTimer = Timer.scheduledTimer(withTimeInterval: fadeDelay, repeats: false) { [weak self] _ in
+            self?.fadeAllElements()
+        }
+        
+        print("🎯 Fade timer reset - will fade in \(fadeDelay) seconds")
+    }
+    
+    func resetFadeTimerWithoutShowing() {
+        // Cancel existing timer
+        fadeTimer?.invalidate()
+        fadeTimer = nil
+        
+        print("🔄 resetFadeTimerWithoutShowing() called - isFaded: \(isFaded)")
+        
+        // Reset faded state since elements are being shown normally
+        isFaded = false
+        print("🔄 Reset isFaded to false")
+        
+        // Don't show elements - just reset the timer
+        // This is used when elements are already being shown normally
+        
+        // Start new timer
+        fadeTimer = Timer.scheduledTimer(withTimeInterval: fadeDelay, repeats: false) { [weak self] _ in
+            self?.fadeAllElements()
+        }
+        
+        print("🎯 Fade timer reset (without showing) - will fade in \(fadeDelay) seconds")
+    }
+    
+    private func fadeAllElements() {
+        guard !isFaded else { return }
+        
+        isFaded = true
+        print("🎯 Auto-fading all elements after \(fadeDelay) seconds of inactivity")
+        
+        // Fade out semi-circle
+        if let semiCircleWindow = semiCircleWindow {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.5
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                semiCircleWindow.animator().alphaValue = 0.0
+            }
+        }
+        
+        // Fade out task card if open
+        if let taskCardWindow = taskCardWindow, taskCardWindow.isVisible {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.5
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                taskCardWindow.animator().alphaValue = 0.0
+            }
+        }
+        
+        // Hide elements after animation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.semiCircleWindow?.orderOut(nil)
+            self.taskCardWindow?.orderOut(nil)
+            self.currentOpenOrb = nil
+            self.isSemiCircleVisible = false
+        }
+    }
+    
+    private func showAllElements() {
+        guard isFaded else { 
+            print("🔄 showAllElements() called but isFaded is false, returning")
+            return 
+        }
+        
+        isFaded = false
+        print("🎯 Showing all elements due to user interaction - isFaded was true")
+        
+        // Re-establish notification observers to ensure they're still active
+        reestablishNotificationObservers()
+        
+        // Check if view hierarchy needs rebuilding
+        if semiCircleView == nil || semiCircleView?.controller == nil {
+            print("🔄 View hierarchy appears corrupted, rebuilding...")
+            rebuildViewHierarchy()
+        }
+        
+        // Show semi-circle
+        if let semiCircleWindow = semiCircleWindow {
+            print("🔄 Showing semi-circle window")
+            semiCircleWindow.alphaValue = 1.0
+            
+            // Ensure the window can become key before making it key
+            semiCircleWindow.level = .screenSaver
+            semiCircleWindow.acceptsMouseMovedEvents = true
+            semiCircleWindow.ignoresMouseEvents = false
+            
+            // Make it visible first, then try to make it key
+            semiCircleWindow.orderFront(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if semiCircleWindow.canBecomeKey {
+                    semiCircleWindow.makeKey()
+                } else {
+                    print("🔄 Window cannot become key, but will still receive mouse events")
+                }
+            }
+            
+            isSemiCircleVisible = true
+        }
+        
+        // Show task card if it was open
+        if let taskCardWindow = taskCardWindow, currentOpenOrb != nil {
+            print("🔄 Showing task card window")
+            taskCardWindow.alphaValue = 1.0
+            taskCardWindow.makeKeyAndOrderFront(nil)
+            
+            // Ensure the window can receive mouse events
+            taskCardWindow.acceptsMouseMovedEvents = true
+            taskCardWindow.ignoresMouseEvents = false
+        }
+        
+        // Re-setup mouse tracking after showing elements with a longer delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            // Ensure the semi-circle view has a valid controller reference
+            if let semiCircleView = self.semiCircleView {
+                semiCircleView.controller = self
+                print("🔄 Controller reference re-established for semi-circle view")
+            }
+            
+            self.semiCircleView?.setupMouseTracking()
+            print("🖱️ Mouse tracking re-setup after showing all elements")
+            
+            // Force a redraw to ensure everything is properly rendered
+            self.semiCircleView?.needsDisplay = true
+            
+            // Test if the view is responsive
+            self.testViewResponsiveness()
+        }
     }
     
     func createNewProject(name: String) {
@@ -713,6 +889,9 @@ class NotchOverlayController: ObservableObject {
         window.isMovable = false
         window.acceptsMouseMovedEvents = true // Fixed: Accept mouse moved events
         
+        // Ensure the window can become key
+        window.hidesOnDeactivate = false
+        
         print("🎯 Semi-circle window created with frame: \(window.frame)")
         print("🎯 Window level: \(window.level.rawValue)")
         print("🎯 Window ignoresMouseEvents: \(window.ignoresMouseEvents)")
@@ -723,7 +902,7 @@ class NotchOverlayController: ObservableObject {
         window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         
         // Create semi-circle view with orbs
-        let semiCircleView = SemiCircleWithOrbsView(orbManager: orbManager)
+        let semiCircleView = SemiCircleWithOrbsView(orbManager: orbManager, controller: self)
         window.contentView = semiCircleView
         
         print("🎯 Semi-circle view created and set as content view")
@@ -769,23 +948,100 @@ class NotchOverlayController: ObservableObject {
     }
     
     private func setupNotificationObservers() {
+        // Remove any existing observers first to avoid duplicates
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("OrbClicked"), object: nil)
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("TestNotification"), object: nil)
+        
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleOrbClicked(_:)),
             name: NSNotification.Name("OrbClicked"),
             object: nil
         )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleTestNotification(_:)),
+            name: NSNotification.Name("TestNotification"),
+            object: nil
+        )
         print("🎯 Notification observers setup complete")
     }
     
+    private func reestablishNotificationObservers() {
+        print("🔄 Re-establishing notification observers")
+        setupNotificationObservers()
+        
+        // Test that the notification system is working
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            print("🔄 Testing notification system...")
+            // This is just a test to verify the observer is working
+            NotificationCenter.default.post(name: NSNotification.Name("TestNotification"), object: nil)
+        }
+    }
+    
+    private func rebuildViewHierarchy() {
+        print("🔄 Rebuilding view hierarchy due to potential corruption")
+        
+        // Recreate the semi-circle view if it's corrupted
+        if let semiCircleWindow = semiCircleWindow {
+            let newSemiCircleView = SemiCircleWithOrbsView(orbManager: orbManager, controller: self)
+            semiCircleWindow.contentView = newSemiCircleView
+            self.semiCircleView = newSemiCircleView
+            
+            // Re-setup mouse tracking
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                newSemiCircleView.setupMouseTracking()
+                print("🖱️ Mouse tracking re-setup after view hierarchy rebuild")
+            }
+        }
+    }
+    
+    @objc private func handleTestNotification(_ notification: Notification) {
+        print("🔄 Test notification received - notification system is working")
+    }
+    
+    private func testViewResponsiveness() {
+        guard let semiCircleView = semiCircleView else {
+            print("🔄 ERROR: Semi-circle view is nil during responsiveness test")
+            return
+        }
+        
+        print("🔄 Testing view responsiveness...")
+        print("🔄 View bounds: \(semiCircleView.bounds)")
+        print("🔄 View window: \(semiCircleView.window != nil)")
+        print("🔄 View acceptsFirstMouse: \(semiCircleView.acceptsFirstMouse(for: nil))")
+        print("🔄 View acceptsFirstResponder: \(semiCircleView.acceptsFirstResponder)")
+        print("🔄 View isHidden: \(semiCircleView.isHidden)")
+        print("🔄 View alphaValue: \(semiCircleView.alphaValue)")
+        
+        // Test if we can post a test notification
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            print("🔄 Posting test notification to verify responsiveness...")
+            NotificationCenter.default.post(name: NSNotification.Name("TestNotification"), object: nil)
+        }
+    }
+    
     @objc private func handleOrbClicked(_ notification: Notification) {
+        print("🎯 handleOrbClicked called")
+        print("🎯 Notification object: \(notification.object)")
+        print("🎯 Notification name: \(notification.name)")
+        
         guard let orb = notification.object as? ProjectOrb else {
             print("🚨 ERROR: Invalid orb object in notification")
             return
         }
         
         print("🎯 Received orb click notification for: \(orb.name)")
+        print("🎯 Current open orb: \(currentOpenOrb?.name ?? "none")")
+        
+        // Reset auto-fade timer on orb interaction
+        print("🎯 Calling resetFadeTimer()")
+        resetFadeTimer()
+        
+        print("🎯 Calling showTaskCard()")
         showTaskCard(for: orb)
+        print("🎯 showTaskCard() completed")
     }
     
     private func positionSemiCircle(_ window: NSWindow) {
@@ -794,9 +1050,9 @@ class NotchOverlayController: ObservableObject {
         let screenFrame = screen.frame
         let notchInfo = getNotchInfo(for: screen)
         
-        // Position semi-circle further down, showing only bottom portion
+        // Position semi-circle to overlap the notch in the menu bar area
         let x = screenFrame.midX - window.frame.width / 2
-        let y = screenFrame.maxY - notchInfo.height - window.frame.height + 48 // 4 pixels further down
+        let y = screenFrame.maxY - window.frame.height + 10 // Position to overlap notch in menu bar
         
         window.setFrameOrigin(NSPoint(x: x, y: y))
     }
@@ -812,6 +1068,9 @@ class NotchOverlayController: ObservableObject {
         print("🎯 Window level: \(window.level.rawValue)")
         print("🎯 Window isVisible: \(window.isVisible)")
         
+        // Ensure window is positioned correctly before animation
+        positionSemiCircle(window)
+        
         // Start with semi-circle hidden and scaled down from center top
         let finalFrame = window.frame
         let centerTopX = finalFrame.midX
@@ -821,7 +1080,21 @@ class NotchOverlayController: ObservableObject {
         let startFrame = NSRect(x: centerTopX - 5, y: centerTopY - 5, width: 10, height: 10)
         window.setFrame(startFrame, display: false)
         window.alphaValue = 0.0
-        window.makeKeyAndOrderFront(nil)
+        
+        // Ensure proper window level and mouse event handling
+        window.level = .screenSaver
+        window.acceptsMouseMovedEvents = true
+        window.ignoresMouseEvents = false
+        
+        // Make it visible first, then try to make it key
+        window.orderFront(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if window.canBecomeKey {
+                window.makeKey()
+            } else {
+                print("🔄 Window cannot become key in showSemiCircle, but will still receive mouse events")
+            }
+        }
         
         print("🎯 Window made key and ordered front")
         print("🎯 Window isVisible after makeKeyAndOrderFront: \(window.isVisible)")
@@ -840,7 +1113,9 @@ class NotchOverlayController: ObservableObject {
         } completionHandler: {
             // Show orbs after semi-circle appears
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                print("🔄 About to show orbs - isFaded: \(self.isFaded)")
                 self.orbManager.showOrbs()
+                print("🔄 Orbs shown")
                 // Force redraw of the semi-circle view
                 self.semiCircleView?.needsDisplay = true
                 
@@ -848,6 +1123,9 @@ class NotchOverlayController: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     self.semiCircleView?.setupMouseTracking()
                     print("🖱️ Mouse tracking setup attempted after semi-circle show")
+                    
+                    // Start auto-fade timer after everything is fully loaded
+                    self.resetFadeTimerWithoutShowing()
                 }
             }
         }
@@ -1308,13 +1586,20 @@ class SemiCircleView: NSView {
     // MARK: - Semi-Circle with Orbs View
     class SemiCircleWithOrbsView: NSView {
         private let orbManager: OrbManager
+        internal weak var controller: NotchOverlayController?
         private var animationTimer: Timer?
         private var animationPhase: Double = 0.0
         private var hoveredOrbId: UUID? = nil
         private var mouseTrackingArea: NSTrackingArea?
         
-        init(orbManager: OrbManager) {
+        // Smooth hover animation properties
+        private var currentHoverScale: Double = 1.0
+        private var targetHoverScale: Double = 1.0
+        private var hoverAnimationTimer: Timer?
+        
+        init(orbManager: OrbManager, controller: NotchOverlayController) {
             self.orbManager = orbManager
+            self.controller = controller
             super.init(frame: NSRect.zero)
             startAnimation()
             
@@ -1418,12 +1703,35 @@ class SemiCircleView: NSView {
         override func mouseDown(with event: NSEvent) {
             let mouseLocation = convert(event.locationInWindow, from: nil)
             print("🖱️ Mouse CLICKED in semi-circle view at: \(mouseLocation)")
+            print("🖱️ View bounds: \(bounds)")
+            print("🖱️ Window level: \(window?.level.rawValue ?? -1)")
+            print("🖱️ Window acceptsMouseMovedEvents: \(window?.acceptsMouseMovedEvents ?? false)")
+            print("🖱️ Window ignoresMouseEvents: \(window?.ignoresMouseEvents ?? true)")
+            print("🖱️ Controller reference: \(controller != nil)")
+            print("🖱️ OrbManager orbs count: \(orbManager.orbs.count)")
+            print("🖱️ View isHidden: \(isHidden)")
+            print("🖱️ View alphaValue: \(alphaValue)")
+            print("🖱️ View window isVisible: \(window?.isVisible ?? false)")
+            print("🖱️ View window isKeyWindow: \(window?.isKeyWindow ?? false)")
+            print("🖱️ View window isMainWindow: \(window?.isMainWindow ?? false)")
+            
+            // Reset auto-fade timer on mouse interaction
+            if let controller = self.controller {
+                print("🖱️ Calling resetFadeTimer()")
+                controller.resetFadeTimer()
+            } else {
+                print("🖱️ ERROR: No controller reference!")
+            }
             
             // Check if click is on an orb
             if let clickedOrb = getClickedOrb(at: mouseLocation) {
                 print("🖱️ Clicked on orb: \(clickedOrb.name)")
+                print("🖱️ Posting OrbClicked notification")
                 // Notify the controller to show task card
                 NotificationCenter.default.post(name: NSNotification.Name("OrbClicked"), object: clickedOrb)
+                print("🖱️ Notification posted successfully")
+            } else {
+                print("🖱️ No orb found at click location")
             }
         }
         
@@ -1437,15 +1745,29 @@ class SemiCircleView: NSView {
             let centerY = bounds.maxY - 10
             let radius = min(bounds.width, bounds.height) / 2 + 18.5
             
+            print("🖱️ Checking for clicked orb at location: \(location)")
+            print("🖱️ Center: (\(centerX), \(centerY)), Radius: \(radius)")
+            print("🖱️ Total orbs: \(orbManager.orbs.count)")
+            
             for (index, orb) in orbManager.orbs.enumerated() {
-                guard orb.isVisible && orb.animationScale > 0 else { continue }
+                print("🖱️ Orb \(index): \(orb.name), visible: \(orb.isVisible), animationScale: \(orb.animationScale)")
+                
+                // Only check if orb is visible - remove animationScale check for now
+                guard orb.isVisible else { 
+                    print("🖱️ Orb \(index) not visible, skipping")
+                    continue 
+                }
                 
                 let angle = orb.angle
                 let orbX = centerX + radius * cos(angle)
                 let orbY = centerY + radius * sin(angle)
-                let orbRadius = 15.0 * orb.scale * orb.animationScale
+                // Use a minimum scale if animationScale is 0
+                let effectiveScale = max(orb.animationScale, 0.1)
+                let orbRadius = 15.0 * orb.scale * effectiveScale
                 
                 let distance = sqrt(pow(location.x - orbX, 2) + pow(location.y - orbY, 2))
+                
+                print("🖱️ Orb \(index) at (\(orbX), \(orbY)), radius: \(orbRadius), distance: \(distance)")
                 
                 if distance <= orbRadius {
                     print("🖱️ Found clicked orb at index \(index): \(orb.name)")
@@ -1461,14 +1783,12 @@ class SemiCircleView: NSView {
             let centerY = bounds.maxY - 10
             let radius = min(bounds.width, bounds.height) / 2 + 18.5
             
-            print("🖱️ Checking hover at \(location), bounds: \(bounds), center: (\(centerX), \(centerY)), radius: \(radius)")
-            print("🖱️ Total orbs to check: \(orbManager.orbs.count)")
+            // Check hover state for all orbs
             
             var newHoveredOrbId: UUID? = nil
             
             for (index, orb) in orbManager.orbs.enumerated() {
                 guard orb.isVisible && orb.animationScale > 0 else { 
-                    print("🖱️ Orb \(index) not visible or no scale (visible: \(orb.isVisible), scale: \(orb.animationScale))")
                     continue 
                 }
                 
@@ -1479,21 +1799,19 @@ class SemiCircleView: NSView {
                 // Check if mouse is within orb bounds (with some padding for easier hovering)
                 let orbRect = NSRect(x: x - size/2.0 - 10.0, y: y - size/2.0 - 10.0, width: size + 20.0, height: size + 20.0)
                 
-                print("🖱️ Orb \(index) at (\(x), \(y)) size \(size), rect: \(orbRect)")
-                print("🖱️ Mouse location \(location) contains check: \(orbRect.contains(location))")
-                
                 if orbRect.contains(location) {
                     newHoveredOrbId = orb.id
-                    print("🖱️ Hovering over orb \(index)!")
                     break
                 }
             }
             
             // Update hover state if it changed
             if newHoveredOrbId != hoveredOrbId {
-                print("🖱️ Hover state changed from \(String(describing: hoveredOrbId)) to \(String(describing: newHoveredOrbId))")
                 hoveredOrbId = newHoveredOrbId
-                needsDisplay = true
+                
+                // Start smooth hover animation
+                targetHoverScale = (newHoveredOrbId != nil) ? 1.15 : 1.0
+                startHoverAnimation()
             }
         }
         
@@ -1502,6 +1820,27 @@ class SemiCircleView: NSView {
             animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 self.animationPhase += 0.05
+                self.needsDisplay = true
+            }
+        }
+        
+        private func startHoverAnimation() {
+            hoverAnimationTimer?.invalidate()
+            hoverAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                
+                // Smooth interpolation with easing
+                let difference = self.targetHoverScale - self.currentHoverScale
+                if abs(difference) < 0.001 {
+                    self.currentHoverScale = self.targetHoverScale
+                    self.hoverAnimationTimer?.invalidate()
+                    self.hoverAnimationTimer = nil
+                } else {
+                    // Use ease-out cubic for smooth deceleration
+                    let easingFactor = 0.15
+                    self.currentHoverScale += difference * easingFactor
+                }
+                
                 self.needsDisplay = true
             }
         }
@@ -1567,36 +1906,41 @@ class SemiCircleView: NSView {
             let baseSize = 40.0 * orb.scale
             let animatedSize = baseSize * orb.animationScale // Apply growth animation
             
-            // Apply hover effect - grow by 15% when hovered
-            let hoverScale: Double = (hoveredOrbId == orb.id) ? 1.15 : 1.0
+            // Apply smooth hover effect only to the hovered orb
+            let isHovered = (hoveredOrbId == orb.id)
+            let hoverScale = isHovered ? currentHoverScale : 1.0
             let finalSize = animatedSize * hoverScale
             
-            print("🎯 Drawing orb at (\(x), \(y)) with size \(finalSize), animationScale: \(orb.animationScale), hovered: \(hoveredOrbId == orb.id)")
+            // Draw orb with smooth hover effects
             
             // Only draw if orb is visible and has some scale
             if orb.isVisible && orb.animationScale > 0 {
                 // Create modern, dynamic orb with multiple layers
-                drawModernOrb(context: context, x: x, y: y, size: finalSize, color: orb.color, taskCount: orb.taskCount, scale: orb.scale * orb.animationScale * hoverScale, animationPhase: animationPhase, orbIndex: index)
+                drawModernOrb(context: context, x: x, y: y, size: finalSize, color: orb.color, taskCount: orb.taskCount, scale: orb.scale * orb.animationScale * hoverScale, animationPhase: animationPhase, orbIndex: index, isHovered: isHovered)
             }
         }
     }
     
-    private func drawModernOrb(context: CGContext, x: Double, y: Double, size: Double, color: NSColor, taskCount: Int, scale: Double, animationPhase: Double, orbIndex: Int) {
+    private func drawModernOrb(context: CGContext, x: Double, y: Double, size: Double, color: NSColor, taskCount: Int, scale: Double, animationPhase: Double, orbIndex: Int, isHovered: Bool) {
         // Calculate liquid glass effects based on animation phase and orb index
         let orbPhase = animationPhase + Double(orbIndex) * 0.3
         let orbRect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
         
-        // 1. Outer liquid glass glow - soft, diffused
+        // 1. Outer liquid glass glow - soft, diffused, enhanced on hover
         context.saveGState()
-        let glowSize = size * 1.8
+        let hoverGlowMultiplier = isHovered ? 1.0 + (currentHoverScale - 1.0) * 0.5 : 1.0 // Subtle glow increase
+        let glowSize = size * 1.8 * hoverGlowMultiplier
         let glowRect = CGRect(x: x - glowSize/2, y: y - glowSize/2, width: glowSize, height: glowSize)
+        
+        // Enhanced glow intensity on hover
+        let glowIntensity = isHovered ? 0.3 + (currentHoverScale - 1.0) * 0.2 : 0.3
         let glowGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                    colors: [
-                                        color.withAlphaComponent(0.3).cgColor,
-                                        color.withAlphaComponent(0.1).cgColor,
+                                colors: [
+                                        color.withAlphaComponent(glowIntensity).cgColor,
+                                        color.withAlphaComponent(glowIntensity * 0.3).cgColor,
                                         NSColor.clear.cgColor
-                                    ] as CFArray,
-                                    locations: [0.0, 0.6, 1.0])!
+                                ] as CFArray,
+                                locations: [0.0, 0.6, 1.0])!
         
         context.drawRadialGradient(glowGradient,
                                  startCenter: CGPoint(x: x, y: y),
@@ -1605,6 +1949,30 @@ class SemiCircleView: NSView {
                                  endRadius: glowSize/2,
                                  options: [])
         context.restoreGState()
+        
+        // 1.5. Additional soft white glow on hover
+        if isHovered {
+        context.saveGState()
+            let whiteGlowSize = size * 1.6 * (1.0 + (currentHoverScale - 1.0) * 0.2) // Smaller, more focused glow
+            let whiteGlowIntensity = 0.7 + (currentHoverScale - 1.0) * 0.4 // Much more intense on hover
+            
+            let whiteGlowGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: [
+                                                NSColor.white.withAlphaComponent(whiteGlowIntensity).cgColor,
+                                                NSColor.white.withAlphaComponent(whiteGlowIntensity * 0.6).cgColor,
+                                                NSColor.white.withAlphaComponent(whiteGlowIntensity * 0.2).cgColor,
+                                                NSColor.clear.cgColor
+                                        ] as CFArray,
+                                        locations: [0.0, 0.4, 0.8, 1.0])!
+            
+            context.drawRadialGradient(whiteGlowGradient,
+                                     startCenter: CGPoint(x: x, y: y),
+                                     startRadius: 0,
+                                     endCenter: CGPoint(x: x, y: y),
+                                     endRadius: whiteGlowSize/2,
+                                     options: [])
+        context.restoreGState()
+        }
         
         // 2. Main liquid glass orb with glass morphism effect
         context.saveGState()
@@ -1634,15 +2002,18 @@ class SemiCircleView: NSView {
         context.addEllipse(in: highlightRect)
         context.clip()
         
-        // Flowing highlight position
-        let flowX = cos(orbPhase * 0.3) * size * 0.1
-        let flowY = sin(orbPhase * 0.2) * size * 0.1
+        // Enhanced flowing highlight position with hover responsiveness
+        let hoverFlowMultiplier = isHovered ? 1.0 + (currentHoverScale - 1.0) * 0.5 : 1.0
+        let flowX = cos(orbPhase * 0.3) * size * 0.1 * hoverFlowMultiplier
+        let flowY = sin(orbPhase * 0.2) * size * 0.1 * hoverFlowMultiplier
         
+        // Enhanced highlight intensity on hover
+        let highlightIntensity = isHovered ? 0.8 + (currentHoverScale - 1.0) * 0.2 : 0.8
         let highlightGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                          colors: [
-                                            NSColor.white.withAlphaComponent(0.8).cgColor,
-                                            NSColor.white.withAlphaComponent(0.4).cgColor,
-                                            NSColor.white.withAlphaComponent(0.1).cgColor,
+                                            NSColor.white.withAlphaComponent(highlightIntensity).cgColor,
+                                            NSColor.white.withAlphaComponent(highlightIntensity * 0.5).cgColor,
+                                            NSColor.white.withAlphaComponent(highlightIntensity * 0.125).cgColor,
                                             NSColor.clear.cgColor
                                          ] as CFArray,
                                          locations: [0.0, 0.3, 0.7, 1.0])!
@@ -1656,12 +2027,12 @@ class SemiCircleView: NSView {
         context.restoreGState()
         
         // 4. Liquid glass border - subtle and flowing
-        context.saveGState()
+            context.saveGState()
         context.setStrokeColor(NSColor.white.withAlphaComponent(0.6).cgColor)
         context.setLineWidth(1.5)
         context.addEllipse(in: orbRect.insetBy(dx: 0.75, dy: 0.75))
-        context.strokePath()
-        context.restoreGState()
+            context.strokePath()
+            context.restoreGState()
         
         // 5. Internal liquid flow - subtle moving particles
         for i in 0..<3 {
@@ -1713,7 +2084,7 @@ class SemiCircleView: NSView {
             
             // Badge text
             let text = "\(taskCount)" as NSString
-            let font = NSFont.systemFont(ofSize: 10 * scale, weight: .bold)
+            let font = NSFont(name: "SF Pro Display", size: 10 * scale) ?? NSFont.systemFont(ofSize: 10 * scale, weight: .bold)
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: NSColor.white,
@@ -1826,28 +2197,28 @@ class TaskCardView: NSView {
         
         // 2. Main glass morphism card background
         context.saveGState()
-        let roundedRect = NSBezierPath(roundedRect: cardRect, xRadius: 16, yRadius: 16)
+        let roundedRect = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
         roundedRect.addClip()
         
         // Glass background with high opacity for better blur
         let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                     colors: [
+                                      colors: [
                                         NSColor.black.withAlphaComponent(0.95).cgColor,
                                         NSColor.black.withAlphaComponent(0.90).cgColor,
                                         NSColor.black.withAlphaComponent(0.85).cgColor
-                                     ] as CFArray,
-                                     locations: [0.0, 0.5, 1.0])!
+                                      ] as CFArray,
+                                      locations: [0.0, 0.5, 1.0])!
         
         context.drawLinearGradient(glassGradient,
                                  start: CGPoint(x: cardRect.minX, y: cardRect.minY),
                                  end: CGPoint(x: cardRect.maxX, y: cardRect.maxY),
-                                 options: [])
+                                  options: [])
         context.restoreGState()
         
         // 3. Flowing liquid glass highlight
         context.saveGState()
         let highlightRect = cardRect.insetBy(dx: 4, dy: 4)
-        let highlightPath = NSBezierPath(roundedRect: highlightRect, xRadius: 12, yRadius: 12)
+        let highlightPath = NSBezierPath(roundedRect: highlightRect, xRadius: 24, yRadius: 24)
         highlightPath.addClip()
         
         // Flowing highlight position
@@ -1881,51 +2252,73 @@ class TaskCardView: NSView {
         drawLiquidParticles(in: context, cardRect: cardRect)
     }
     
-    private func drawProjectHeader(in context: CGContext, cardRect: NSRect) {
-        let headerRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 60, width: cardRect.width - 40, height: 50)
+    private func calculateAdaptiveFontSize(for text: String, in rect: NSRect) -> CGFloat {
+        let baseFontSize: CGFloat = 18.0
+        let minFontSize: CGFloat = 12.0
+        let maxFontSize: CGFloat = 22.0
         
-        // Glass morphism header background with orb color
+        // Calculate text length factor (longer text = smaller font)
+        let textLength = text.count
+        let lengthFactor = max(0.6, min(1.0, 1.0 - (Double(textLength - 10) * 0.02)))
+        
+        // Calculate available width factor
+        let availableWidth = rect.width - 20 // Account for padding
+        let widthFactor = min(1.0, availableWidth / 200.0) // Normalize to 200px baseline
+        
+        // Combine factors and calculate final font size
+        let combinedFactor = lengthFactor * widthFactor
+        let adaptiveSize = baseFontSize * combinedFactor
+        
+        // Clamp to min/max bounds
+        return max(minFontSize, min(maxFontSize, adaptiveSize))
+    }
+    
+    private func drawProjectHeader(in context: CGContext, cardRect: NSRect) {
+        let headerRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 70, width: cardRect.width - 40, height: 50)
+        
+        // Modern opaque header background with orb color
         context.saveGState()
-        let headerPath = NSBezierPath(roundedRect: headerRect, xRadius: 8, yRadius: 8)
+        let headerPath = NSBezierPath(roundedRect: headerRect, xRadius: 18, yRadius: 18)
         headerPath.addClip()
         
+        // Modern opaque gradient with subtle variation
         let headerGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                      colors: [
-                                        orbColor.withAlphaComponent(0.4).cgColor,
-                                        orbColor.withAlphaComponent(0.2).cgColor,
-                                        orbColor.withAlphaComponent(0.1).cgColor,
-                                        NSColor.clear.cgColor
-                                      ] as CFArray,
-                                      locations: [0.0, 0.3, 0.7, 1.0])!
+                                       colors: [
+                                        orbColor.withAlphaComponent(0.85).cgColor,
+                                        orbColor.withAlphaComponent(0.75).cgColor,
+                                        orbColor.withAlphaComponent(0.65).cgColor
+                                       ] as CFArray,
+                                      locations: [0.0, 0.5, 1.0])!
         
         context.drawLinearGradient(headerGradient,
-                                 start: CGPoint(x: headerRect.minX, y: headerRect.minY),
-                                 end: CGPoint(x: headerRect.maxX, y: headerRect.maxY),
-                                 options: [])
+                                  start: CGPoint(x: headerRect.minX, y: headerRect.maxY),
+                                  end: CGPoint(x: headerRect.minX, y: headerRect.minY),
+                                  options: [])
         context.restoreGState()
         
-        // Header border with orb color
-        context.saveGState()
-        context.setStrokeColor(orbColor.withAlphaComponent(0.6).cgColor)
-        context.setLineWidth(0.5)
-        let headerBorderPath = NSBezierPath(roundedRect: headerRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 7, yRadius: 7)
-        headerBorderPath.stroke()
-        context.restoreGState()
+        // Project name with glass text effect - centered both horizontally and vertically
+        let titleRect = CGRect(x: headerRect.minX, y: headerRect.minY + (50 - 24) / 2, width: headerRect.width, height: 24)
         
-        // Project name with glass text effect
-        let titleRect = CGRect(x: headerRect.minX + 15, y: headerRect.minY + 8, width: headerRect.width - 30, height: 24)
-        let titleFont = NSFont.systemFont(ofSize: 18, weight: .bold)
+        // Calculate adaptive font size based on text length and available space
+        let adaptiveFontSize = calculateAdaptiveFontSize(for: projectName, in: titleRect)
+        let titleFont = NSFont(name: "SF Pro Display", size: adaptiveFontSize) ?? NSFont.systemFont(ofSize: adaptiveFontSize, weight: .bold)
+        
         let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: titleFont,
             .foregroundColor: NSColor.white,
             .strokeColor: NSColor.black.withAlphaComponent(0.3),
-            .strokeWidth: -0.5
+            .strokeWidth: -0.5,
+            .paragraphStyle: {
+                let style = NSMutableParagraphStyle()
+                style.alignment = .center
+                return style
+            }()
         ]
         projectName.draw(in: titleRect, withAttributes: titleAttributes)
     }
     
     private func drawTaskList(in context: CGContext, cardRect: NSRect) {
-        let taskStartY = cardRect.maxY - 100  // Much more space from header
+        let taskStartY = cardRect.maxY - 130  // Adjusted for new header position
         let taskHeight: CGFloat = 35        // Slightly taller tasks
         let taskSpacing: CGFloat = 12       // More spacing between tasks
         
@@ -1940,14 +2333,14 @@ class TaskCardView: NSView {
             
             // Glass morphism task background
             context.saveGState()
-            let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 6, yRadius: 6)
+            let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
             taskPath.addClip()
             
             let taskGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                         colors: [
-                                            NSColor.white.withAlphaComponent(0.1).cgColor,
-                                            NSColor.white.withAlphaComponent(0.05).cgColor,
-                                            NSColor.clear.cgColor
+                                            NSColor.white.withAlphaComponent(0.8).cgColor,
+                                            NSColor.white.withAlphaComponent(0.6).cgColor,
+                                            NSColor.white.withAlphaComponent(0.4).cgColor
                                         ] as CFArray,
                                         locations: [0.0, 0.5, 1.0])!
             
@@ -1955,27 +2348,27 @@ class TaskCardView: NSView {
                                      start: CGPoint(x: taskRect.minX, y: taskRect.minY),
                                      end: CGPoint(x: taskRect.maxX, y: taskRect.maxY),
                                      options: [])
-            context.restoreGState()
-            
+        context.restoreGState()
+        
             // Task border
             context.saveGState()
-            context.setStrokeColor(NSColor.white.withAlphaComponent(0.15).cgColor)
+            context.setStrokeColor(NSColor.black.withAlphaComponent(0.2).cgColor)
             context.setLineWidth(0.5)
-            let taskBorderPath = NSBezierPath(roundedRect: taskRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 5, yRadius: 5)
+            let taskBorderPath = NSBezierPath(roundedRect: taskRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 11, yRadius: 11)
             taskBorderPath.stroke()
             context.restoreGState()
             
             // Modern glass checkbox
             drawGlassCheckbox(in: context, taskRect: taskRect, isCompleted: task.isCompleted, index: index)
             
-            // Task title with glass text effect
-            let taskTitleRect = CGRect(x: taskRect.minX + 35, y: taskRect.minY + 8, width: taskRect.width - 40, height: 22)
-            let taskFont = NSFont.systemFont(ofSize: 14, weight: .medium)
+            // Task title with glass text effect - vertically centered
+            let taskTitleRect = CGRect(x: taskRect.minX + 35, y: taskRect.minY + (taskHeight - 22) / 2, width: taskRect.width - 40, height: 22)
+            let taskFont = NSFont(name: "SF Pro Text", size: 14) ?? NSFont.systemFont(ofSize: 14, weight: .medium)
             let taskAttributes: [NSAttributedString.Key: Any] = [
                 .font: taskFont,
-                .foregroundColor: task.isCompleted ? NSColor.white.withAlphaComponent(0.6) : NSColor.white,
-                .strokeColor: NSColor.black.withAlphaComponent(0.2),
-                .strokeWidth: -0.3
+                .foregroundColor: task.isCompleted ? NSColor.black.withAlphaComponent(0.4) : NSColor.black,
+                .strokeColor: NSColor.white.withAlphaComponent(0.3),
+                .strokeWidth: -0.5
             ]
             task.title.draw(in: taskTitleRect, withAttributes: taskAttributes)
         }
@@ -1987,7 +2380,7 @@ class TaskCardView: NSView {
         
         // Glass morphism checkbox background
         context.saveGState()
-        let checkboxPath = NSBezierPath(roundedRect: checkboxRect, xRadius: 4, yRadius: 4)
+        let checkboxPath = NSBezierPath(roundedRect: checkboxRect, xRadius: 6, yRadius: 6)
         checkboxPath.addClip()
         
         let checkboxGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
@@ -2001,14 +2394,14 @@ class TaskCardView: NSView {
         context.drawLinearGradient(checkboxGradient,
                                  start: CGPoint(x: checkboxRect.minX, y: checkboxRect.minY),
                                  end: CGPoint(x: checkboxRect.maxX, y: checkboxRect.maxY),
-                                 options: [])
+                                  options: [])
         context.restoreGState()
         
         // Checkbox border
         context.saveGState()
         context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
         context.setLineWidth(1.0)
-        let checkboxBorderPath = NSBezierPath(roundedRect: checkboxRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 3, yRadius: 3)
+        let checkboxBorderPath = NSBezierPath(roundedRect: checkboxRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
         checkboxBorderPath.stroke()
         context.restoreGState()
         
