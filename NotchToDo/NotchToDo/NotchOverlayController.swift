@@ -27,6 +27,12 @@ import QuartzCore
         @Published var angle: Double = 0.0 // In radians
         @Published var radius: Double = 0.0 // Distance from center
         @Published var scale: Double = 1.0 // Scale factor for sizing
+        
+        // Individual animation phase for unique movement patterns
+        var animationPhase: Double = 0.0
+        
+        // Individual animation speed multiplier for each orb
+        var animationSpeed: Double = 1.0
     
     init(name: String, color: NSColor) {
         self.name = name
@@ -100,6 +106,12 @@ struct OrbColorPalette {
         func createOrb(name: String) -> ProjectOrb {
             let color = OrbColorPalette.getColor(for: name)
             let orb = ProjectOrb(name: name, color: color)
+            
+            // Give each orb a unique starting animation phase for independent movement
+            orb.animationPhase = Double.random(in: 0...12.56) // Random phase between 0 and 4π for more spread
+            
+            // Give each orb a unique animation speed (0.3x to 2.0x normal speed)
+            orb.animationSpeed = Double.random(in: 0.3...2.0)
             
             // Add orb to the collection
             orbs.append(orb)
@@ -1828,13 +1840,23 @@ class SemiCircleView: NSView {
                     tooltipAnimationPhase = 0.0
                 }
             }
+            
+            // Reset auto-fade timer when hovering over any orb
+            if newHoveredOrbId != nil {
+                controller?.resetFadeTimer()
+            }
         }
         
         private func startAnimation() {
             animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
-                self.animationPhase += 0.05
+                
+                // Update each orb's individual animation phase with its own speed
+                for orb in self.orbManager.orbs {
+                    orb.animationPhase += 0.05 * orb.animationSpeed
+                }
+                
                 self.needsDisplay = true
             }
         }
@@ -1950,7 +1972,7 @@ class SemiCircleView: NSView {
             // Only draw if orb is visible and has some scale
             if orb.isVisible && orb.animationScale > 0 {
                 // Create modern, dynamic orb with multiple layers
-                drawModernOrb(context: context, x: x, y: y, size: finalSize, color: orb.color, taskCount: orb.taskCount, scale: orb.scale * orb.animationScale * hoverScale, animationPhase: animationPhase, orbIndex: index, isHovered: isHovered)
+                drawModernOrb(context: context, x: x, y: y, size: finalSize, color: orb.color, taskCount: orb.taskCount, scale: orb.scale * orb.animationScale * hoverScale, animationPhase: orb.animationPhase, orbIndex: index, isHovered: isHovered)
             }
         }
         
@@ -2007,8 +2029,14 @@ class SemiCircleView: NSView {
     }
     
     private func drawModernOrb(context: CGContext, x: Double, y: Double, size: Double, color: NSColor, taskCount: Int, scale: Double, animationPhase: Double, orbIndex: Int, isHovered: Bool) {
-        // Calculate liquid glass effects based on animation phase and orb index
-        let orbPhase = animationPhase + Double(orbIndex) * 0.3
+        // Each orb now has its own independent animation phase with additional variance
+        let orbPhase = animationPhase
+        let orbIndexFloat = Double(orbIndex)
+        
+        // Create different animation frequencies for each orb
+        let slowPhase = orbPhase * 0.3 + orbIndexFloat * 1.2
+        let fastPhase = orbPhase * 1.8 + orbIndexFloat * 0.7
+        let mediumPhase = orbPhase * 0.8 + orbIndexFloat * 2.1
         let orbRect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
         
         // 1. Outer liquid glass glow - soft, diffused, enhanced on hover
@@ -2087,10 +2115,10 @@ class SemiCircleView: NSView {
         context.addEllipse(in: highlightRect)
         context.clip()
         
-        // Enhanced flowing highlight position with hover responsiveness
+        // Enhanced flowing highlight position with hover responsiveness and varied animation
         let hoverFlowMultiplier = isHovered ? 1.0 + (currentHoverScale - 1.0) * 0.5 : 1.0
-        let flowX = cos(orbPhase * 0.3) * size * 0.1 * hoverFlowMultiplier
-        let flowY = sin(orbPhase * 0.2) * size * 0.1 * hoverFlowMultiplier
+        let flowX = cos(slowPhase) * size * 0.1 * hoverFlowMultiplier
+        let flowY = sin(mediumPhase) * size * 0.1 * hoverFlowMultiplier
         
         // Enhanced highlight intensity on hover
         let highlightIntensity = isHovered ? 0.8 + (currentHoverScale - 1.0) * 0.2 : 0.8
@@ -2119,9 +2147,9 @@ class SemiCircleView: NSView {
             context.strokePath()
             context.restoreGState()
         
-        // 5. Internal liquid flow - subtle moving particles
+        // 5. Internal liquid flow - subtle moving particles with varied animation
         for i in 0..<3 {
-            let particlePhase = orbPhase + Double(i) * 1.0
+            let particlePhase = fastPhase + Double(i) * 1.5
             let particleRadius = size * 0.2 + sin(particlePhase * 0.5) * size * 0.05
             let particleX = x + cos(particlePhase * 0.4) * particleRadius
             let particleY = y + sin(particlePhase * 0.3) * particleRadius
