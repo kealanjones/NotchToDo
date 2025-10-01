@@ -1604,6 +1604,12 @@ class SemiCircleView: NSView {
         private var hoveredOrbId: UUID? = nil
         private var mouseTrackingArea: NSTrackingArea?
         
+        // Drag and drop functionality
+        private var isDragging: Bool = false
+        private var draggedOrb: ProjectOrb? = nil
+        private var dragStartLocation: NSPoint = NSPoint.zero
+        private var dragCurrentLocation: NSPoint = NSPoint.zero
+        
     // Smooth hover animation properties
     private var currentHoverScale: Double = 1.0
     private var targetHoverScale: Double = 1.0
@@ -1718,43 +1724,32 @@ class SemiCircleView: NSView {
         
         override func mouseDown(with event: NSEvent) {
             let mouseLocation = convert(event.locationInWindow, from: nil)
-            print("🖱️ Mouse CLICKED in semi-circle view at: \(mouseLocation)")
-            print("🖱️ View bounds: \(bounds)")
-            print("🖱️ Window level: \(window?.level.rawValue ?? -1)")
-            print("🖱️ Window acceptsMouseMovedEvents: \(window?.acceptsMouseMovedEvents ?? false)")
-            print("🖱️ Window ignoresMouseEvents: \(window?.ignoresMouseEvents ?? true)")
-            print("🖱️ Controller reference: \(controller != nil)")
-            print("🖱️ OrbManager orbs count: \(orbManager.orbs.count)")
-            print("🖱️ View isHidden: \(isHidden)")
-            print("🖱️ View alphaValue: \(alphaValue)")
-            print("🖱️ View window isVisible: \(window?.isVisible ?? false)")
-            print("🖱️ View window isKeyWindow: \(window?.isKeyWindow ?? false)")
-            print("🖱️ View window isMainWindow: \(window?.isMainWindow ?? false)")
+            print("🖱️ Mouse DOWN at: \(mouseLocation)")
             
-            // Reset auto-fade timer on mouse interaction
-            if let controller = self.controller {
-                print("🖱️ Calling resetFadeTimer()")
-                controller.resetFadeTimer()
-            } else {
-                print("🖱️ ERROR: No controller reference!")
-            }
-            
-            // Check if click is on an orb
-            if let clickedOrb = getClickedOrb(at: mouseLocation) {
+            // Check if we clicked on an orb
+            if let clickedOrb = findOrbAt(location: mouseLocation) {
                 print("🖱️ Clicked on orb: \(clickedOrb.name)")
-                print("🖱️ Posting OrbClicked notification")
-                // Notify the controller to show task card
-                NotificationCenter.default.post(name: NSNotification.Name("OrbClicked"), object: clickedOrb)
-                print("🖱️ Notification posted successfully")
-            } else {
-                print("🖱️ No orb found at click location")
+                startDragOperation(orb: clickedOrb, at: mouseLocation)
             }
         }
         
         override func mouseUp(with event: NSEvent) {
             let mouseLocation = convert(event.locationInWindow, from: nil)
-            print("🖱️ Mouse up at: \(mouseLocation)")
+            print("🖱️ Mouse UP at: \(mouseLocation)")
+            
+            if isDragging {
+                endDragOperation(at: mouseLocation)
+            }
         }
+        
+        override func mouseDragged(with event: NSEvent) {
+            let mouseLocation = convert(event.locationInWindow, from: nil)
+            
+            if isDragging {
+                updateDragOperation(to: mouseLocation)
+            }
+        }
+        
         
         private func getClickedOrb(at location: NSPoint) -> ProjectOrb? {
             let centerX = bounds.midX
@@ -1792,6 +1787,60 @@ class SemiCircleView: NSView {
             }
             
             return nil
+        }
+        
+        private func findOrbAt(location: NSPoint) -> ProjectOrb? {
+            return getClickedOrb(at: location)
+        }
+        
+        // MARK: - Drag and Drop Operations
+        
+        private func startDragOperation(orb: ProjectOrb, at location: NSPoint) {
+            print("🚀 Starting drag operation for orb: \(orb.name)")
+            isDragging = true
+            draggedOrb = orb
+            dragStartLocation = location
+            dragCurrentLocation = location
+            
+            // Reset auto-fade timer on drag start
+            controller?.resetFadeTimer()
+            
+            needsDisplay = true
+        }
+        
+        private func updateDragOperation(to location: NSPoint) {
+            dragCurrentLocation = location
+            needsDisplay = true
+        }
+        
+        private func endDragOperation(at location: NSPoint) {
+            print("🚀 Ending drag operation at: \(location)")
+            
+            // Check if orb was dragged far enough from original position
+            let dragDistance = sqrt(pow(location.x - dragStartLocation.x, 2) + pow(location.y - dragStartLocation.y, 2))
+            let threshold: CGFloat = 30.0 // Minimum drag distance to trigger drop
+            
+            if dragDistance > threshold {
+                print("🚀 Orb dragged far enough, opening task list")
+                // Open task list for the dragged orb
+                if let orb = draggedOrb {
+                    NotificationCenter.default.post(name: NSNotification.Name("OrbClicked"), object: orb)
+                }
+            } else {
+                print("🚀 Orb not dragged far enough, treating as click")
+                // Treat as regular click
+                if let orb = draggedOrb {
+                    NotificationCenter.default.post(name: NSNotification.Name("OrbClicked"), object: orb)
+                }
+            }
+            
+            // Reset drag state
+            isDragging = false
+            draggedOrb = nil
+            dragStartLocation = NSPoint.zero
+            dragCurrentLocation = NSPoint.zero
+            
+            needsDisplay = true
         }
         
         private func checkOrbHover(at location: NSPoint) {
@@ -1957,6 +2006,11 @@ class SemiCircleView: NSView {
         for (index, orb) in orbManager.orbs.enumerated() {
             print("🎯 Orb \(index): visible=\(orb.isVisible), angle=\(orb.angle), scale=\(orb.scale), animationScale=\(orb.animationScale)")
             
+            // Skip drawing the dragged orb in its original position
+            if isDragging && draggedOrb?.id == orb.id {
+                continue
+            }
+            
             let x = centerX + radius * cos(orb.angle)
             let y = centerY + radius * sin(orb.angle)
             let baseSize = 40.0 * orb.scale
@@ -1974,6 +2028,15 @@ class SemiCircleView: NSView {
                 // Create modern, dynamic orb with multiple layers
                 drawModernOrb(context: context, x: x, y: y, size: finalSize, color: orb.color, taskCount: orb.taskCount, scale: orb.scale * orb.animationScale * hoverScale, animationPhase: orb.animationPhase, orbIndex: index, isHovered: isHovered)
             }
+        }
+        
+        // Draw dragged orb at cursor position if dragging
+        if isDragging, let orb = draggedOrb {
+            let baseSize = 40.0 * orb.scale
+            let animatedSize = baseSize * orb.animationScale
+            let finalSize = animatedSize * 1.2 // Slightly larger when dragging
+            
+            drawModernOrb(context: context, x: Double(dragCurrentLocation.x), y: Double(dragCurrentLocation.y), size: finalSize, color: orb.color, taskCount: orb.taskCount, scale: orb.scale * orb.animationScale * 1.2, animationPhase: orb.animationPhase, orbIndex: 999, isHovered: false)
         }
         
         // Draw tooltip for hovered orb
