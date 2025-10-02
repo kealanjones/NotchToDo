@@ -454,7 +454,6 @@ class NotchOverlayController: ObservableObject {
     private var notchIndicatorWindow: NSWindow?
     private var semiCircleWindow: NSWindow?
     private var semiCircleView: SemiCircleWithOrbsView? // Added
-    private var taskCardWindow: NSWindow? // Added for task card
     private var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
     private var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
     private var isVisible = false
@@ -474,7 +473,6 @@ class NotchOverlayController: ObservableObject {
         setupOverlayWindow()
         setupNotchIndicator()
         setupSemiCircle()
-        setupTaskCard()
         setupNotificationObservers()
     }
     
@@ -1127,15 +1125,19 @@ class NotchOverlayController: ObservableObject {
             isSemiCircleVisible = true
         }
         
-        // Show task card if it was open
-        if let taskCardWindow = taskCardWindow, currentOpenOrb != nil {
-            print("🔄 Showing task card window")
-            taskCardWindow.alphaValue = 1.0
-            taskCardWindow.makeKeyAndOrderFront(nil)
-            
-            // Ensure the window can receive mouse events
-            taskCardWindow.acceptsMouseMovedEvents = true
-            taskCardWindow.ignoresMouseEvents = false
+        // Show task cards if any were open (using new dynamic system)
+        for (orbId, window) in taskCardWindows {
+            if window.isVisible {
+                if let taskCardView = window.contentView as? TaskCardView, taskCardView.getPinnedState() {
+                    print("🔄 Showing pinned task card for orb \(orbId)")
+                    window.alphaValue = 1.0
+                    window.makeKeyAndOrderFront(nil)
+                    
+                    // Ensure the window can receive mouse events
+                    window.acceptsMouseMovedEvents = true
+                    window.ignoresMouseEvents = false
+                }
+            }
         }
         
         // Re-setup mouse tracking after showing elements with a longer delay
@@ -1262,33 +1264,6 @@ class NotchOverlayController: ObservableObject {
         print("🎯 Semi-circle setup complete - window stored: \(self.semiCircleWindow != nil)")
     }
     
-    private func setupTaskCard() {
-        print("🎯 setupTaskCard() called")
-        
-        // Create task card window
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        
-        window.isOpaque = false
-        window.backgroundColor = NSColor.clear
-        window.hasShadow = true
-        window.level = .screenSaver  // Higher than semi-circle's .screenSaver level
-        window.ignoresMouseEvents = false
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        window.isMovable = true  // Enable dragging for task cards
-        
-        // Create basic task card view
-        let taskCardView = TaskCardView()
-        taskCardView.setController(self)
-        window.contentView = taskCardView
-        
-        self.taskCardWindow = window
-        print("🎯 Task card setup complete - window stored: \(self.taskCardWindow != nil)")
-    }
     
     private func setupNotificationObservers() {
         // Remove any existing observers first to avoid duplicates
