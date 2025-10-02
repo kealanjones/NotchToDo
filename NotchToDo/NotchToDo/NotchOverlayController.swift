@@ -467,8 +467,8 @@ class NotchOverlayController: ObservableObject {
     private var orbRattleTimer: Timer?
     
     // Task drag visualization
-    private var draggedTaskWindow: NSWindow?
-    private var draggedTaskView: TaskDragView?
+    var draggedTaskWindow: NSWindow?
+    var draggedTaskView: TaskDragView?
 
     
     @Published var isVerticallyExpanding = false
