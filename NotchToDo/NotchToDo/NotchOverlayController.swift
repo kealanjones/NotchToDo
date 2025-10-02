@@ -461,10 +461,14 @@ class NotchOverlayController: ObservableObject {
     private var orbManager = OrbManager()
     
         // Auto-fade timer system
-        private var fadeTimer: Timer?
-        private let fadeDelay: TimeInterval = 10.0
-        private var isFaded: Bool = false
-        private var orbRattleTimer: Timer?
+    private var fadeTimer: Timer?
+    private let fadeDelay: TimeInterval = 10.0
+    private var isFaded: Bool = false
+    private var orbRattleTimer: Timer?
+    
+    // Task drag visualization
+    private var draggedTaskWindow: NSWindow?
+    private var draggedTaskView: TaskDragView?
 
     
     @Published var isVerticallyExpanding = false
@@ -2672,6 +2676,218 @@ extension NotchIndicatorView {
     }
 }
 
+// MARK: - Task Drag View
+class TaskDragView: NSView {
+    private var task: Task
+    private var orbColor: NSColor
+    
+    init(task: Task, orbColor: NSColor) {
+        self.task = task
+        self.orbColor = orbColor
+        super.init(frame: NSRect(x: 0, y: 0, width: 260, height: 35))
+        self.wantsLayer = true
+        self.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        let taskRect = bounds.insetBy(dx: 0, dy: 0)
+        
+        // Draw dragged task with elevated appearance
+        context.saveGState()
+        
+        // Shadow for floating effect
+        context.setShadow(offset: CGSize(width: 0, height: 4), blur: 12, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+        
+        // Task background with glass morphism
+        let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
+        taskPath.addClip()
+        
+        let taskGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                    colors: [
+                                        NSColor.white.withAlphaComponent(0.9).cgColor,
+                                        NSColor.white.withAlphaComponent(0.7).cgColor,
+                                        NSColor.white.withAlphaComponent(0.5).cgColor
+                                    ] as CFArray,
+                                    locations: [0.0, 0.5, 1.0])!
+        
+        context.drawLinearGradient(taskGradient,
+                                 start: CGPoint(x: taskRect.minX, y: taskRect.minY),
+                                 end: CGPoint(x: taskRect.maxX, y: taskRect.maxY),
+                                 options: [])
+        context.restoreGState()
+        
+        // Task border
+        context.saveGState()
+        context.setStrokeColor(NSColor.black.withAlphaComponent(0.2).cgColor)
+        context.setLineWidth(1.0)
+        let taskBorderPath = NSBezierPath(roundedRect: taskRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11)
+        taskBorderPath.stroke()
+        context.restoreGState()
+        
+        // Draw grab handle on the left
+        drawGrabHandle(in: context, taskRect: taskRect)
+        
+        // Draw checkbox on the right (completed state)
+        drawRoundedCheckbox(in: context, taskRect: taskRect, isCompleted: task.isCompleted)
+        
+        // Task title - centered between grab handle and checkbox
+        let taskTitleRect = CGRect(x: taskRect.minX + 35, y: taskRect.minY + (taskRect.height - 22) / 2, width: taskRect.width - 80, height: 22)
+        let taskFont = NSFont(name: "SF Pro Text", size: 14) ?? NSFont.systemFont(ofSize: 14, weight: .medium)
+        let taskAttributes: [NSAttributedString.Key: Any] = [
+            .font: taskFont,
+            .foregroundColor: task.isCompleted ? NSColor.black.withAlphaComponent(0.4) : NSColor.black,
+            .strokeColor: NSColor.white.withAlphaComponent(0.3),
+            .strokeWidth: -0.5
+        ]
+        task.title.draw(in: taskTitleRect, withAttributes: taskAttributes)
+    }
+    
+    private func drawGrabHandle(in context: CGContext, taskRect: CGRect) {
+        let grabHandleSize: CGFloat = 20
+        let grabHandleX = taskRect.minX + 8
+        let grabHandleY = taskRect.minY + (taskRect.height - grabHandleSize) / 2
+        let grabHandleRect = CGRect(x: grabHandleX, y: grabHandleY, width: grabHandleSize, height: grabHandleSize)
+        
+        // Draw subtle grab handle background
+        context.saveGState()
+        let grabHandlePath = NSBezierPath(roundedRect: grabHandleRect, xRadius: 4, yRadius: 4)
+        
+        // Glass morphism effect for grab handle
+        let grabHandleGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                          colors: [
+                                              NSColor.white.withAlphaComponent(0.3).cgColor,
+                                              NSColor.white.withAlphaComponent(0.1).cgColor,
+                                              NSColor.white.withAlphaComponent(0.05).cgColor
+                                          ] as CFArray,
+                                          locations: [0.0, 0.5, 1.0])!
+        
+        grabHandlePath.addClip()
+        context.drawLinearGradient(grabHandleGradient,
+                                 start: CGPoint(x: grabHandleRect.minX, y: grabHandleRect.minY),
+                                 end: CGPoint(x: grabHandleRect.maxX, y: grabHandleRect.maxY),
+                                 options: [])
+        context.restoreGState()
+        
+        // Draw three horizontal grip lines
+        context.saveGState()
+        context.setStrokeColor(NSColor.black.withAlphaComponent(0.3).cgColor)
+        context.setLineWidth(1.0)
+        
+        let lineSpacing: CGFloat = 3
+        let lineY = grabHandleRect.midY
+        let lineStartX = grabHandleRect.minX + 4
+        let lineEndX = grabHandleRect.maxX - 4
+        
+        // Draw three grip lines
+        for i in 0..<3 {
+            let y = lineY - lineSpacing + CGFloat(i) * lineSpacing
+            context.move(to: CGPoint(x: lineStartX, y: y))
+            context.addLine(to: CGPoint(x: lineEndX, y: y))
+        }
+        context.strokePath()
+        context.restoreGState()
+    }
+    
+    private func drawRoundedCheckbox(in context: CGContext, taskRect: CGRect, isCompleted: Bool) {
+        let checkboxSize: CGFloat = 22
+        let checkboxX = taskRect.maxX - checkboxSize - 8
+        let checkboxY = taskRect.minY + (taskRect.height - checkboxSize) / 2
+        let checkboxRect = CGRect(x: checkboxX, y: checkboxY, width: checkboxSize, height: checkboxSize)
+        
+        // More rounded and interesting checkbox design
+        context.saveGState()
+        
+        // Create a more rounded checkbox (closer to a circle)
+        let checkboxPath = NSBezierPath(roundedRect: checkboxRect, xRadius: checkboxSize/2, yRadius: checkboxSize/2)
+        
+        if isCompleted {
+            // Completed state - green with gradient
+            let completedGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                             colors: [
+                                                 NSColor.systemGreen.withAlphaComponent(0.9).cgColor,
+                                                 NSColor.systemGreen.withAlphaComponent(0.7).cgColor,
+                                                 NSColor.systemGreen.withAlphaComponent(0.5).cgColor
+                                             ] as CFArray,
+                                             locations: [0.0, 0.5, 1.0])!
+            
+            checkboxPath.addClip()
+            context.drawRadialGradient(completedGradient,
+                                     startCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                                     startRadius: 0,
+                                     endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                                     endRadius: checkboxSize/2,
+                                     options: [])
+            
+            // Add subtle glow effect for completed state
+            context.restoreGState()
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4, color: NSColor.systemGreen.withAlphaComponent(0.4).cgColor)
+            context.setFillColor(NSColor.clear.cgColor)
+            checkboxPath.fill()
+            context.restoreGState()
+            
+        } else {
+            // Uncompleted state - subtle glass morphism
+            let uncompletedGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                               colors: [
+                                                   NSColor.white.withAlphaComponent(0.6).cgColor,
+                                                   NSColor.white.withAlphaComponent(0.3).cgColor,
+                                                   NSColor.white.withAlphaComponent(0.1).cgColor
+                                               ] as CFArray,
+                                               locations: [0.0, 0.5, 1.0])!
+            
+            checkboxPath.addClip()
+            context.drawRadialGradient(uncompletedGradient,
+                                     startCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                                     startRadius: 0,
+                                     endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                                     endRadius: checkboxSize/2,
+                                     options: [])
+        }
+        
+        context.restoreGState()
+        
+        // Subtle border
+        context.saveGState()
+        let borderColor = isCompleted ? NSColor.systemGreen.withAlphaComponent(0.6) : NSColor.black.withAlphaComponent(0.15)
+        context.setStrokeColor(borderColor.cgColor)
+        context.setLineWidth(1.5)
+        checkboxPath.stroke()
+        context.restoreGState()
+        
+        // Checkmark for completed state
+        if isCompleted {
+            context.saveGState()
+            context.setStrokeColor(NSColor.white.cgColor)
+            context.setLineWidth(2.5)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            
+            // Draw a more elegant checkmark
+            let checkmarkPath = NSBezierPath()
+            let checkmarkSize = checkboxSize * 0.6
+            let startX = checkboxRect.midX - checkmarkSize * 0.3
+            let startY = checkboxRect.midY
+            let midX = checkboxRect.midX
+            let midY = checkboxRect.midY + checkmarkSize * 0.2
+            let endX = checkboxRect.midX + checkmarkSize * 0.3
+            let endY = checkboxRect.midY - checkmarkSize * 0.2
+            
+            checkmarkPath.move(to: CGPoint(x: startX, y: startY))
+            checkmarkPath.line(to: CGPoint(x: midX, y: midY))
+            checkmarkPath.line(to: CGPoint(x: endX, y: endY))
+            checkmarkPath.stroke()
+            context.restoreGState()
+        }
+    }
+}
+
 // MARK: - Task Card View
 class TaskCardView: NSView {
     private var tasks: [Task] = []
@@ -2971,6 +3187,9 @@ class TaskCardView: NSView {
         draggedTaskIndex = taskIndex
         taskDragStartLocation = location
         
+        // Create floating drag window
+        createDragWindow(for: tasks[taskIndex])
+        
         // Change cursor to indicate task dragging
         NSCursor.closedHand.set()
         
@@ -2982,14 +3201,68 @@ class TaskCardView: NSView {
         print("🎯 Started dragging task: \(tasks[taskIndex].title)")
     }
     
+    private func createDragWindow(for task: Task) {
+        // Create a floating window for the dragged task
+        let dragWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 35),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        
+        dragWindow.isOpaque = false
+        dragWindow.backgroundColor = NSColor.clear
+        dragWindow.hasShadow = false // We'll handle shadow in the view
+        dragWindow.level = .screenSaver
+        dragWindow.ignoresMouseEvents = true // Don't interfere with mouse events
+        dragWindow.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        
+        // Create drag view
+        let dragView = TaskDragView(task: task, orbColor: orbColor)
+        dragWindow.contentView = dragView
+        
+        // Position window at current mouse location
+        let mouseLocation = NSEvent.mouseLocation
+        let windowFrame = dragWindow.frame
+        let windowOrigin = NSPoint(
+            x: mouseLocation.x - windowFrame.width / 2,
+            y: mouseLocation.y - windowFrame.height / 2
+        )
+        dragWindow.setFrameOrigin(windowOrigin)
+        
+        // Show the window
+        dragWindow.orderFront(nil)
+        
+        // Store references
+        controller?.draggedTaskWindow = dragWindow
+        controller?.draggedTaskView = dragView
+    }
+    
     private func updateTaskDrag(location: NSPoint) {
         guard isDraggingTask else { return }
+        
+        // Update floating drag window position
+        updateDragWindowPosition()
         
         // Update visual feedback during drag
         needsDisplay = true
         
         // Check if we're over another task card
         controller?.updateTaskDragLocation(location, from: self)
+    }
+    
+    private func updateDragWindowPosition() {
+        guard let dragWindow = controller?.draggedTaskWindow else { return }
+        
+        let mouseLocation = NSEvent.mouseLocation
+        let windowFrame = dragWindow.frame
+        let windowOrigin = NSPoint(
+            x: mouseLocation.x - windowFrame.width / 2,
+            y: mouseLocation.y - windowFrame.height / 2
+        )
+        
+        // Smoothly move the window to follow the mouse
+        dragWindow.setFrameOrigin(windowOrigin)
     }
     
     private func endTaskDrag() {
@@ -2999,6 +3272,9 @@ class TaskCardView: NSView {
         
         // Check for drop target
         controller?.handleTaskDrop(from: self, draggedTask: draggedTask, draggedTaskIndex: draggedTaskIndex)
+        
+        // Clean up floating drag window
+        cleanupDragWindow()
         
         // Reset drag state
         isDraggingTask = false
@@ -3010,6 +3286,12 @@ class TaskCardView: NSView {
         
         // Update display
         needsDisplay = true
+    }
+    
+    private func cleanupDragWindow() {
+        controller?.draggedTaskWindow?.orderOut(nil)
+        controller?.draggedTaskWindow = nil
+        controller?.draggedTaskView = nil
     }
     
     func showDropIndicator(_ show: Bool) {
@@ -3681,24 +3963,29 @@ class TaskCardView: NSView {
         context.saveGState()
         context.clip(to: taskAreaRect)
         
-        for (index, task) in tasks.enumerated() {
-            let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
-            let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
-            
-            // Store task rectangle for hit testing (only if visible)
-            if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 80 {
-                taskRects.append(taskRect)
-            }
-            
-            // Skip tasks that would go below the card bounds
-            if taskY < cardRect.minY + 20 {
-                break
-            }
-            
-            // Glass morphism task background
-        context.saveGState()
-            let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
-            taskPath.addClip()
+            for (index, task) in tasks.enumerated() {
+                // Skip drawing the dragged task (it's shown in the floating window)
+                if isDraggingTask && draggedTaskIndex == index {
+                    continue
+                }
+                
+                let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
+                let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
+                
+                // Store task rectangle for hit testing (only if visible)
+                if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 80 {
+                    taskRects.append(taskRect)
+                }
+                
+                // Skip tasks that would go below the card bounds
+                if taskY < cardRect.minY + 20 {
+                    break
+                }
+                
+                // Glass morphism task background
+                context.saveGState()
+                let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
+                taskPath.addClip()
             
             let taskGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                         colors: [
