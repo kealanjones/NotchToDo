@@ -2787,8 +2787,8 @@ class TaskCardView: NSView {
         return nil
     }
     
-    private func getClickedCheckboxIndex(at location: NSPoint) -> Int? {
-        let checkboxSize: CGFloat = 18
+    private func getClickedGrabHandleIndex(at location: NSPoint) -> Int? {
+        let grabHandleSize: CGFloat = 20
         let taskHeight: CGFloat = 35
         let taskSpacing: CGFloat = 12
         let taskStartY = bounds.maxY - 80  // Match the task positioning
@@ -2797,10 +2797,39 @@ class TaskCardView: NSView {
             let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
             let taskRect = CGRect(x: bounds.minX + 20, y: taskY, width: bounds.width - 40, height: taskHeight)
             
-            // Calculate checkbox position
+            // Calculate grab handle position (on the left)
+            let grabHandleX = taskRect.minX + 8
+            let grabHandleY = taskRect.minY + (taskRect.height - grabHandleSize) / 2
+            let grabHandleRect = CGRect(
+                x: grabHandleX, 
+                y: grabHandleY, 
+                width: grabHandleSize, 
+                height: grabHandleSize
+            )
+            
+            if grabHandleRect.contains(location) {
+                return index
+            }
+        }
+        return nil
+    }
+    
+    private func getClickedCheckboxIndex(at location: NSPoint) -> Int? {
+        let checkboxSize: CGFloat = 22
+        let taskHeight: CGFloat = 35
+        let taskSpacing: CGFloat = 12
+        let taskStartY = bounds.maxY - 80  // Match the task positioning
+        
+        for (index, task) in tasks.enumerated() {
+            let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
+            let taskRect = CGRect(x: bounds.minX + 20, y: taskY, width: bounds.width - 40, height: taskHeight)
+            
+            // Calculate checkbox position (now on the right)
+            let checkboxX = taskRect.maxX - checkboxSize - 8
+            let checkboxY = taskRect.minY + (taskRect.height - checkboxSize) / 2
             let checkboxRect = CGRect(
-                x: taskRect.minX + 8, 
-                y: taskRect.minY + (taskRect.height - checkboxSize)/2, 
+                x: checkboxX, 
+                y: checkboxY, 
                 width: checkboxSize, 
                 height: checkboxSize
             )
@@ -3095,17 +3124,23 @@ class TaskCardView: NSView {
         
         // Scroll bar is now visual only - no drag interaction needed
         
-        // Check if click is on a checkbox
-        if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
-            toggleTaskCompletion(at: checkboxIndex)
-            return
-        }
-        
-        // Check if click is on a task
-        if let taskIndex = getClickedTaskIndex(at: locationInView) {
-            startTaskDrag(taskIndex: taskIndex, location: locationInView)
-            return
-        }
+            // Check if click is on a grab handle (prioritize over checkbox)
+            if let grabHandleIndex = getClickedGrabHandleIndex(at: locationInView) {
+                startTaskDrag(taskIndex: grabHandleIndex, location: locationInView)
+                return
+            }
+            
+            // Check if click is on a checkbox
+            if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
+                toggleTaskCompletion(at: checkboxIndex)
+                return
+            }
+            
+            // Check if click is on a task (fallback for other parts of the task)
+            if let taskIndex = getClickedTaskIndex(at: locationInView) {
+                startTaskDrag(taskIndex: taskIndex, location: locationInView)
+                return
+            }
         
         // Reset fade timer on any mouse interaction (only if not pinned)
         if !isPinned {
@@ -3706,11 +3741,14 @@ class TaskCardView: NSView {
                 context.restoreGState()
             }
             
-            // Modern glass checkbox
-            drawGlassCheckbox(in: context, taskRect: taskRect, isCompleted: task.isCompleted, index: index)
-            
-            // Task title with glass text effect - vertically centered
-            let taskTitleRect = CGRect(x: taskRect.minX + 35, y: taskRect.minY + (taskHeight - 22) / 2, width: taskRect.width - 40, height: 22)
+                // Draw grab handle on the left
+                drawGrabHandle(in: context, taskRect: taskRect)
+                
+                // Modern rounded checkbox on the right
+                drawRoundedCheckbox(in: context, taskRect: taskRect, isCompleted: task.isCompleted, index: index)
+                
+                // Task title with glass text effect - centered between grab handle and checkbox
+                let taskTitleRect = CGRect(x: taskRect.minX + 35, y: taskRect.minY + (taskHeight - 22) / 2, width: taskRect.width - 80, height: 22)
             let taskFont = NSFont(name: "SF Pro Text", size: 14) ?? NSFont.systemFont(ofSize: 14, weight: .medium)
             let taskAttributes: [NSAttributedString.Key: Any] = [
                 .font: taskFont,
@@ -3767,49 +3805,140 @@ class TaskCardView: NSView {
         context.restoreGState()
     }
     
-    private func drawGlassCheckbox(in context: CGContext, taskRect: NSRect, isCompleted: Bool, index: Int) {
-        let checkboxSize: CGFloat = 18
-        let checkboxRect = CGRect(x: taskRect.minX + 8, y: taskRect.minY + (taskRect.height - checkboxSize)/2, width: checkboxSize, height: checkboxSize)
+    private func drawGrabHandle(in context: CGContext, taskRect: CGRect) {
+        let grabHandleSize: CGFloat = 20
+        let grabHandleX = taskRect.minX + 8
+        let grabHandleY = taskRect.minY + (taskRect.height - grabHandleSize) / 2
+        let grabHandleRect = CGRect(x: grabHandleX, y: grabHandleY, width: grabHandleSize, height: grabHandleSize)
         
-        // Glass morphism checkbox background
+        // Draw subtle grab handle background
         context.saveGState()
-        let checkboxPath = NSBezierPath(roundedRect: checkboxRect, xRadius: 6, yRadius: 6)
-        checkboxPath.addClip()
+        let grabHandlePath = NSBezierPath(roundedRect: grabHandleRect, xRadius: 4, yRadius: 4)
         
-        let checkboxGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                        colors: [
-                                            NSColor.white.withAlphaComponent(0.2).cgColor,
-                                            NSColor.white.withAlphaComponent(0.1).cgColor,
-                                            NSColor.clear.cgColor
-                                        ] as CFArray,
-                                        locations: [0.0, 0.5, 1.0])!
+        // Glass morphism effect for grab handle
+        let grabHandleGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                          colors: [
+                                              NSColor.white.withAlphaComponent(0.3).cgColor,
+                                              NSColor.white.withAlphaComponent(0.1).cgColor,
+                                              NSColor.white.withAlphaComponent(0.05).cgColor
+                                          ] as CFArray,
+                                          locations: [0.0, 0.5, 1.0])!
         
-        context.drawLinearGradient(checkboxGradient,
-                                 start: CGPoint(x: checkboxRect.minX, y: checkboxRect.minY),
-                                 end: CGPoint(x: checkboxRect.maxX, y: checkboxRect.maxY),
-                                  options: [])
+        grabHandlePath.addClip()
+        context.drawLinearGradient(grabHandleGradient,
+                                 start: CGPoint(x: grabHandleRect.minX, y: grabHandleRect.minY),
+                                 end: CGPoint(x: grabHandleRect.maxX, y: grabHandleRect.maxY),
+                                 options: [])
         context.restoreGState()
         
-        // Checkbox border
+        // Draw three horizontal grip lines
         context.saveGState()
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
+        context.setStrokeColor(NSColor.black.withAlphaComponent(0.3).cgColor)
         context.setLineWidth(1.0)
-        let checkboxBorderPath = NSBezierPath(roundedRect: checkboxRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
-        checkboxBorderPath.stroke()
+        
+        let lineSpacing: CGFloat = 3
+        let lineY = grabHandleRect.midY
+        let lineStartX = grabHandleRect.minX + 4
+        let lineEndX = grabHandleRect.maxX - 4
+        
+        // Draw three grip lines
+        for i in 0..<3 {
+            let y = lineY - lineSpacing + CGFloat(i) * lineSpacing
+            context.move(to: CGPoint(x: lineStartX, y: y))
+            context.addLine(to: CGPoint(x: lineEndX, y: y))
+        }
+        context.strokePath()
         context.restoreGState()
+    }
+    
+    private func drawRoundedCheckbox(in context: CGContext, taskRect: CGRect, isCompleted: Bool, index: Int) {
+        let checkboxSize: CGFloat = 22
+        let checkboxX = taskRect.maxX - checkboxSize - 8
+        let checkboxY = taskRect.minY + (taskRect.height - checkboxSize) / 2
+        let checkboxRect = CGRect(x: checkboxX, y: checkboxY, width: checkboxSize, height: checkboxSize)
+        
+        // More rounded and interesting checkbox design
+        context.saveGState()
+        
+        // Create a more rounded checkbox (closer to a circle)
+        let checkboxPath = NSBezierPath(roundedRect: checkboxRect, xRadius: checkboxSize/2, yRadius: checkboxSize/2)
         
         if isCompleted {
-            // Glass checkmark with flowing effect
+            // Completed state - green with gradient
+            let completedGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                             colors: [
+                                                 NSColor.systemGreen.withAlphaComponent(0.9).cgColor,
+                                                 NSColor.systemGreen.withAlphaComponent(0.7).cgColor,
+                                                 NSColor.systemGreen.withAlphaComponent(0.5).cgColor
+                                             ] as CFArray,
+                                             locations: [0.0, 0.5, 1.0])!
+            
+            checkboxPath.addClip()
+            context.drawRadialGradient(completedGradient,
+                                     startCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                                     startRadius: 0,
+                                     endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                                     endRadius: checkboxSize/2,
+                                     options: [])
+            
+            // Add subtle glow effect for completed state
+            context.restoreGState()
             context.saveGState()
-            context.setStrokeColor(NSColor.systemGreen.withAlphaComponent(0.9).cgColor)
+            context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4, color: NSColor.systemGreen.withAlphaComponent(0.4).cgColor)
+            context.setFillColor(NSColor.clear.cgColor)
+            checkboxPath.fill()
+            context.restoreGState()
+            
+        } else {
+            // Uncompleted state - subtle glass morphism
+            let uncompletedGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                               colors: [
+                                                   NSColor.white.withAlphaComponent(0.6).cgColor,
+                                                   NSColor.white.withAlphaComponent(0.3).cgColor,
+                                                   NSColor.white.withAlphaComponent(0.1).cgColor
+                                               ] as CFArray,
+                                               locations: [0.0, 0.5, 1.0])!
+            
+            checkboxPath.addClip()
+            context.drawRadialGradient(uncompletedGradient,
+                                     startCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                                     startRadius: 0,
+                                     endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                                     endRadius: checkboxSize/2,
+                                     options: [])
+        }
+        
+        context.restoreGState()
+        
+        // Subtle border
+        context.saveGState()
+        let borderColor = isCompleted ? NSColor.systemGreen.withAlphaComponent(0.6) : NSColor.black.withAlphaComponent(0.15)
+        context.setStrokeColor(borderColor.cgColor)
+        context.setLineWidth(1.5)
+        checkboxPath.stroke()
+        context.restoreGState()
+        
+        // Checkmark for completed state
+        if isCompleted {
+            context.saveGState()
+            context.setStrokeColor(NSColor.white.cgColor)
             context.setLineWidth(2.5)
             context.setLineCap(.round)
             context.setLineJoin(.round)
             
+            // Draw a more elegant checkmark
             let checkmarkPath = NSBezierPath()
-            checkmarkPath.move(to: CGPoint(x: checkboxRect.minX + 4, y: checkboxRect.midY))
-            checkmarkPath.line(to: CGPoint(x: checkboxRect.midX, y: checkboxRect.minY + 4))
-            checkmarkPath.line(to: CGPoint(x: checkboxRect.maxX - 4, y: checkboxRect.maxY - 4))
+            let checkmarkSize = checkboxSize * 0.6
+            let startX = checkboxRect.midX - checkmarkSize * 0.3
+            let startY = checkboxRect.midY
+            let midX = checkboxRect.midX
+            let midY = checkboxRect.midY + checkmarkSize * 0.2
+            let endX = checkboxRect.midX + checkmarkSize * 0.3
+            let endY = checkboxRect.midY - checkmarkSize * 0.2
+            
+            checkmarkPath.move(to: CGPoint(x: startX, y: startY))
+            checkmarkPath.line(to: CGPoint(x: midX, y: midY))
+            checkmarkPath.line(to: CGPoint(x: endX, y: endY))
             checkmarkPath.stroke()
             context.restoreGState()
         }
