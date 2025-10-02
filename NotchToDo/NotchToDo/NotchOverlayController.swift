@@ -3570,11 +3570,11 @@ class TaskCardView: NSView {
             controller?.resetFadeTimer()
         }
         
-        let scrollDelta = event.scrollingDeltaY
-        let scrollSensitivity: CGFloat = 2.0
-        
-        // Update scroll offset
-        let newOffset = taskScrollOffset - (scrollDelta * scrollSensitivity)
+            let scrollDelta = event.scrollingDeltaY
+            let scrollSensitivity: CGFloat = 2.0
+            
+            // Update scroll offset (reversed direction)
+            let newOffset = taskScrollOffset + (scrollDelta * scrollSensitivity)
         taskScrollOffset = max(0, min(newOffset, maxScrollOffset))
         
         // Update display
