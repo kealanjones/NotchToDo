@@ -814,6 +814,18 @@ class NotchOverlayController: ObservableObject {
         }
     }
     
+    func closeTaskCard(for taskCardView: TaskCardView) {
+        // Find the orb ID for this task card view
+        for (orbId, window) in taskCardWindows {
+            if window.contentView === taskCardView {
+                print("❌ Closing task card for orb ID: \(orbId)")
+                hideTaskCard(for: orbManager.orbs.first { $0.id == orbId } ?? orbManager.orbs[0])
+                return
+            }
+        }
+        print("❌ Could not find orb for task card view")
+    }
+    
     // MARK: - Auto-Fade System
     
     func resetFadeTimer() {
@@ -2549,6 +2561,9 @@ class TaskCardView: NSView {
     private var isPinned = false
     private var pinButtonRect = NSRect.zero
     
+    // Close button functionality
+    private var closeButtonRect = NSRect.zero
+    
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.wantsLayer = true
@@ -2593,6 +2608,11 @@ class TaskCardView: NSView {
         
         // Notify controller about pin state change
         controller?.taskCardPinStateChanged(isPinned: isPinned)
+    }
+    
+    private func closeTaskCard() {
+        // Notify controller to close this specific task card
+        controller?.closeTaskCard(for: self)
     }
     
     private func startHoverDetection() {
@@ -2675,6 +2695,12 @@ class TaskCardView: NSView {
     
     override func mouseDown(with event: NSEvent) {
         let locationInView = convert(event.locationInWindow, from: nil)
+        
+        // Check if click is on the close button
+        if closeButtonRect.contains(locationInView) {
+            closeTaskCard()
+            return
+        }
         
         // Check if click is on the pin button
         if pinButtonRect.contains(locationInView) {
@@ -2954,8 +2980,63 @@ class TaskCardView: NSView {
         ]
         projectName.draw(in: titleRect, withAttributes: titleAttributes)
         
+        // Draw close button in top-left corner
+        drawCloseButton(in: context, headerRect: headerRect)
+        
         // Draw pin button in top-right corner
         drawPinButton(in: context, headerRect: headerRect)
+    }
+    
+    private func drawCloseButton(in context: CGContext, headerRect: CGRect) {
+        // Close button size and position
+        let buttonSize: CGFloat = 24
+        let buttonMargin: CGFloat = 8
+        closeButtonRect = CGRect(
+            x: headerRect.minX + buttonMargin,
+            y: headerRect.minY + (headerRect.height - buttonSize) / 2,
+            width: buttonSize,
+            height: buttonSize
+        )
+        
+        // Draw button background
+        context.saveGState()
+        let buttonPath = NSBezierPath(ovalIn: closeButtonRect)
+        
+        // Close button - subtle outline with hover effect
+        context.setFillColor(NSColor.white.withAlphaComponent(0.1).cgColor)
+        buttonPath.fill()
+        
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
+        context.setLineWidth(1.0)
+        buttonPath.stroke()
+        
+        context.restoreGState()
+        
+        // Draw X icon
+        drawCloseIcon(in: context, rect: closeButtonRect)
+    }
+    
+    private func drawCloseIcon(in context: CGContext, rect: CGRect) {
+        let iconSize: CGFloat = 12
+        let iconRect = CGRect(
+            x: rect.midX - iconSize/2,
+            y: rect.midY - iconSize/2,
+            width: iconSize,
+            height: iconSize
+        )
+        
+        context.saveGState()
+        context.setLineWidth(1.5)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.8).cgColor)
+        
+        // Draw X
+        context.move(to: CGPoint(x: iconRect.minX + 2, y: iconRect.minY + 2))
+        context.addLine(to: CGPoint(x: iconRect.maxX - 2, y: iconRect.maxY - 2))
+        context.move(to: CGPoint(x: iconRect.maxX - 2, y: iconRect.minY + 2))
+        context.addLine(to: CGPoint(x: iconRect.minX + 2, y: iconRect.maxY - 2))
+        context.strokePath()
+        
+        context.restoreGState()
     }
     
     private func drawPinButton(in context: CGContext, headerRect: CGRect) {
