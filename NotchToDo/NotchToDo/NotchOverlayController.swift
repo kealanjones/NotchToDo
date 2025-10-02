@@ -456,6 +456,7 @@ class NotchOverlayController: ObservableObject {
     private var semiCircleView: SemiCircleWithOrbsView? // Added
     private var taskCardWindow: NSWindow? // Added for task card
     private var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
+    private var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
     private var isVisible = false
     var isSemiCircleVisible = false // Added
     private var orbManager = OrbManager()
@@ -710,31 +711,38 @@ class NotchOverlayController: ObservableObject {
     
     func showTaskCard(for orb: ProjectOrb) {
         print("🎯 showTaskCard() called for orb: \(orb.name)")
-        print("🎯 taskCardWindow exists: \(taskCardWindow != nil)")
-        print("🎯 currentOpenOrb: \(currentOpenOrb?.name ?? "none")")
         
-        guard let window = taskCardWindow else { 
-            print("🚨 ERROR: taskCardWindow is nil!")
-            return 
-        }
-        
-        // Check if clicking the same orb that's already open - toggle off
-        if let currentOrb = currentOpenOrb, currentOrb.id == orb.id {
-            print("🎯 Toggling off task card for orb: \(orb.name)")
-            hideTaskCard()
+        // Check if this orb already has a task card open
+        if let existingWindow = taskCardWindows[orb.id] {
+            print("🎯 Toggling off existing task card for orb: \(orb.name)")
+            hideTaskCard(for: orb)
             return
         }
         
-        print("🎯 Showing task card for orb: \(orb.name)")
+        print("🎯 Creating new task card for orb: \(orb.name)")
         print("🎯 Orb has \(orb.tasks.count) tasks")
         
-        // Update the task card view with orb's tasks
-        if let taskCardView = window.contentView as? TaskCardView {
-            print("🎯 Updating task card view with tasks")
-            taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color)
-        } else {
-            print("🚨 ERROR: taskCardView is not TaskCardView!")
-        }
+        // Create a new task card window for this orb
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.isOpaque = false
+        window.backgroundColor = NSColor.clear
+        window.hasShadow = true
+        window.level = .screenSaver
+        window.ignoresMouseEvents = false
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.isMovable = true
+        
+        // Create task card view
+        let taskCardView = TaskCardView()
+        taskCardView.setController(self)
+        taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color)
+        window.contentView = taskCardView
         
         // Position the card below the semi-circle
         guard let screen = NSScreen.main,
@@ -748,8 +756,10 @@ class NotchOverlayController: ObservableObject {
         let cardHeight = window.frame.height
         let gap: CGFloat = 20
         
-        let x = semiCircleFrame.midX - cardWidth / 2
-        let y = semiCircleFrame.minY - cardHeight - gap
+        // Offset multiple cards slightly to avoid overlap
+        let cardOffset = CGFloat(taskCardWindows.count) * 20
+        let x = semiCircleFrame.midX - cardWidth / 2 + cardOffset
+        let y = semiCircleFrame.minY - cardHeight - gap - cardOffset
         
         // Ensure the card stays on screen
         let finalX = max(10, min(x, screenFrame.width - cardWidth - 10))
@@ -757,17 +767,51 @@ class NotchOverlayController: ObservableObject {
         
         window.setFrameOrigin(NSPoint(x: finalX, y: finalY))
         
-        // Show the window and track the current orb
+        // Show the window and track it
         window.makeKeyAndOrderFront(nil)
+        taskCardWindows[orb.id] = window
         currentOpenOrb = orb
+        
         print("🎯 Task card shown at position: \(window.frame) below semi-circle at: \(semiCircleFrame)")
+        print("🎯 Total open task cards: \(taskCardWindows.count)")
     }
     
     func hideTaskCard() {
-        guard let window = taskCardWindow else { return }
-        window.orderOut(nil)
+        // Hide all task cards
+        for (orbId, window) in taskCardWindows {
+            window.orderOut(nil)
+        }
+        taskCardWindows.removeAll()
         currentOpenOrb = nil
-        print("🎯 Task card hidden")
+        print("🎯 All task cards hidden")
+    }
+    
+    func hideTaskCard(for orb: ProjectOrb) {
+        if let window = taskCardWindows[orb.id] {
+            window.orderOut(nil)
+            taskCardWindows.removeValue(forKey: orb.id)
+            
+            // Update currentOpenOrb if this was the current one
+            if currentOpenOrb?.id == orb.id {
+                currentOpenOrb = taskCardWindows.isEmpty ? nil : orbManager.orbs.first { taskCardWindows[$0.id] != nil }
+            }
+            
+            print("🎯 Task card hidden for orb: \(orb.name)")
+            print("🎯 Remaining open task cards: \(taskCardWindows.count)")
+        }
+    }
+    
+    func taskCardPinStateChanged(isPinned: Bool) {
+        print("📌 Task card pin state changed: \(isPinned ? "pinned" : "unpinned")")
+        
+        if isPinned {
+            // If task card is pinned, don't fade it
+            print("📌 Task card is pinned - will not fade")
+        } else {
+            // If task card is unpinned, reset the fade timer
+            print("📌 Task card is unpinned - resetting fade timer")
+            resetFadeTimer()
+        }
     }
     
     // MARK: - Auto-Fade System
@@ -830,20 +874,43 @@ class NotchOverlayController: ObservableObject {
             }
         }
         
-        // Fade out task card if open
-        if let taskCardWindow = taskCardWindow, taskCardWindow.isVisible {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.5
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                taskCardWindow.animator().alphaValue = 0.0
+        // Fade out task cards that are not pinned
+        for (orbId, window) in taskCardWindows {
+            if window.isVisible {
+                if let taskCardView = window.contentView as? TaskCardView, taskCardView.getPinnedState() {
+                    print("📌 Task card for orb \(orbId) is pinned - skipping fade")
+                } else {
+                    NSAnimationContext.runAnimationGroup { context in
+                        context.duration = 0.5
+                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                        window.animator().alphaValue = 0.0
+                    }
+                }
             }
         }
         
         // Hide elements after animation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
             self.semiCircleWindow?.orderOut(nil)
-            self.taskCardWindow?.orderOut(nil)
-            self.currentOpenOrb = nil
+            
+            // Hide task cards that are not pinned
+            var pinnedCards: [UUID: NSWindow] = [:]
+            for (orbId, window) in self.taskCardWindows {
+                if window.isVisible {
+                    if let taskCardView = window.contentView as? TaskCardView, taskCardView.getPinnedState() {
+                        print("📌 Task card for orb \(orbId) is pinned - keeping visible")
+                        pinnedCards[orbId] = window
+                    } else {
+                        window.orderOut(nil)
+                    }
+                }
+            }
+            
+            // Update the task card windows to only include pinned ones
+            self.taskCardWindows = pinnedCards
+            self.currentOpenOrb = self.taskCardWindows.isEmpty ? nil : self.orbManager.orbs.first { self.taskCardWindows[$0.id] != nil }
+            
             self.isSemiCircleVisible = false
         }
     }
@@ -2478,6 +2545,10 @@ class TaskCardView: NSView {
     private var hoverTimer: Timer?
     private var isMouseOver = false
     
+    // Pin functionality
+    private var isPinned = false
+    private var pinButtonRect = NSRect.zero
+    
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.wantsLayer = true
@@ -2507,6 +2578,23 @@ class TaskCardView: NSView {
         self.controller = controller
     }
     
+    func getPinnedState() -> Bool {
+        return isPinned
+    }
+    
+    func setPinned(_ pinned: Bool) {
+        isPinned = pinned
+        needsDisplay = true
+    }
+    
+    private func togglePin() {
+        isPinned.toggle()
+        needsDisplay = true
+        
+        // Notify controller about pin state change
+        controller?.taskCardPinStateChanged(isPinned: isPinned)
+    }
+    
     private func startHoverDetection() {
         // Start a timer that checks if mouse is over the task card
         hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -2533,12 +2621,14 @@ class TaskCardView: NSView {
         if isOver && !isMouseOver {
             // Mouse just entered
             isMouseOver = true
-            controller?.resetFadeTimer()
+            if !isPinned {
+                controller?.resetFadeTimer()
+            }
         } else if !isOver && isMouseOver {
             // Mouse just exited
             isMouseOver = false
-        } else if isOver {
-            // Mouse is still over, keep resetting fade timer
+        } else if isOver && !isPinned {
+            // Mouse is still over, keep resetting fade timer (only if not pinned)
             controller?.resetFadeTimer()
         }
     }
@@ -2584,11 +2674,20 @@ class TaskCardView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
-        // Reset fade timer on any mouse interaction
-        controller?.resetFadeTimer()
+        let locationInView = convert(event.locationInWindow, from: nil)
+        
+        // Check if click is on the pin button
+        if pinButtonRect.contains(locationInView) {
+            togglePin()
+            return
+        }
+        
+        // Reset fade timer on any mouse interaction (only if not pinned)
+        if !isPinned {
+            controller?.resetFadeTimer()
+        }
         
         // Check if click is in the drag handle area (top 60 pixels of the card)
-        let locationInView = convert(event.locationInWindow, from: nil)
         let dragHandleRect = NSRect(x: 0, y: bounds.height - 60, width: bounds.width, height: 60)
         
         if dragHandleRect.contains(locationInView) {
@@ -2605,8 +2704,10 @@ class TaskCardView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard isDragging, let window = window else { return }
         
-        // Reset fade timer during dragging
-        controller?.resetFadeTimer()
+        // Reset fade timer during dragging (only if not pinned)
+        if !isPinned {
+            controller?.resetFadeTimer()
+        }
         
         // Throttle updates to 60 FPS for smoother dragging
         let currentTime = CACurrentMediaTime()
@@ -2644,8 +2745,10 @@ class TaskCardView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
-        // Reset fade timer on mouse up
-        controller?.resetFadeTimer()
+        // Reset fade timer on mouse up (only if not pinned)
+        if !isPinned {
+            controller?.resetFadeTimer()
+        }
         
         if isDragging {
             isDragging = false
@@ -2654,8 +2757,10 @@ class TaskCardView: NSView {
     }
     
     override func mouseEntered(with event: NSEvent) {
-        // Reset fade timer on hover
-        controller?.resetFadeTimer()
+        // Reset fade timer on hover (only if not pinned)
+        if !isPinned {
+            controller?.resetFadeTimer()
+        }
         
         // Change cursor when hovering over drag area
         let locationInView = convert(event.locationInWindow, from: nil)
@@ -2673,8 +2778,10 @@ class TaskCardView: NSView {
     }
     
     override func mouseMoved(with event: NSEvent) {
-        // Reset fade timer on mouse movement
-        controller?.resetFadeTimer()
+        // Reset fade timer on mouse movement (only if not pinned)
+        if !isPinned {
+            controller?.resetFadeTimer()
+        }
         
         // Update cursor based on mouse position
         let locationInView = convert(event.locationInWindow, from: nil)
@@ -2846,6 +2953,91 @@ class TaskCardView: NSView {
             }()
         ]
         projectName.draw(in: titleRect, withAttributes: titleAttributes)
+        
+        // Draw pin button in top-right corner
+        drawPinButton(in: context, headerRect: headerRect)
+    }
+    
+    private func drawPinButton(in context: CGContext, headerRect: CGRect) {
+        // Pin button size and position
+        let buttonSize: CGFloat = 24
+        let buttonMargin: CGFloat = 8
+        pinButtonRect = CGRect(
+            x: headerRect.maxX - buttonSize - buttonMargin,
+            y: headerRect.minY + (headerRect.height - buttonSize) / 2,
+            width: buttonSize,
+            height: buttonSize
+        )
+        
+        // Draw button background
+        context.saveGState()
+        let buttonPath = NSBezierPath(ovalIn: pinButtonRect)
+        
+        if isPinned {
+            // Pinned state - filled with orb color
+            context.setFillColor(orbColor.withAlphaComponent(0.9).cgColor)
+            buttonPath.fill()
+            
+            // Add subtle glow
+            context.setShadow(offset: CGSize(width: 0, height: 1), blur: 3, color: orbColor.withAlphaComponent(0.5).cgColor)
+            buttonPath.fill()
+        } else {
+            // Unpinned state - subtle outline
+            context.setFillColor(NSColor.white.withAlphaComponent(0.2).cgColor)
+            buttonPath.fill()
+            
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
+            context.setLineWidth(1.0)
+            buttonPath.stroke()
+        }
+        context.restoreGState()
+        
+        // Draw pin icon
+        drawPinIcon(in: context, rect: pinButtonRect, isPinned: isPinned)
+    }
+    
+    private func drawPinIcon(in context: CGContext, rect: CGRect, isPinned: Bool) {
+        let iconSize: CGFloat = 12
+        let iconRect = CGRect(
+            x: rect.midX - iconSize/2,
+            y: rect.midY - iconSize/2,
+            width: iconSize,
+            height: iconSize
+        )
+        
+        context.saveGState()
+        context.setLineWidth(1.5)
+        
+        if isPinned {
+            // Pinned icon - filled pin
+            context.setFillColor(NSColor.white.cgColor)
+            context.setStrokeColor(NSColor.white.cgColor)
+            
+            // Draw pin head (circle)
+            let pinHeadRect = CGRect(x: iconRect.midX - 3, y: iconRect.maxY - 6, width: 6, height: 6)
+            context.addEllipse(in: pinHeadRect)
+            context.fillPath()
+            
+            // Draw pin shaft
+            context.move(to: CGPoint(x: iconRect.midX, y: iconRect.minY + 2))
+            context.addLine(to: CGPoint(x: iconRect.midX, y: iconRect.maxY - 3))
+            context.strokePath()
+        } else {
+            // Unpinned icon - outline pin
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.8).cgColor)
+            
+            // Draw pin head (circle outline)
+            let pinHeadRect = CGRect(x: iconRect.midX - 3, y: iconRect.maxY - 6, width: 6, height: 6)
+            context.addEllipse(in: pinHeadRect)
+            context.strokePath()
+            
+            // Draw pin shaft
+            context.move(to: CGPoint(x: iconRect.midX, y: iconRect.minY + 2))
+            context.addLine(to: CGPoint(x: iconRect.midX, y: iconRect.maxY - 3))
+            context.strokePath()
+        }
+        
+        context.restoreGState()
     }
     
     private func drawTaskList(in context: CGContext, cardRect: NSRect) {
