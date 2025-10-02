@@ -3124,7 +3124,7 @@ class TaskCardView: NSView {
         
         // Scroll bar is now visual only - no drag interaction needed
         
-            // Check if click is on a grab handle (prioritize over checkbox)
+            // Check if click is on a grab handle (only way to start dragging)
             if let grabHandleIndex = getClickedGrabHandleIndex(at: locationInView) {
                 startTaskDrag(taskIndex: grabHandleIndex, location: locationInView)
                 return
@@ -3133,12 +3133,6 @@ class TaskCardView: NSView {
             // Check if click is on a checkbox
             if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
                 toggleTaskCompletion(at: checkboxIndex)
-                return
-            }
-            
-            // Check if click is on a task (fallback for other parts of the task)
-            if let taskIndex = getClickedTaskIndex(at: locationInView) {
-                startTaskDrag(taskIndex: taskIndex, location: locationInView)
                 return
             }
         
