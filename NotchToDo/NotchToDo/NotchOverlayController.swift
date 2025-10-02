@@ -33,6 +33,16 @@ import QuartzCore
         
         // Individual animation speed multiplier for each orb
         var animationSpeed: Double = 1.0
+        
+        // Physics properties for pendulum/spring behavior
+        var physicsDisplacement: CGPoint = CGPoint.zero // Current displacement from base position
+        var physicsVelocity: CGPoint = CGPoint.zero // Current velocity of movement
+        var physicsAcceleration: CGPoint = CGPoint.zero // Current acceleration
+        var isPhysicsActive: Bool = false // Whether physics are currently affecting this orb
+        var physicsDamping: Double = 0.85 // How quickly the orb returns to rest (0.0-1.0) - higher for smoother movement
+        var physicsStiffness: Double = 0.8 // How strongly the orb resists displacement (0.0-1.0) - gentler for smoother attraction
+        var physicsMass: Double = 0.1 // Mass affects acceleration (ultra-light for instant response)
+        var maxDisplacement: Double = 18.0 // Maximum distance orb can swing from base position
     
     init(name: String, color: NSColor) {
         self.name = name
@@ -49,6 +59,83 @@ import QuartzCore
         if !tasks.isEmpty {
             tasks.removeLast()
             taskCount = tasks.count
+        }
+    }
+    
+    // MARK: - Physics Methods
+    
+    /// Apply an impulse force to the orb (like a gentle tap)
+    func applyImpulse(_ force: CGPoint) {
+        physicsVelocity.x += force.x / physicsMass
+        physicsVelocity.y += force.y / physicsMass
+        isPhysicsActive = true
+    }
+    
+    /// Update physics simulation for one frame
+    func updatePhysics(deltaTime: Double) {
+        guard isPhysicsActive else { return }
+        
+        // Calculate spring force (trying to return to original position)
+        let displacementMagnitude = sqrt(physicsDisplacement.x * physicsDisplacement.x + physicsDisplacement.y * physicsDisplacement.y)
+        let springForceStrength = max(displacementMagnitude * physicsStiffness, 2.0) // Gentler minimum force for smoother recoil
+        
+        let springForce = CGPoint(
+            x: -physicsDisplacement.x * springForceStrength / max(displacementMagnitude, 0.1),
+            y: -physicsDisplacement.y * springForceStrength / max(displacementMagnitude, 0.1)
+        )
+        
+        // Calculate acceleration from spring force
+        physicsAcceleration = CGPoint(
+            x: springForce.x / physicsMass,
+            y: springForce.y / physicsMass
+        )
+        
+        // Update velocity with acceleration and damping
+        physicsVelocity.x = (physicsVelocity.x + physicsAcceleration.x * deltaTime) * physicsDamping
+        physicsVelocity.y = (physicsVelocity.y + physicsAcceleration.y * deltaTime) * physicsDamping
+        
+        // Update displacement with velocity
+        physicsDisplacement.x += physicsVelocity.x * deltaTime
+        physicsDisplacement.y += physicsVelocity.y * deltaTime
+        
+        // Debug print every 30 frames (0.5 seconds at 60fps)
+        if Int.random(in: 0...1799) < 1 { // Very infrequent debug
+            print("🔮 Physics Debug - Orb \(name): displacement=(\(String(format: "%.1f", physicsDisplacement.x)), \(String(format: "%.1f", physicsDisplacement.y))), velocity=(\(String(format: "%.1f", physicsVelocity.x)), \(String(format: "%.1f", physicsVelocity.y))), springForce=(\(String(format: "%.1f", springForce.x)), \(String(format: "%.1f", springForce.y)))")
+        }
+        
+        // Completely soft constraint zone - no hard stops, only gradual resistance
+        let softZoneStart = maxDisplacement * 0.4 // Start slowing down at 40% of max distance (8 points out of 20)
+        if displacementMagnitude > softZoneStart {
+            let softZoneRatio = min((displacementMagnitude - softZoneStart) / (maxDisplacement - softZoneStart), 1.0) // Clamp to 1.0
+            
+            // Use a smoother curve (ease-out) for more natural deceleration
+            let smoothRatio = 1.0 - pow(1.0 - softZoneRatio, 4) // Quartic ease-out curve for even smoother deceleration
+            
+            // Apply very gentle resistance that increases smoothly - no hard stops
+            let resistanceStrength = smoothRatio * 0.5 // Gentle resistance that gradually increases
+            let resistanceForce = CGPoint(
+                x: -physicsVelocity.x * resistanceStrength,
+                y: -physicsVelocity.y * resistanceStrength
+            )
+            
+            // Apply resistance to velocity (gradual deceleration)
+            physicsVelocity.x += resistanceForce.x * deltaTime
+            physicsVelocity.y += resistanceForce.y * deltaTime
+            
+            // NO HARD CONSTRAINT - let the resistance naturally limit the orb's movement
+            // The orb will naturally slow down and settle without any jarring stops
+        }
+        
+        // Check if orb has come to rest (very small velocity and displacement)
+        let velocityMagnitude = sqrt(physicsVelocity.x * physicsVelocity.x + physicsVelocity.y * physicsVelocity.y)
+        
+        if velocityMagnitude < 0.1 && displacementMagnitude < 0.1 {
+            // Orb has come to rest
+            physicsDisplacement = CGPoint.zero
+            physicsVelocity = CGPoint.zero
+            physicsAcceleration = CGPoint.zero
+            isPhysicsActive = false
+            print("🔮 Orb \(name) has come to rest")
         }
     }
 }
@@ -1770,8 +1857,12 @@ class SemiCircleView: NSView {
                 }
                 
                 let angle = orb.angle
-                let orbX = centerX + radius * cos(angle)
-                let orbY = centerY + radius * sin(angle)
+                let baseX = centerX + radius * cos(angle)
+                let baseY = centerY + radius * sin(angle)
+                
+                // Add physics displacement to get the actual current position
+                let orbX = baseX + orb.physicsDisplacement.x
+                let orbY = baseY + orb.physicsDisplacement.y
                 // Use a minimum scale if animationScale is 0
                 let effectiveScale = max(orb.animationScale, 0.1)
                 let orbRadius = 15.0 * orb.scale * effectiveScale
@@ -1848,7 +1939,7 @@ class SemiCircleView: NSView {
             let centerY = bounds.maxY - 10
             let radius = min(bounds.width, bounds.height) / 2 + 18.5
             
-            // Check hover state for all orbs
+            // Check hover state for all orbs and apply physics interactions
             
             var newHoveredOrbId: UUID? = nil
             var newHoveredOrb: ProjectOrb? = nil
@@ -1858,18 +1949,27 @@ class SemiCircleView: NSView {
                     continue 
                 }
                 
-                let x = centerX + radius * cos(orb.angle)
-                let y = centerY + radius * sin(orb.angle)
+                // Calculate base position (without physics displacement) for accurate hit testing
+                let baseX = centerX + radius * cos(orb.angle)
+                let baseY = centerY + radius * sin(orb.angle)
+                
+                // Current position with physics displacement
+                let currentX = baseX + orb.physicsDisplacement.x
+                let currentY = baseY + orb.physicsDisplacement.y
+                
                 let size = 40.0 * orb.scale * orb.animationScale
                 
-                // Check if mouse is within orb bounds (with some padding for easier hovering)
-                let orbRect = NSRect(x: x - size/2.0 - 10.0, y: y - size/2.0 - 10.0, width: size + 20.0, height: size + 20.0)
+                // Check if mouse is within orb bounds (using current position with physics)
+                let orbRect = NSRect(x: currentX - size/2.0 - 10.0, y: currentY - size/2.0 - 10.0, width: size + 20.0, height: size + 20.0)
                 
                 if orbRect.contains(location) {
                     newHoveredOrbId = orb.id
                     newHoveredOrb = orb
                     break
                 }
+                
+                // Apply physics interaction based on mouse proximity (using base position)
+                applyPhysicsInteraction(to: orb, at: location, baseX: baseX, baseY: baseY)
             }
             
             // Update hover state if it changed
@@ -1896,14 +1996,53 @@ class SemiCircleView: NSView {
             }
         }
         
+        // MARK: - Physics Interaction Methods
+        
+        /// Apply magnetic attraction physics to an orb based on mouse proximity
+        private func applyPhysicsInteraction(to orb: ProjectOrb, at mouseLocation: NSPoint, baseX: CGFloat, baseY: CGFloat) {
+            // Calculate distance from mouse to orb center
+            let distance = sqrt(pow(mouseLocation.x - baseX, 2) + pow(mouseLocation.y - baseY, 2))
+            
+            // Define interaction range (in points)
+            let interactionRange: CGFloat = 50.0 // Orbs react when mouse is within 50 points
+            
+            if distance < interactionRange {
+                // Calculate direction vector from orb to mouse
+                let directionX = mouseLocation.x - baseX
+                let directionY = mouseLocation.y - baseY
+                
+                // Normalize the direction vector
+                let normalizedX = directionX / distance
+                let normalizedY = directionY / distance
+                
+                // Calculate force strength based on proximity (closer = stronger)
+                let proximityStrength = 1.0 - (distance / interactionRange) // 0.0 at edge, 1.0 at center
+                let forceStrength: CGFloat = proximityStrength * 4.0 // Gentler force for smoother, slower attraction
+                
+        // Apply attraction force (orb moves toward mouse)
+        let forceX = normalizedX * forceStrength
+        let forceY = normalizedY * forceStrength
+                
+                // Apply the impulse to the orb
+                orb.applyImpulse(CGPoint(x: forceX, y: forceY))
+                
+                print("🔮 Magnetic attraction applied to orb \(orb.name): distance=\(String(format: "%.1f", distance)), force=(\(String(format: "%.1f", forceX)), \(String(format: "%.1f", forceY)))")
+            }
+        }
+        
         private func startAnimation() {
             animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
                 guard let self = self else { return }
                 
+                let deltaTime = 1.0/60.0 // 60 FPS
+                
                 // Update each orb's individual animation phase with its own speed
                 for orb in self.orbManager.orbs {
                     orb.animationPhase += 0.05 * orb.animationSpeed
+                    
+                    // Update physics simulation
+                    orb.updatePhysics(deltaTime: deltaTime)
                 }
                 
                 self.needsDisplay = true
@@ -2011,8 +2150,13 @@ class SemiCircleView: NSView {
                 continue
             }
             
-            let x = centerX + radius * cos(orb.angle)
-            let y = centerY + radius * sin(orb.angle)
+            // Calculate base position on the semi-circle
+            let baseX = centerX + radius * cos(orb.angle)
+            let baseY = centerY + radius * sin(orb.angle)
+            
+            // Apply physics displacement to create pendulum/spring movement
+            let x = baseX + orb.physicsDisplacement.x
+            let y = baseY + orb.physicsDisplacement.y
             let baseSize = 40.0 * orb.scale
             let animatedSize = baseSize * orb.animationScale // Apply growth animation
             
