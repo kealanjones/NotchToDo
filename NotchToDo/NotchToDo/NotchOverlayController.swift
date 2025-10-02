@@ -465,6 +465,7 @@ class NotchOverlayController: ObservableObject {
         private var fadeTimer: Timer?
         private let fadeDelay: TimeInterval = 10.0
         private var isFaded: Bool = false
+        private var orbRattleTimer: Timer?
 
     
     @Published var isVerticallyExpanding = false
@@ -923,6 +924,65 @@ class NotchOverlayController: ObservableObject {
             
             print("🎯 Transferred task '\(task.title)' from '\(source.name)' to '\(target.name)'")
         }
+    }
+    
+    // MARK: - Celebration System
+    
+    func triggerOrbCelebration() {
+        print("🎉 Triggering orb celebration rattle!")
+        
+        // Start continuous rattling for all orbs
+        startOrbRattling()
+        
+        // Also trigger a brief intense glow on the semi-circle
+        triggerSemiCircleCelebration()
+    }
+    
+    private func startOrbRattling() {
+        // Create a timer for continuous rattling
+        var rattleCount = 0
+        let maxRattles = 30  // 30 rattles over 3 seconds (10 per second)
+        
+        let rattleTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            // Apply rapid, small impulses to all orbs
+            for orb in self.orbManager.orbs {
+                // Small, quick impulses in random directions
+                let rattleForce = 8.0 + Double.random(in: -3...3)  // Vary force slightly
+                let randomAngle = Double.random(in: 0...2*Double.pi)
+                let forceX = cos(randomAngle) * rattleForce
+                let forceY = sin(randomAngle) * rattleForce
+                
+                orb.applyImpulse(CGPoint(x: forceX, y: forceY))
+            }
+            
+            rattleCount += 1
+            
+            // Stop rattling after 3 seconds
+            if rattleCount >= maxRattles {
+                timer.invalidate()
+                print("🎉 Orb rattling complete!")
+            }
+        }
+        
+        // Store timer reference to prevent deallocation
+        orbRattleTimer = rattleTimer
+    }
+    
+    private func triggerSemiCircleCelebration() {
+        // This could trigger a brief glow effect on the semi-circle itself
+        // For now, just log that we're celebrating
+        print("🎉 Semi-circle celebration triggered!")
+    }
+    
+    deinit {
+        // Clean up all timers
+        fadeTimer?.invalidate()
+        orbRattleTimer?.invalidate()
     }
     
     // MARK: - Auto-Fade System
@@ -2677,6 +2737,11 @@ class TaskCardView: NSView {
     private var scrollBarRect = NSRect.zero
     private var isHoveringScrollBar = false
     
+    // Celebration animation properties
+    private var celebrationPhase: CGFloat = 0.0
+    private var isCelebrating = false
+    private var celebrationTimer: Timer?
+    
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.wantsLayer = true
@@ -2745,6 +2810,153 @@ class TaskCardView: NSView {
             }
         }
         return nil
+    }
+    
+    private func getClickedCheckboxIndex(at location: NSPoint) -> Int? {
+        let checkboxSize: CGFloat = 18
+        let taskHeight: CGFloat = 35
+        let taskSpacing: CGFloat = 12
+        let taskStartY = bounds.maxY - 80  // Match the task positioning
+        
+        for (index, task) in tasks.enumerated() {
+            let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
+            let taskRect = CGRect(x: bounds.minX + 20, y: taskY, width: bounds.width - 40, height: taskHeight)
+            
+            // Calculate checkbox position
+            let checkboxRect = CGRect(
+                x: taskRect.minX + 8, 
+                y: taskRect.minY + (taskRect.height - checkboxSize)/2, 
+                width: checkboxSize, 
+                height: checkboxSize
+            )
+            
+            if checkboxRect.contains(location) {
+                return index
+            }
+        }
+        return nil
+    }
+    
+    private func toggleTaskCompletion(at index: Int) {
+        guard index < tasks.count else { return }
+        
+        let task = tasks[index]
+        let wasCompleted = task.isCompleted
+        task.isCompleted.toggle()
+        
+        // Trigger celebration animation if task was just completed
+        if !wasCompleted && task.isCompleted {
+            startCelebrationAnimation()
+            // Notify controller to trigger orb dancing
+            controller?.triggerOrbCelebration()
+        }
+        
+        // Update display
+        needsDisplay = true
+        
+        print("🎯 Task '\(task.title)' marked as \(task.isCompleted ? "completed" : "incomplete")")
+    }
+    
+    private func startCelebrationAnimation() {
+        guard !isCelebrating else { return }
+        
+        isCelebrating = true
+        celebrationPhase = 0.0
+        
+        // Start celebration animation timer
+        celebrationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            self.celebrationPhase += 0.1
+            
+            // End celebration after 3 seconds (180 frames at 60fps)
+            if self.celebrationPhase >= 18.0 {
+                self.endCelebrationAnimation()
+                timer.invalidate()
+            }
+            
+            self.needsDisplay = true
+        }
+        
+        print("🎉 Starting celebration animation!")
+    }
+    
+    private func endCelebrationAnimation() {
+        isCelebrating = false
+        celebrationPhase = 0.0
+        celebrationTimer?.invalidate()
+        celebrationTimer = nil
+        
+        print("🎉 Celebration animation ended!")
+    }
+    
+    private func drawCelebrationRimGlow(in context: CGContext, cardRect: NSRect) {
+        context.saveGState()
+        
+        // Create massive soft glow from edges outward
+        let glowSize: CGFloat = 60.0  // Massive glow extending far out
+        let glowRect = cardRect.insetBy(dx: -glowSize, dy: -glowSize)
+        
+        // Create multiple layers of rainbow glow
+        let layerCount = 12
+        let maxIntensity = 0.8 + 0.4 * sin(celebrationPhase)
+        
+        // Rainbow colors for cycling effect
+        let colors: [NSColor] = [
+            .systemRed, .systemOrange, .systemYellow, .systemGreen,
+            .systemBlue, .systemPurple, .systemPink, .systemTeal,
+            .systemIndigo, .systemMint, .systemBrown, .systemGray
+        ]
+        
+        for layer in 0..<layerCount {
+            let layerProgress = CGFloat(layer) / CGFloat(layerCount - 1)
+            let layerSize = glowSize * layerProgress
+            let currentGlowRect = cardRect.insetBy(dx: -layerSize, dy: -layerSize)
+            
+            // Calculate color cycling through the celebration phase
+            let colorIndex = (Int(celebrationPhase * 3) + layer) % colors.count
+            let baseColor = colors[colorIndex]
+            
+            // Create soft gradient from edge outward
+            let alpha = maxIntensity * (1.0 - layerProgress) * (1.0 - layerProgress)
+            let color1 = baseColor.withAlphaComponent(alpha)
+            let color2 = baseColor.withAlphaComponent(alpha * 0.3)
+            let color3 = NSColor.clear
+            
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                       colors: [color1.cgColor, color2.cgColor, color3.cgColor] as CFArray,
+                                       locations: [0.0, 0.4, 1.0]) {
+                
+                // Draw gradient from card edge outward
+                let path = NSBezierPath(roundedRect: currentGlowRect, xRadius: 28 + layerSize, yRadius: 28 + layerSize)
+                path.addClip()
+                
+                context.drawLinearGradient(gradient,
+                                         start: CGPoint(x: cardRect.minX, y: cardRect.midY),
+                                         end: CGPoint(x: cardRect.minX - layerSize, y: cardRect.midY),
+                                         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                
+                context.drawLinearGradient(gradient,
+                                         start: CGPoint(x: cardRect.maxX, y: cardRect.midY),
+                                         end: CGPoint(x: cardRect.maxX + layerSize, y: cardRect.midY),
+                                         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                
+                context.drawLinearGradient(gradient,
+                                         start: CGPoint(x: cardRect.midX, y: cardRect.minY),
+                                         end: CGPoint(x: cardRect.midX, y: cardRect.minY - layerSize),
+                                         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                
+                context.drawLinearGradient(gradient,
+                                         start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
+                                         end: CGPoint(x: cardRect.midX, y: cardRect.maxY + layerSize),
+                                         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+            }
+        }
+        
+        context.restoreGState()
     }
     
     private func startTaskDrag(taskIndex: Int, location: NSPoint) {
@@ -2852,6 +3064,7 @@ class TaskCardView: NSView {
     
     deinit {
         hoverTimer?.invalidate()
+        celebrationTimer?.invalidate()
     }
     
     private func startAnimation() {
@@ -2906,6 +3119,12 @@ class TaskCardView: NSView {
         }
         
         // Scroll bar is now visual only - no drag interaction needed
+        
+        // Check if click is on a checkbox
+        if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
+            toggleTaskCompletion(at: checkboxIndex)
+            return
+        }
         
         // Check if click is on a task
         if let taskIndex = getClickedTaskIndex(at: locationInView) {
@@ -3091,26 +3310,29 @@ class TaskCardView: NSView {
             print("🎯 TaskCardView cardRect: \(cardRect)")
         }
         
-        // 1. Subtle outer glow for frosted glass effect
+        // 1. Subtle outer glow for normal state only
+        if !isCelebrating {
         context.saveGState()
-        let glowSize = 15.0
-        let glowRect = cardRect.insetBy(dx: -glowSize, dy: -glowSize)
-        let glowGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                    colors: [
-                                        NSColor.white.withAlphaComponent(0.1).cgColor,
-                                        NSColor.white.withAlphaComponent(0.05).cgColor,
-                                        NSColor.clear.cgColor
-                                    ] as CFArray,
-                                    locations: [0.0, 0.6, 1.0])!
-        
-        context.drawRadialGradient(glowGradient,
-                                 startCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
-                                 startRadius: 0,
-                                 endCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
-                                 endRadius: glowRect.width/2,
-                                  options: [])
+            let glowSize = 15.0
+            let glowRect = cardRect.insetBy(dx: -glowSize, dy: -glowSize)
+            
+            let glowGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: [
+                                            NSColor.white.withAlphaComponent(0.1).cgColor,
+                                            NSColor.white.withAlphaComponent(0.05).cgColor,
+                                            NSColor.clear.cgColor
+                                        ] as CFArray,
+                                        locations: [0.0, 0.6, 1.0])!
+            
+            context.drawRadialGradient(glowGradient,
+                                     startCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
+                                     startRadius: 0,
+                                     endCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
+                                     endRadius: glowRect.width/2,
+                                     options: [])
         context.restoreGState()
-        
+    }
+    
         // 2. Backdrop filter blur effect (emulating CSS backdrop-filter: blur(10px))
         context.saveGState()
         let roundedRect = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
@@ -3156,6 +3378,11 @@ class TaskCardView: NSView {
         context.setLineWidth(1.0)
         roundedRect.stroke()
         context.restoreGState()
+        
+        // Multicolored rim glow during celebration
+        if isCelebrating {
+            drawCelebrationRimGlow(in: context, cardRect: cardRect)
+        }
         
         // Soft shadow like CSS box-shadow: 0 1px 12px rgba(0,0,0,0.25)
         context.saveGState()
