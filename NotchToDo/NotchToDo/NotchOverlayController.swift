@@ -166,6 +166,11 @@ struct OrbColorPalette {
         let index = Int(hash) % colors.count
         return colors[index]
     }
+    
+    static func getUniqueColor(for orbIndex: Int) -> NSColor {
+        // Cycle through colors to ensure each orb gets a unique color
+        return colors[orbIndex % colors.count]
+    }
 }
 
     // MARK: - Orb Manager
@@ -191,7 +196,7 @@ struct OrbColorPalette {
     
         // MARK: - Orb Management
         func createOrb(name: String) -> ProjectOrb {
-            let color = OrbColorPalette.getColor(for: name)
+            let color = OrbColorPalette.getUniqueColor(for: orbs.count)
             let orb = ProjectOrb(name: name, color: color)
             
             // Give each orb a unique starting animation phase for independent movement
