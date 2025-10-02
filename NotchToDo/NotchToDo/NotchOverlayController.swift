@@ -737,12 +737,20 @@ class NotchOverlayController: ObservableObject {
         window.ignoresMouseEvents = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = true
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         
         // Create task card view
         let taskCardView = TaskCardView()
         taskCardView.setController(self)
         taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color)
+        
+        // Ensure the view has the correct frame
+        taskCardView.frame = NSRect(x: 0, y: 0, width: 300, height: 400)
         window.contentView = taskCardView
+        
+        print("🎯 Task card view frame: \(taskCardView.frame)")
+        print("🎯 Window frame: \(window.frame)")
         
         // Position the card below the semi-circle
         guard let screen = NSScreen.main,
@@ -824,6 +832,97 @@ class NotchOverlayController: ObservableObject {
             }
         }
         print("❌ Could not find orb for task card view")
+    }
+    
+    // MARK: - Task Drag and Drop Between Cards
+    
+    func updateTaskDragLocation(_ location: NSPoint, from sourceCard: TaskCardView) {
+        // Convert location to screen coordinates for checking other cards
+        guard let sourceWindow = sourceCard.window else { return }
+        let screenLocation = NSPoint(
+            x: sourceWindow.frame.origin.x + location.x,
+            y: sourceWindow.frame.origin.y + location.y
+        )
+        
+        // Check if we're over any other task card
+        for (orbId, window) in taskCardWindows {
+            if window.contentView !== sourceCard && window.isVisible {
+                let windowFrame = window.frame
+                if windowFrame.contains(screenLocation) {
+                    // We're over another task card - show drop indicator
+                    if let targetCard = window.contentView as? TaskCardView {
+                        targetCard.showDropIndicator(true)
+                    }
+                } else {
+                    // Not over this card - hide drop indicator
+                    if let targetCard = window.contentView as? TaskCardView {
+                        targetCard.showDropIndicator(false)
+                    }
+                }
+            }
+        }
+    }
+    
+    func handleTaskDrop(from sourceCard: TaskCardView, draggedTask: Task?, draggedTaskIndex: Int) {
+        guard let task = draggedTask else { return }
+        
+        // Find the target card (the one with drop indicator)
+        var targetCard: TaskCardView?
+        for (_, window) in taskCardWindows {
+            if let card = window.contentView as? TaskCardView, card !== sourceCard {
+                if card.isShowingDropIndicator {
+                    targetCard = card
+                    break
+                }
+            }
+        }
+        
+        // Hide all drop indicators
+        for (_, window) in taskCardWindows {
+            if let card = window.contentView as? TaskCardView {
+                card.showDropIndicator(false)
+            }
+        }
+        
+        if let target = targetCard {
+            // Transfer task to target orb
+            transferTask(task, from: sourceCard, to: target)
+        } else {
+            // No valid drop target - task stays in original position
+            print("🎯 No valid drop target - task stays in original position")
+        }
+    }
+    
+    private func transferTask(_ task: Task, from sourceCard: TaskCardView, to targetCard: TaskCardView) {
+        // Find source and target orbs
+        var sourceOrb: ProjectOrb?
+        var targetOrb: ProjectOrb?
+        
+        for (orbId, window) in taskCardWindows {
+            if window.contentView === sourceCard {
+                sourceOrb = orbManager.orbs.first { $0.id == orbId }
+            }
+            if window.contentView === targetCard {
+                targetOrb = orbManager.orbs.first { $0.id == orbId }
+            }
+        }
+        
+        guard let source = sourceOrb, let target = targetOrb else {
+            print("❌ Could not find source or target orb for task transfer")
+            return
+        }
+        
+        // Transfer task between orbs
+        if let taskIndex = source.tasks.firstIndex(where: { $0.id == task.id }) {
+            let transferredTask = source.tasks.remove(at: taskIndex)
+            target.tasks.append(transferredTask)
+            
+            // Update both task cards
+            sourceCard.updateTasks(source.tasks, projectName: source.name, orbColor: source.color)
+            targetCard.updateTasks(target.tasks, projectName: target.name, orbColor: target.color)
+            
+            print("🎯 Transferred task '\(task.title)' from '\(source.name)' to '\(target.name)'")
+        }
     }
     
     // MARK: - Auto-Fade System
@@ -2564,10 +2663,32 @@ class TaskCardView: NSView {
     // Close button functionality
     private var closeButtonRect = NSRect.zero
     
+    // Task drag and drop functionality
+    private var isDraggingTask = false
+    private var draggedTask: Task?
+    private var draggedTaskIndex: Int = -1
+    private var taskDragStartLocation = NSPoint.zero
+    private var taskRects: [NSRect] = []
+    var isShowingDropIndicator = false
+    
+    // Scroll functionality
+    private var taskScrollOffset: CGFloat = 0
+    private var maxScrollOffset: CGFloat = 0
+    private var scrollBarRect = NSRect.zero
+    private var isHoveringScrollBar = false
+    
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
+        
+        // Enable backdrop filter effect for frosted glass
+        if #available(macOS 10.15, *) {
+            self.layer?.cornerRadius = 28
+            self.layer?.masksToBounds = false
+            // Note: macOS doesn't have direct backdrop-filter support like CSS
+            // We'll use high opacity and visual effects to simulate it
+        }
         startAnimation()
         setupDragTracking()
         startHoverDetection()
@@ -2613,6 +2734,82 @@ class TaskCardView: NSView {
     private func closeTaskCard() {
         // Notify controller to close this specific task card
         controller?.closeTaskCard(for: self)
+    }
+    
+    // MARK: - Task Drag and Drop
+    
+    private func getClickedTaskIndex(at location: NSPoint) -> Int? {
+        for (index, taskRect) in taskRects.enumerated() {
+            if taskRect.contains(location) {
+                return index
+            }
+        }
+        return nil
+    }
+    
+    private func startTaskDrag(taskIndex: Int, location: NSPoint) {
+        guard taskIndex < tasks.count else { return }
+        
+        isDraggingTask = true
+        draggedTask = tasks[taskIndex]
+        draggedTaskIndex = taskIndex
+        taskDragStartLocation = location
+        
+        // Change cursor to indicate task dragging
+        NSCursor.closedHand.set()
+        
+        // Reset fade timer
+        if !isPinned {
+            controller?.resetFadeTimer()
+        }
+        
+        print("🎯 Started dragging task: \(tasks[taskIndex].title)")
+    }
+    
+    private func updateTaskDrag(location: NSPoint) {
+        guard isDraggingTask else { return }
+        
+        // Update visual feedback during drag
+        needsDisplay = true
+        
+        // Check if we're over another task card
+        controller?.updateTaskDragLocation(location, from: self)
+    }
+    
+    private func endTaskDrag() {
+        guard isDraggingTask else { return }
+        
+        print("🎯 Ending task drag")
+        
+        // Check for drop target
+        controller?.handleTaskDrop(from: self, draggedTask: draggedTask, draggedTaskIndex: draggedTaskIndex)
+        
+        // Reset drag state
+        isDraggingTask = false
+        draggedTask = nil
+        draggedTaskIndex = -1
+        
+        // Reset cursor
+        NSCursor.arrow.set()
+        
+        // Update display
+        needsDisplay = true
+    }
+    
+    func showDropIndicator(_ show: Bool) {
+        isShowingDropIndicator = show
+        needsDisplay = true
+    }
+    
+    // MARK: - Scroll Functionality
+    
+    private func calculateMaxScrollOffset() {
+        let taskHeight: CGFloat = 35
+        let taskSpacing: CGFloat = 12
+        let visibleHeight: CGFloat = 200 // Approximate visible task area
+        let totalTaskHeight = CGFloat(tasks.count) * (taskHeight + taskSpacing)
+        
+        maxScrollOffset = max(0, totalTaskHeight - visibleHeight)
     }
     
     private func startHoverDetection() {
@@ -2708,6 +2905,14 @@ class TaskCardView: NSView {
             return
         }
         
+        // Scroll bar is now visual only - no drag interaction needed
+        
+        // Check if click is on a task
+        if let taskIndex = getClickedTaskIndex(at: locationInView) {
+            startTaskDrag(taskIndex: taskIndex, location: locationInView)
+            return
+        }
+        
         // Reset fade timer on any mouse interaction (only if not pinned)
         if !isPinned {
             controller?.resetFadeTimer()
@@ -2728,6 +2933,13 @@ class TaskCardView: NSView {
     }
     
     override func mouseDragged(with event: NSEvent) {
+        // Handle task dragging
+        if isDraggingTask {
+            updateTaskDrag(location: convert(event.locationInWindow, from: nil))
+            return
+        }
+        
+        // Handle card dragging
         guard isDragging, let window = window else { return }
         
         // Reset fade timer during dragging (only if not pinned)
@@ -2771,6 +2983,12 @@ class TaskCardView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
+        // Handle task drop
+        if isDraggingTask {
+            endTaskDrag()
+            return
+        }
+        
         // Reset fade timer on mouse up (only if not pinned)
         if !isPinned {
             controller?.resetFadeTimer()
@@ -2813,15 +3031,51 @@ class TaskCardView: NSView {
         let locationInView = convert(event.locationInWindow, from: nil)
         let dragHandleRect = NSRect(x: 0, y: bounds.height - 60, width: bounds.width, height: 60)
         
-        if dragHandleRect.contains(locationInView) {
-            if !isDragging {
-                NSCursor.openHand.set()
+        // Check scroll bar hover
+        if scrollBarRect.contains(locationInView) && maxScrollOffset > 0 {
+            if !isHoveringScrollBar {
+                isHoveringScrollBar = true
+                needsDisplay = true
             }
+            NSCursor.arrow.set()
         } else {
-            if !isDragging {
-                NSCursor.arrow.set()
+            if isHoveringScrollBar {
+                isHoveringScrollBar = false
+                needsDisplay = true
+            }
+            
+            if dragHandleRect.contains(locationInView) {
+                if !isDragging {
+                    NSCursor.openHand.set()
+                }
+            } else {
+                if !isDragging {
+                    NSCursor.arrow.set()
+                }
             }
         }
+    }
+    
+    override func scrollWheel(with event: NSEvent) {
+        // Only handle scrolling if there are tasks to scroll and we're not dragging
+        guard maxScrollOffset > 0 && !isDraggingTask else { return }
+        
+        // Reset fade timer on scroll
+        if !isPinned {
+            controller?.resetFadeTimer()
+        }
+        
+        let scrollDelta = event.scrollingDeltaY
+        let scrollSensitivity: CGFloat = 2.0
+        
+        // Update scroll offset
+        let newOffset = taskScrollOffset - (scrollDelta * scrollSensitivity)
+        taskScrollOffset = max(0, min(newOffset, maxScrollOffset))
+        
+        // Update display
+        needsDisplay = true
+        
+        print("🎯 Scrolled tasks: offset=\(taskScrollOffset), delta=\(scrollDelta)")
     }
     
     override func draw(_ dirtyRect: NSRect) {
@@ -2831,14 +3085,20 @@ class TaskCardView: NSView {
         
         let cardRect = bounds.insetBy(dx: 8, dy: 8)
         
-        // 1. Outer liquid glass glow
+        // Debug: Print bounds and cardRect occasionally
+        if Int.random(in: 0...59) == 0 { // Print every 60th frame
+            print("🎯 TaskCardView bounds: \(bounds)")
+            print("🎯 TaskCardView cardRect: \(cardRect)")
+        }
+        
+        // 1. Subtle outer glow for frosted glass effect
         context.saveGState()
-        let glowSize = 20.0
+        let glowSize = 15.0
         let glowRect = cardRect.insetBy(dx: -glowSize, dy: -glowSize)
         let glowGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                     colors: [
-                                        NSColor.black.withAlphaComponent(0.25).cgColor,
-                                        NSColor.black.withAlphaComponent(0.15).cgColor,
+                                        NSColor.white.withAlphaComponent(0.1).cgColor,
+                                        NSColor.white.withAlphaComponent(0.05).cgColor,
                                         NSColor.clear.cgColor
                                     ] as CFArray,
                                     locations: [0.0, 0.6, 1.0])!
@@ -2848,28 +3108,75 @@ class TaskCardView: NSView {
                                  startRadius: 0,
                                  endCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
                                  endRadius: glowRect.width/2,
-                                 options: [])
+                                  options: [])
         context.restoreGState()
         
-        // 2. Main glass morphism card background
+        // 2. Backdrop filter blur effect (emulating CSS backdrop-filter: blur(10px))
         context.saveGState()
         let roundedRect = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
         roundedRect.addClip()
         
-        // Glass background with high opacity for better blur
-        let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                      colors: [
-                                        NSColor.black.withAlphaComponent(0.95).cgColor,
-                                        NSColor.black.withAlphaComponent(0.90).cgColor,
-                                        NSColor.black.withAlphaComponent(0.85).cgColor
-                                      ] as CFArray,
-                                      locations: [0.0, 0.5, 1.0])!
+        // Create a backdrop blur effect using Core Image
+        if let blurFilter = CIFilter(name: "CIGaussianBlur") {
+            // Set blur radius to 20px for more intense blur effect
+            blurFilter.setValue(20.0, forKey: kCIInputRadiusKey)
+            
+            // Create a more opaque white overlay for stronger frosted effect
+            let overlayColor = NSColor.white.withAlphaComponent(0.6)
+            context.setFillColor(overlayColor.cgColor)
+            roundedRect.fill()
+            
+            // Apply the blur filter to the entire card area
+            let blurRect = CGRect(x: cardRect.minX, y: cardRect.minY, width: cardRect.width, height: cardRect.height)
+            
+            // Create a CIImage from the current context
+            if let cgImage = context.makeImage() {
+                let ciImage = CIImage(cgImage: cgImage)
+                blurFilter.setValue(ciImage, forKey: kCIInputImageKey)
+                
+                if let outputImage = blurFilter.outputImage {
+                    let ciContext = CIContext(options: nil)
+                    if let blurredCGImage = ciContext.createCGImage(outputImage, from: blurRect) {
+                        // Draw the blurred background
+                        context.draw(blurredCGImage, in: blurRect)
+                    }
+                }
+            }
+        } else {
+            // Fallback to more opaque frosted background if blur filter fails
+            context.setFillColor(NSColor.white.withAlphaComponent(0.9).cgColor)
+            roundedRect.fill()
+        }
         
-        context.drawLinearGradient(glassGradient,
-                                 start: CGPoint(x: cardRect.minX, y: cardRect.minY),
-                                 end: CGPoint(x: cardRect.maxX, y: cardRect.maxY),
-                                  options: [])
         context.restoreGState()
+        
+        // Add the border on top of the blurred background
+        context.saveGState()
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
+        context.setLineWidth(1.0)
+        roundedRect.stroke()
+        context.restoreGState()
+        
+        // Soft shadow like CSS box-shadow: 0 1px 12px rgba(0,0,0,0.25)
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 12, color: NSColor.black.withAlphaComponent(0.25).cgColor)
+        context.setFillColor(NSColor.clear.cgColor)
+        roundedRect.fill()
+        context.restoreGState()
+        
+        // Drop indicator overlay
+        if isShowingDropIndicator {
+            context.saveGState()
+            context.setFillColor(NSColor.systemGreen.withAlphaComponent(0.3).cgColor)
+            let dropIndicatorPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
+            dropIndicatorPath.fill()
+            
+            // Add pulsing border effect
+            context.setStrokeColor(NSColor.systemGreen.withAlphaComponent(0.8).cgColor)
+        context.setLineWidth(3.0)
+            dropIndicatorPath.stroke()
+            context.restoreGState()
+        }
         
         // 3. Flowing liquid glass highlight
         context.saveGState()
@@ -3025,7 +3332,7 @@ class TaskCardView: NSView {
             height: iconSize
         )
         
-        context.saveGState()
+            context.saveGState()
         context.setLineWidth(1.5)
         context.setStrokeColor(NSColor.white.withAlphaComponent(0.8).cgColor)
         
@@ -3062,7 +3369,7 @@ class TaskCardView: NSView {
             // Add subtle glow
             context.setShadow(offset: CGSize(width: 0, height: 1), blur: 3, color: orbColor.withAlphaComponent(0.5).cgColor)
             buttonPath.fill()
-        } else {
+            } else {
             // Unpinned state - subtle outline
             context.setFillColor(NSColor.white.withAlphaComponent(0.2).cgColor)
             buttonPath.fill()
@@ -3118,17 +3425,39 @@ class TaskCardView: NSView {
             context.strokePath()
         }
         
-        context.restoreGState()
+            context.restoreGState()
     }
     
     private func drawTaskList(in context: CGContext, cardRect: NSRect) {
-        let taskStartY = cardRect.maxY - 130  // Adjusted for new header position
+        let taskStartY = cardRect.maxY - 80   // Much lower to clear title area completely
         let taskHeight: CGFloat = 35        // Slightly taller tasks
         let taskSpacing: CGFloat = 12       // More spacing between tasks
+        let visibleHeight: CGFloat = 200    // Visible task area height
+        
+        // Calculate scroll parameters
+        calculateMaxScrollOffset()
+        
+        // Clear and reset task rectangles
+        taskRects.removeAll()
+        
+        // Draw scroll bar if needed
+        if maxScrollOffset > 0 {
+            drawScrollBar(in: context, cardRect: cardRect, visibleHeight: visibleHeight)
+        }
+        
+        // Clip to visible task area - position below title with proper spacing, extend lower
+        let taskAreaRect = NSRect(x: cardRect.minX + 20, y: cardRect.minY + 20, width: cardRect.width - 40, height: cardRect.height - 100)
+        context.saveGState()
+        context.clip(to: taskAreaRect)
         
         for (index, task) in tasks.enumerated() {
-            let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing)
+            let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
             let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
+            
+            // Store task rectangle for hit testing (only if visible)
+            if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 80 {
+                taskRects.append(taskRect)
+            }
             
             // Skip tasks that would go below the card bounds
             if taskY < cardRect.minY + 20 {
@@ -3136,7 +3465,7 @@ class TaskCardView: NSView {
             }
             
             // Glass morphism task background
-            context.saveGState()
+        context.saveGState()
             let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
             taskPath.addClip()
             
@@ -3162,6 +3491,19 @@ class TaskCardView: NSView {
             taskBorderPath.stroke()
             context.restoreGState()
             
+            // Visual feedback for dragged task
+            if isDraggingTask && draggedTaskIndex == index {
+            context.saveGState()
+                context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.2).cgColor)
+                let dragHighlightPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
+                dragHighlightPath.fill()
+                
+                // Add a subtle glow effect
+                context.setShadow(offset: CGSize(width: 0, height: 2), blur: 8, color: NSColor.systemBlue.withAlphaComponent(0.3).cgColor)
+                dragHighlightPath.fill()
+                context.restoreGState()
+            }
+            
             // Modern glass checkbox
             drawGlassCheckbox(in: context, taskRect: taskRect, isCompleted: task.isCompleted, index: index)
             
@@ -3176,6 +3518,51 @@ class TaskCardView: NSView {
             ]
             task.title.draw(in: taskTitleRect, withAttributes: taskAttributes)
         }
+        
+        // Restore clipping context
+            context.restoreGState()
+        }
+    
+    private func drawScrollBar(in context: CGContext, cardRect: NSRect, visibleHeight: CGFloat) {
+        let scrollBarWidth: CGFloat = 8
+        let scrollBarMargin: CGFloat = 4
+        let scrollBarX = cardRect.maxX - scrollBarWidth - scrollBarMargin
+        let scrollBarY = cardRect.minY + 20
+        let scrollBarHeight = cardRect.height - 100
+        
+        // Calculate scroll thumb size and position
+        let thumbHeight = max(20, scrollBarHeight * (visibleHeight / (visibleHeight + maxScrollOffset)))
+        let thumbY = scrollBarY + (scrollBarHeight - thumbHeight) * (taskScrollOffset / maxScrollOffset)
+        
+        // Store scroll bar rectangle for hit testing
+        scrollBarRect = NSRect(x: scrollBarX, y: scrollBarY, width: scrollBarWidth, height: scrollBarHeight)
+        
+        // Draw scroll bar track
+        context.saveGState()
+        let trackRect = NSRect(x: scrollBarX, y: scrollBarY, width: scrollBarWidth, height: scrollBarHeight)
+        let trackPath = NSBezierPath(roundedRect: trackRect, xRadius: 4, yRadius: 4)
+        
+        context.setFillColor(NSColor.black.withAlphaComponent(0.1).cgColor)
+        trackPath.fill()
+        context.restoreGState()
+        
+        // Draw scroll thumb
+        context.saveGState()
+        let thumbRect = NSRect(x: scrollBarX, y: thumbY, width: scrollBarWidth, height: thumbHeight)
+        let thumbPath = NSBezierPath(roundedRect: thumbRect, xRadius: 4, yRadius: 4)
+        
+        if isHoveringScrollBar {
+            context.setFillColor(NSColor.white.withAlphaComponent(0.6).cgColor)
+        } else {
+            context.setFillColor(NSColor.white.withAlphaComponent(0.3).cgColor)
+        }
+        thumbPath.fill()
+        
+        // Add subtle border
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.5).cgColor)
+        context.setLineWidth(0.5)
+        thumbPath.stroke()
+        context.restoreGState()
     }
     
     private func drawGlassCheckbox(in context: CGContext, taskRect: NSRect, isCompleted: Bool, index: Int) {
