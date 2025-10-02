@@ -3319,20 +3319,25 @@ class TaskCardView: NSView {
         let visibleTaskAreaTop = cardRect.minY + 20  // Match the clipping area
         let visibleTaskAreaHeight = cardRect.height - 100  // Match the clipping area height
         
-        // Allow scrolling so that:
-        // 1. The first task can scroll up to the top of the visible area
-        // 2. The last task can scroll down to the bottom of the visible area
-        
-        let firstTaskY = taskStartY
-        let maxScrollToTop = firstTaskY - visibleTaskAreaTop
-        
+        // Calculate total height needed for all tasks
         let totalTaskHeight = CGFloat(tasks.count) * (taskHeight + taskSpacing)
-        let lastTaskY = taskStartY - (totalTaskHeight - taskHeight)
-        let maxScrollToBottom = max(0, lastTaskY - (visibleTaskAreaTop + visibleTaskAreaHeight - taskHeight))
         
-        // The scroll should stop when the first task reaches the top of the visible area
-        // This prevents scrolling past the point where the first task is at the top
-        maxScrollOffset = max(0, maxScrollToTop)
+        // Only enable scrolling if tasks exceed the visible area
+        if totalTaskHeight <= visibleTaskAreaHeight {
+            maxScrollOffset = 0  // No scrolling needed
+            return
+        }
+        
+        // Calculate how much we can scroll down before the first task reaches the top
+        let firstTaskY = taskStartY
+        let maxScrollDown = firstTaskY - visibleTaskAreaTop
+        
+        // Calculate how much we can scroll up before the last task reaches the bottom
+        let lastTaskY = taskStartY - (totalTaskHeight - taskHeight)
+        let maxScrollUp = max(0, lastTaskY - (visibleTaskAreaTop + visibleTaskAreaHeight - taskHeight))
+        
+        // Total scroll range is the sum of both directions
+        maxScrollOffset = maxScrollDown + maxScrollUp
     }
     
     private func startHoverDetection() {
