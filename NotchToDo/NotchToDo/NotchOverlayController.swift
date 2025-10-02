@@ -3328,16 +3328,15 @@ class TaskCardView: NSView {
             return
         }
         
-        // Calculate how much we can scroll down before the first task reaches the top
-        let firstTaskY = taskStartY
-        let maxScrollDown = firstTaskY - visibleTaskAreaTop
-        
-        // Calculate how much we can scroll up before the last task reaches the bottom
+        // The first task should never scroll below its original position
+        // It can only scroll up to reveal lower tasks
+        // Calculate how much we can scroll up to show all tasks
         let lastTaskY = taskStartY - (totalTaskHeight - taskHeight)
         let maxScrollUp = max(0, lastTaskY - (visibleTaskAreaTop + visibleTaskAreaHeight - taskHeight))
         
-        // Total scroll range is the sum of both directions
-        maxScrollOffset = maxScrollDown + maxScrollUp
+        // Maximum scroll offset is only the upward scroll amount
+        // This prevents the first task from going below its original position
+        maxScrollOffset = maxScrollUp
     }
     
     private func startHoverDetection() {
