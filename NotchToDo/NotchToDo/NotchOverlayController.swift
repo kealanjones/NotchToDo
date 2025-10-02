@@ -924,7 +924,15 @@ class NotchOverlayController: ObservableObject {
             sourceCard.updateTasks(source.tasks, projectName: source.name, orbColor: source.color)
             targetCard.updateTasks(target.tasks, projectName: target.name, orbColor: target.color)
             
+            // Update orb task counters
+            source.taskCount = source.tasks.count
+            target.taskCount = target.tasks.count
+            
+            // Trigger orb display update to refresh task counters
+            semiCircleView?.needsDisplay = true
+            
             print("🎯 Transferred task '\(task.title)' from '\(source.name)' to '\(target.name)'")
+            print("🎯 Updated task counts - \(source.name): \(source.taskCount), \(target.name): \(target.taskCount)")
         }
     }
     
@@ -3307,7 +3315,14 @@ class TaskCardView: NSView {
         let visibleHeight: CGFloat = 200 // Approximate visible task area
         let totalTaskHeight = CGFloat(tasks.count) * (taskHeight + taskSpacing)
         
-        maxScrollOffset = max(0, totalTaskHeight - visibleHeight)
+        // Calculate the exact scroll offset needed to show the first task at the top
+        // When scrolled to max, the first task should be at the top of the visible area
+        let taskStartY = bounds.maxY - 80  // Match the task positioning
+        let visibleTaskAreaTop = bounds.minY + 20
+        let firstTaskY = taskStartY
+        let maxScroll = firstTaskY - visibleTaskAreaTop
+        
+        maxScrollOffset = max(0, maxScroll)
     }
     
     private func startHoverDetection() {
