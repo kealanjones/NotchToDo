@@ -1041,10 +1041,11 @@ class NotchOverlayController: ObservableObject {
         window.level = .screenSaver  // Higher than semi-circle's .screenSaver level
         window.ignoresMouseEvents = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        window.isMovable = false
+        window.isMovable = true  // Enable dragging for task cards
         
         // Create basic task card view
         let taskCardView = TaskCardView()
+        taskCardView.setController(self)
         window.contentView = taskCardView
         
         self.taskCardWindow = window
@@ -2464,12 +2465,26 @@ class TaskCardView: NSView {
     private var projectName: String = ""
     private var orbColor: NSColor = .systemBlue
     private var animationPhase: Double = 0.0
+    private weak var controller: NotchOverlayController?
+    
+    // Drag functionality
+    private var isDragging = false
+    private var dragStartLocation = NSPoint.zero
+    private var initialWindowOrigin = NSPoint.zero
+    private var lastDragUpdateTime: TimeInterval = 0
+    private let dragUpdateInterval: TimeInterval = 1.0/60.0 // 60 FPS
+    
+    // Hover detection
+    private var hoverTimer: Timer?
+    private var isMouseOver = false
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
         startAnimation()
+        setupDragTracking()
+        startHoverDetection()
     }
     
     required init?(coder: NSCoder) {
@@ -2477,6 +2492,8 @@ class TaskCardView: NSView {
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
         startAnimation()
+        setupDragTracking()
+        startHoverDetection()
     }
     
     func updateTasks(_ tasks: [Task], projectName: String, orbColor: NSColor) {
@@ -2486,10 +2503,191 @@ class TaskCardView: NSView {
         self.needsDisplay = true
     }
     
+    func setController(_ controller: NotchOverlayController?) {
+        self.controller = controller
+    }
+    
+    private func startHoverDetection() {
+        // Start a timer that checks if mouse is over the task card
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.checkMouseHover()
+        }
+    }
+    
+    private func checkMouseHover() {
+        guard let window = self.window else { return }
+        
+        // Get mouse location in screen coordinates
+        let mouseLocation = NSEvent.mouseLocation
+        
+        // Convert to window coordinates
+        let windowFrame = window.frame
+        let mouseInWindow = NSPoint(
+            x: mouseLocation.x - windowFrame.origin.x,
+            y: mouseLocation.y - windowFrame.origin.y
+        )
+        
+        // Check if mouse is within the task card bounds
+        let isOver = bounds.contains(mouseInWindow)
+        
+        if isOver && !isMouseOver {
+            // Mouse just entered
+            isMouseOver = true
+            controller?.resetFadeTimer()
+        } else if !isOver && isMouseOver {
+            // Mouse just exited
+            isMouseOver = false
+        } else if isOver {
+            // Mouse is still over, keep resetting fade timer
+            controller?.resetFadeTimer()
+        }
+    }
+    
+    deinit {
+        hoverTimer?.invalidate()
+    }
+    
     private func startAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
+        Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { _ in
             self.animationPhase += 0.02
             self.needsDisplay = true
+        }
+    }
+    
+    private func setupDragTracking() {
+        // Set up tracking area for mouse events
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        self.addTrackingArea(trackingArea)
+    }
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        
+        // Remove existing tracking areas
+        for trackingArea in trackingAreas {
+            removeTrackingArea(trackingArea)
+        }
+        
+        // Add new tracking area with current bounds
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        // Reset fade timer on any mouse interaction
+        controller?.resetFadeTimer()
+        
+        // Check if click is in the drag handle area (top 60 pixels of the card)
+        let locationInView = convert(event.locationInWindow, from: nil)
+        let dragHandleRect = NSRect(x: 0, y: bounds.height - 60, width: bounds.width, height: 60)
+        
+        if dragHandleRect.contains(locationInView) {
+            isDragging = true
+            // Use screen coordinates for smooth dragging
+            dragStartLocation = NSEvent.mouseLocation
+            initialWindowOrigin = window?.frame.origin ?? NSPoint.zero
+            
+            // Change cursor to indicate dragging
+            NSCursor.closedHand.set()
+        }
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragging, let window = window else { return }
+        
+        // Reset fade timer during dragging
+        controller?.resetFadeTimer()
+        
+        // Throttle updates to 60 FPS for smoother dragging
+        let currentTime = CACurrentMediaTime()
+        if currentTime - lastDragUpdateTime < dragUpdateInterval {
+            return
+        }
+        lastDragUpdateTime = currentTime
+        
+        // Use screen coordinates for smooth dragging
+        let currentMouseLocation = NSEvent.mouseLocation
+        let deltaX = currentMouseLocation.x - dragStartLocation.x
+        let deltaY = currentMouseLocation.y - dragStartLocation.y
+        
+        let newOrigin = NSPoint(
+            x: initialWindowOrigin.x + deltaX,
+            y: initialWindowOrigin.y + deltaY
+        )
+        
+        // Keep the window on screen
+        guard let screen = NSScreen.main else { return }
+        let screenFrame = screen.frame
+        let windowFrame = window.frame
+        
+        let constrainedX = max(0, min(newOrigin.x, screenFrame.width - windowFrame.width))
+        let constrainedY = max(0, min(newOrigin.y, screenFrame.height - windowFrame.height))
+        
+        let constrainedOrigin = NSPoint(x: constrainedX, y: constrainedY)
+        
+        // Use NSAnimationContext to smooth the movement
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.0
+            context.allowsImplicitAnimation = false
+            window.animator().setFrameOrigin(constrainedOrigin)
+        }
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        // Reset fade timer on mouse up
+        controller?.resetFadeTimer()
+        
+        if isDragging {
+            isDragging = false
+            NSCursor.arrow.set()
+        }
+    }
+    
+    override func mouseEntered(with event: NSEvent) {
+        // Reset fade timer on hover
+        controller?.resetFadeTimer()
+        
+        // Change cursor when hovering over drag area
+        let locationInView = convert(event.locationInWindow, from: nil)
+        let dragHandleRect = NSRect(x: 0, y: bounds.height - 60, width: bounds.width, height: 60)
+        
+        if dragHandleRect.contains(locationInView) {
+            NSCursor.openHand.set()
+        }
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        if !isDragging {
+            NSCursor.arrow.set()
+        }
+    }
+    
+    override func mouseMoved(with event: NSEvent) {
+        // Reset fade timer on mouse movement
+        controller?.resetFadeTimer()
+        
+        // Update cursor based on mouse position
+        let locationInView = convert(event.locationInWindow, from: nil)
+        let dragHandleRect = NSRect(x: 0, y: bounds.height - 60, width: bounds.width, height: 60)
+        
+        if dragHandleRect.contains(locationInView) {
+            if !isDragging {
+                NSCursor.openHand.set()
+            }
+        } else {
+            if !isDragging {
+                NSCursor.arrow.set()
+            }
         }
     }
     
@@ -2600,6 +2798,14 @@ class TaskCardView: NSView {
     
     private func drawProjectHeader(in context: CGContext, cardRect: NSRect) {
         let headerRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 70, width: cardRect.width - 40, height: 50)
+        
+        // Add subtle drag handle indicator in the top area
+        let dragHandleRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 15, width: cardRect.width - 40, height: 8)
+        context.saveGState()
+        context.setFillColor(NSColor.white.withAlphaComponent(0.2).cgColor)
+        context.addEllipse(in: dragHandleRect)
+        context.fillPath()
+        context.restoreGState()
         
         // Modern opaque header background with orb color
         context.saveGState()
