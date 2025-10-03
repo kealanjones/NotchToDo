@@ -3992,7 +3992,7 @@ class TaskCardView: NSView {
     }
     
     private func drawTaskList(in context: CGContext, cardRect: NSRect) {
-        let taskStartY = cardRect.maxY - 130  // Start lower to ensure first task is fully visible
+        let taskStartY = cardRect.maxY - 150  // Start much lower to prevent any clipping
         let taskHeight: CGFloat = 35        // Slightly taller tasks
         let taskSpacing: CGFloat = 12       // More spacing between tasks
         let visibleHeight: CGFloat = 200    // Visible task area height
@@ -4105,7 +4105,7 @@ class TaskCardView: NSView {
         let scrollBarWidth: CGFloat = 8
         let scrollBarMargin: CGFloat = 4
         let scrollBarX = cardRect.maxX - scrollBarWidth - scrollBarMargin
-        let taskStartY = cardRect.maxY - 130
+        let taskStartY = cardRect.maxY - 150
         let scrollBarY = taskStartY - 220
         let scrollBarHeight: CGFloat = 220
         
