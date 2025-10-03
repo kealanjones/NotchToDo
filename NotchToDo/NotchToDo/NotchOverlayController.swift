@@ -3314,7 +3314,7 @@ class TaskCardView: NSView {
     
     // MARK: - Scroll Functionality
     
-    private func calculateMaxScrollOffset() {
+    func calculateMaxScrollOffset() {
         let taskHeight: CGFloat = 35
         let taskSpacing: CGFloat = 12
         
