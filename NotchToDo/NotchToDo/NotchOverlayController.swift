@@ -4004,6 +4004,7 @@ class TaskCardView: NSView {
         taskRects.removeAll()
         
         // Draw scroll bar if needed
+        print("🎯 Scroll bar check: maxScrollOffset=\(maxScrollOffset), should show=\(maxScrollOffset > 0)")
         if maxScrollOffset > 0 {
             drawScrollBar(in: context, cardRect: cardRect, visibleHeight: visibleHeight)
         }
@@ -4099,6 +4100,7 @@ class TaskCardView: NSView {
         }
     
     private func drawScrollBar(in context: CGContext, cardRect: NSRect, visibleHeight: CGFloat) {
+        print("🎯 Drawing scroll bar: maxScrollOffset=\(maxScrollOffset), taskScrollOffset=\(taskScrollOffset)")
         let scrollBarWidth: CGFloat = 8
         let scrollBarMargin: CGFloat = 4
         let scrollBarX = cardRect.maxX - scrollBarWidth - scrollBarMargin
