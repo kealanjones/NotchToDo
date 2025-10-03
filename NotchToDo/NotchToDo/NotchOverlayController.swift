@@ -3339,11 +3339,16 @@ class TaskCardView: NSView {
         let extraHeight = totalTaskHeight - visibleTaskHeight
         
         // Set scroll offset to allow scrolling through the extra height
+        // This is the maximum we can scroll UP (negative scroll offset)
         maxScrollOffset = max(0, extraHeight)
         
         // Ensure current scroll doesn't exceed the new maximum
+        // taskScrollOffset should never go below 0 (no scrolling down past original position)
         if taskScrollOffset > maxScrollOffset {
             taskScrollOffset = maxScrollOffset
+        }
+        if taskScrollOffset < 0 {
+            taskScrollOffset = 0
         }
         
         print("🎯 Scroll enabled: \(tasks.count) tasks, maxScrollOffset: \(maxScrollOffset), currentOffset: \(taskScrollOffset)")
