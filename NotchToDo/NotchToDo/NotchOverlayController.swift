@@ -1199,10 +1199,12 @@ class NotchOverlayController: ObservableObject {
         let newOrb = orbManager.createOrb(name: name)
         
         // Add some random tasks to make it look realistic
-        let taskCount = Int.random(in: 1...4)
-        for _ in 0..<taskCount {
+        let initialTaskCount = Int.random(in: 1...4)
+        print("🎯 Creating orb '\(name)' with \(initialTaskCount) initial tasks")
+        for _ in 0..<initialTaskCount {
             newOrb.addTask()
         }
+        print("🎯 Final orb '\(name)' has taskCount: \(newOrb.taskCount), tasks.count: \(newOrb.tasks.count)")
         
         print("🎯 Current orb count after: \(orbManager.orbs.count)")
         print("🎯 Semi-circle visible: \(isSemiCircleVisible)")
