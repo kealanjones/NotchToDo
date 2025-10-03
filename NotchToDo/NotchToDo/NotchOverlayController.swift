@@ -3325,10 +3325,13 @@ class TaskCardView: NSView {
         
         print("🎯 Scroll calculation debug:")
         print("   Task count: \(tasks.count)")
+        print("   Card bounds: \(bounds)")
+        print("   Card height: \(bounds.height)")
         print("   Total task height: \(totalTaskHeight)")
         print("   Visible area height: \(visibleTaskAreaHeight)")
         print("   Task start Y: \(taskStartY)")
         print("   Visible area top: \(visibleTaskAreaTop)")
+        print("   Comparison: \(totalTaskHeight) <= \(visibleTaskAreaHeight) = \(totalTaskHeight <= visibleTaskAreaHeight)")
         
         // Only enable scrolling if tasks exceed the visible area
         if totalTaskHeight <= visibleTaskAreaHeight {
