@@ -3310,50 +3310,29 @@ class TaskCardView: NSView {
     // MARK: - Scroll Functionality
     
     private func calculateMaxScrollOffset() {
-        print("🎯 calculateMaxScrollOffset() called")
         let taskHeight: CGFloat = 35
         let taskSpacing: CGFloat = 12
-        let taskStartY = bounds.maxY - 80  // Match the task positioning
         
-        // Calculate the visible task area (same as in drawTaskList)
-        let cardRect = bounds.insetBy(dx: 0, dy: 0)
-        let visibleTaskAreaTop = cardRect.minY + 20  // Match the clipping area
-        let visibleTaskAreaHeight = cardRect.height - 100  // Match the clipping area height
-        
-        // Calculate total height needed for all tasks
-        let totalTaskHeight = CGFloat(tasks.count) * (taskHeight + taskSpacing)
-        
-        print("🎯 Scroll calculation debug:")
-        print("   Task count: \(tasks.count)")
-        print("   Card bounds: \(bounds)")
-        print("   Card height: \(bounds.height)")
-        print("   Total task height: \(totalTaskHeight)")
-        print("   Visible area height: \(visibleTaskAreaHeight)")
-        print("   Task start Y: \(taskStartY)")
-        print("   Visible area top: \(visibleTaskAreaTop)")
-        print("   Comparison: \(totalTaskHeight) <= \(visibleTaskAreaHeight) = \(totalTaskHeight <= visibleTaskAreaHeight)")
-        
-        // Only enable scrolling if tasks exceed the visible area
-        if totalTaskHeight <= visibleTaskAreaHeight {
-            print("   No scrolling needed - all tasks fit")
+        // Simple approach: enable scrolling if we have more than 5 tasks
+        // This matches approximately what fits in the visible area
+        if tasks.count <= 5 {
             maxScrollOffset = 0  // No scrolling needed
             return
         }
         
-        // Calculate how much we can scroll up to show all tasks
-        // The last task should be able to reach the bottom of the visible area
-        let lastTaskY = taskStartY - (totalTaskHeight - taskHeight)
-        let visibleAreaBottom = visibleTaskAreaTop + visibleTaskAreaHeight
-        let maxScrollUp = max(0, lastTaskY - (visibleAreaBottom - taskHeight))
+        // Calculate total height needed for all tasks
+        let totalTaskHeight = CGFloat(tasks.count) * (taskHeight + taskSpacing)
         
-        print("   Last task Y: \(lastTaskY)")
-        print("   Visible area bottom: \(visibleAreaBottom)")
-        print("   Max scroll up: \(maxScrollUp)")
+        // Rough estimate of visible area height (about 5 tasks worth)
+        let visibleTaskHeight = CGFloat(5) * (taskHeight + taskSpacing)
         
-        // Maximum scroll offset is the upward scroll amount
-        maxScrollOffset = maxScrollUp
+        // Calculate how much extra height we have beyond what's visible
+        let extraHeight = totalTaskHeight - visibleTaskHeight
         
-        print("   Final maxScrollOffset: \(maxScrollOffset)")
+        // Set scroll offset to allow scrolling through the extra height
+        maxScrollOffset = max(0, extraHeight)
+        
+        print("🎯 Scroll enabled: \(tasks.count) tasks, maxScrollOffset: \(maxScrollOffset)")
     }
     
     private func startHoverDetection() {
