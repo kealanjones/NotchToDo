@@ -928,6 +928,10 @@ class NotchOverlayController: ObservableObject {
             source.taskCount = source.tasks.count
             target.taskCount = target.tasks.count
             
+            // Recalculate scroll for both task cards
+            sourceCard.calculateMaxScrollOffset()
+            targetCard.calculateMaxScrollOffset()
+            
             // Trigger orb display update to refresh task counters
             semiCircleView?.needsDisplay = true
             
@@ -3079,7 +3083,8 @@ class TaskCardView: NSView {
             controller?.triggerOrbCelebration()
         }
         
-        // Update display
+        // Recalculate scroll in case task visibility changed
+        calculateMaxScrollOffset()
         needsDisplay = true
         
         print("🎯 Task '\(task.title)' marked as \(task.isCompleted ? "completed" : "incomplete")")
@@ -3317,6 +3322,10 @@ class TaskCardView: NSView {
         // This matches approximately what fits in the visible area
         if tasks.count <= 5 {
             maxScrollOffset = 0  // No scrolling needed
+            // Reset scroll offset when tasks are removed
+            if taskScrollOffset > 0 {
+                taskScrollOffset = 0
+            }
             return
         }
         
@@ -3332,7 +3341,12 @@ class TaskCardView: NSView {
         // Set scroll offset to allow scrolling through the extra height
         maxScrollOffset = max(0, extraHeight)
         
-        print("🎯 Scroll enabled: \(tasks.count) tasks, maxScrollOffset: \(maxScrollOffset)")
+        // Ensure current scroll doesn't exceed the new maximum
+        if taskScrollOffset > maxScrollOffset {
+            taskScrollOffset = maxScrollOffset
+        }
+        
+        print("🎯 Scroll enabled: \(tasks.count) tasks, maxScrollOffset: \(maxScrollOffset), currentOffset: \(taskScrollOffset)")
     }
     
     private func startHoverDetection() {
