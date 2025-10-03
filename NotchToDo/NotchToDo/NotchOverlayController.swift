@@ -54,6 +54,7 @@ import QuartzCore
         tasks.append(task)
         taskCount = tasks.count
         print("🎯 Added task to \(name): taskCount now \(taskCount), tasks.count = \(tasks.count)")
+        print("🎯 Tasks in \(name): \(tasks.map { $0.title })")
     }
     
     func removeTask() {
