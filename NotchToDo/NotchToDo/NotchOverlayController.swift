@@ -1226,7 +1226,7 @@ class NotchOverlayController: ObservableObject {
             }
         }
         
-        print("🎯 Created project '\(name)' with \(taskCount) tasks")
+        print("🎯 Created project '\(name)' with \(initialTaskCount) tasks")
     }
     
     private func showMaximumOrbsNotification() {
