@@ -3617,8 +3617,8 @@ class TaskCardView: NSView {
         let scrollDelta = event.scrollingDeltaY
         let scrollSensitivity: CGFloat = 2.0
         
-        // Calculate new offset
-        let newOffset = taskScrollOffset + (scrollDelta * scrollSensitivity)
+        // Calculate new offset (reverse direction: scroll down = negative delta = decrease offset)
+        let newOffset = taskScrollOffset - (scrollDelta * scrollSensitivity)
         
         // Apply bounds: 0 (top task at original position) to maxScrollOffset (bottom task visible)
         let clampedOffset = max(0, min(newOffset, maxScrollOffset))
