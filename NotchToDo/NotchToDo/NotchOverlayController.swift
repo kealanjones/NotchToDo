@@ -3319,7 +3319,6 @@ class TaskCardView: NSView {
         let taskSpacing: CGFloat = 12
         
         // Simple approach: enable scrolling if we have more than 5 tasks
-        // This matches approximately what fits in the visible area
         if tasks.count <= 5 {
             maxScrollOffset = 0  // No scrolling needed
             // Reset scroll offset when tasks are removed
@@ -3338,12 +3337,13 @@ class TaskCardView: NSView {
         // Calculate how much extra height we have beyond what's visible
         let extraHeight = totalTaskHeight - visibleTaskHeight
         
-        // Set scroll offset to allow scrolling through the extra height
-        // This is the maximum we can scroll UP (negative scroll offset)
+        // maxScrollOffset represents how much we can scroll UP to show more tasks below
+        // This should be the extra height beyond what's visible
         maxScrollOffset = max(0, extraHeight)
         
-        // Ensure current scroll doesn't exceed the new maximum
-        // taskScrollOffset should never go below 0 (no scrolling down past original position)
+        // Ensure current scroll is within bounds
+        // 0 = top task at original position (no scrolling down past it)
+        // maxScrollOffset = bottom task just visible (maximum scrolling up)
         if taskScrollOffset > maxScrollOffset {
             taskScrollOffset = maxScrollOffset
         }
@@ -3351,7 +3351,7 @@ class TaskCardView: NSView {
             taskScrollOffset = 0
         }
         
-        print("🎯 Scroll enabled: \(tasks.count) tasks, maxScrollOffset: \(maxScrollOffset), currentOffset: \(taskScrollOffset)")
+        print("🎯 Scroll bounds: \(tasks.count) tasks, can scroll 0 to \(maxScrollOffset), current: \(taskScrollOffset)")
     }
     
     private func startHoverDetection() {
@@ -3614,17 +3614,21 @@ class TaskCardView: NSView {
             controller?.resetFadeTimer()
         }
         
-            let scrollDelta = event.scrollingDeltaY
-            let scrollSensitivity: CGFloat = 2.0
-            
-            // Update scroll offset (reversed direction)
-            let newOffset = taskScrollOffset + (scrollDelta * scrollSensitivity)
-        taskScrollOffset = max(0, min(newOffset, maxScrollOffset))
+        let scrollDelta = event.scrollingDeltaY
+        let scrollSensitivity: CGFloat = 2.0
         
-        // Update display
-        needsDisplay = true
+        // Calculate new offset
+        let newOffset = taskScrollOffset + (scrollDelta * scrollSensitivity)
         
-        print("🎯 Scrolled tasks: offset=\(taskScrollOffset), delta=\(scrollDelta)")
+        // Apply bounds: 0 (top task at original position) to maxScrollOffset (bottom task visible)
+        let clampedOffset = max(0, min(newOffset, maxScrollOffset))
+        
+        // Only update if the offset actually changed
+        if clampedOffset != taskScrollOffset {
+            taskScrollOffset = clampedOffset
+            needsDisplay = true
+            print("🎯 Scrolled tasks: offset=\(taskScrollOffset)/\(maxScrollOffset), delta=\(scrollDelta)")
+        }
     }
     
     override func draw(_ dirtyRect: NSRect) {
