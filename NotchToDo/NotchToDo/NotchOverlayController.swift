@@ -53,6 +53,7 @@ import QuartzCore
         let task = Task(title: "New Task \(tasks.count + 1)")
         tasks.append(task)
         taskCount = tasks.count
+        print("🎯 Added task to \(name): taskCount now \(taskCount), tasks.count = \(tasks.count)")
     }
     
     func removeTask() {
@@ -63,7 +64,11 @@ import QuartzCore
     }
     
     func syncTaskCount() {
+        let oldCount = taskCount
         taskCount = tasks.count
+        if oldCount != taskCount {
+            print("🎯 Synced task count for \(name): \(oldCount) -> \(taskCount) (tasks.count = \(tasks.count))")
+        }
     }
     
     // MARK: - Physics Methods
