@@ -4008,8 +4008,8 @@ class TaskCardView: NSView {
             drawScrollBar(in: context, cardRect: cardRect, visibleHeight: visibleHeight)
         }
         
-        // Clip to visible task area - match where tasks are actually positioned
-        let taskAreaRect = NSRect(x: cardRect.minX + 20, y: taskStartY - 200, width: cardRect.width - 40, height: 200)
+        // Clip to visible task area - extend above taskStartY to include first task
+        let taskAreaRect = NSRect(x: cardRect.minX + 20, y: taskStartY - 200, width: cardRect.width - 40, height: 220)
         print("🎯 CLIPPING AREA: \(taskAreaRect), taskStartY: \(taskStartY)")
         context.saveGState()
         context.clip(to: taskAreaRect)
@@ -4030,12 +4030,12 @@ class TaskCardView: NSView {
                 
                 
                 // Store task rectangle for hit testing (only if visible in clipping area)
-                if taskY >= taskStartY - 200 && taskY <= taskStartY {
+                if taskY >= taskStartY - 220 && taskY <= taskStartY {
                     taskRects.append(taskRect)
                 }
                 
                 // Skip tasks that would go below the clipping area
-                if taskY < taskStartY - 200 {
+                if taskY < taskStartY - 220 {
                     break
                 }
                 
@@ -4106,8 +4106,8 @@ class TaskCardView: NSView {
         let scrollBarMargin: CGFloat = 4
         let scrollBarX = cardRect.maxX - scrollBarWidth - scrollBarMargin
         let taskStartY = cardRect.maxY - 80
-        let scrollBarY = taskStartY - 200
-        let scrollBarHeight: CGFloat = 200
+        let scrollBarY = taskStartY - 220
+        let scrollBarHeight: CGFloat = 220
         
         // Calculate scroll thumb size and position
         let thumbHeight = max(20, scrollBarHeight * (visibleHeight / (visibleHeight + maxScrollOffset)))
