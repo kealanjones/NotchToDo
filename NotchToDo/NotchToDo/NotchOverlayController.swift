@@ -3310,6 +3310,7 @@ class TaskCardView: NSView {
     // MARK: - Scroll Functionality
     
     private func calculateMaxScrollOffset() {
+        print("🎯 calculateMaxScrollOffset() called")
         let taskHeight: CGFloat = 35
         let taskSpacing: CGFloat = 12
         let taskStartY = bounds.maxY - 80  // Match the task positioning
@@ -4025,7 +4026,7 @@ class TaskCardView: NSView {
                 }
                 
                 // Glass morphism task background
-                context.saveGState()
+        context.saveGState()
                 let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
                 taskPath.addClip()
             
@@ -4140,12 +4141,12 @@ class TaskCardView: NSView {
         
         // Glass morphism effect for grab handle
         let grabHandleGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                          colors: [
+                                        colors: [
                                               NSColor.white.withAlphaComponent(0.3).cgColor,
-                                              NSColor.white.withAlphaComponent(0.1).cgColor,
+                                            NSColor.white.withAlphaComponent(0.1).cgColor,
                                               NSColor.white.withAlphaComponent(0.05).cgColor
-                                          ] as CFArray,
-                                          locations: [0.0, 0.5, 1.0])!
+                                        ] as CFArray,
+                                        locations: [0.0, 0.5, 1.0])!
         
         grabHandlePath.addClip()
         context.drawLinearGradient(grabHandleGradient,
@@ -4202,10 +4203,10 @@ class TaskCardView: NSView {
                                      startRadius: 0,
                                      endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
                                      endRadius: checkboxSize/2,
-                                     options: [])
+                                  options: [])
             
             // Add subtle glow effect for completed state
-            context.restoreGState()
+        context.restoreGState()
             context.saveGState()
             context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4, color: NSColor.systemGreen.withAlphaComponent(0.4).cgColor)
             context.setFillColor(NSColor.clear.cgColor)
