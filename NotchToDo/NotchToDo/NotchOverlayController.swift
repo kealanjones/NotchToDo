@@ -3037,7 +3037,7 @@ class TaskCardView: NSView {
         let grabHandleSize: CGFloat = 20
         let taskHeight: CGFloat = 35
         let taskSpacing: CGFloat = 12
-        let taskStartY = bounds.maxY - 80  // Match the task positioning
+        let taskStartY = bounds.maxY - 150  // Match the task positioning
         
         for (index, task) in tasks.enumerated() {
             let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
@@ -3064,7 +3064,7 @@ class TaskCardView: NSView {
         let checkboxSize: CGFloat = 22
         let taskHeight: CGFloat = 35
         let taskSpacing: CGFloat = 12
-        let taskStartY = bounds.maxY - 80  // Match the task positioning
+        let taskStartY = bounds.maxY - 150  // Match the task positioning
         
         for (index, task) in tasks.enumerated() {
             let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
@@ -4030,7 +4030,7 @@ class TaskCardView: NSView {
                 
                 
                 // Store task rectangle for hit testing (only if visible in clipping area)
-                if taskY >= taskStartY - 220 && taskY <= taskStartY {
+                if taskY >= taskStartY - 220 && taskY <= taskStartY + 50 {
                     taskRects.append(taskRect)
                 }
                 
