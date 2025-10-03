@@ -3315,33 +3315,19 @@ class TaskCardView: NSView {
     // MARK: - Scroll Functionality
     
     func calculateMaxScrollOffset() {
-        let taskHeight: CGFloat = 35
-        let taskSpacing: CGFloat = 12
-        
-        print("🎯 calculateMaxScrollOffset called with \(tasks.count) tasks")
-        
-        // Simple approach: enable scrolling if we have more than 5 tasks
+        // Very simple approach: enable scrolling if we have more than 5 tasks
         if tasks.count <= 5 {
             maxScrollOffset = 0  // No scrolling needed
-            // Reset scroll offset when tasks are removed
             if taskScrollOffset > 0 {
                 taskScrollOffset = 0
             }
-            print("🎯 No scrolling needed - only \(tasks.count) tasks")
             return
         }
         
-        // Calculate total height needed for all tasks
-        let totalTaskHeight = CGFloat(tasks.count) * (taskHeight + taskSpacing)
-        
-        // Rough estimate of visible area height (about 5 tasks worth)
-        let visibleTaskHeight = CGFloat(5) * (taskHeight + taskSpacing)
-        
-        // Calculate how much extra height we have beyond what's visible
-        let extraHeight = totalTaskHeight - visibleTaskHeight
-        
-        // Set scroll bounds: 0 = no scrolling, extraHeight = maximum scroll up
-        maxScrollOffset = max(0, extraHeight)
+        // For 6+ tasks, set a reasonable scroll amount
+        // Each extra task beyond 5 needs about 47px of scroll space (35 height + 12 spacing)
+        let extraTasks = tasks.count - 5
+        maxScrollOffset = CGFloat(extraTasks) * 47.0
         
         // Ensure current scroll is within bounds
         if taskScrollOffset > maxScrollOffset {
@@ -3350,8 +3336,6 @@ class TaskCardView: NSView {
         if taskScrollOffset < 0 {
             taskScrollOffset = 0
         }
-        
-        print("🎯 Scroll calculation: \(tasks.count) tasks, totalHeight=\(totalTaskHeight), visibleHeight=\(visibleTaskHeight), extraHeight=\(extraHeight), maxScroll=\(maxScrollOffset)")
     }
     
     private func startHoverDetection() {
@@ -3995,8 +3979,6 @@ class TaskCardView: NSView {
         let taskSpacing: CGFloat = 12       // More spacing between tasks
         let visibleHeight: CGFloat = 200    // Visible task area height
         
-        print("🎯 Drawing tasks: count=\(tasks.count), taskScrollOffset=\(taskScrollOffset), taskStartY=\(taskStartY)")
-        
         // Calculate scroll parameters
         calculateMaxScrollOffset()
         
@@ -4004,7 +3986,6 @@ class TaskCardView: NSView {
         taskRects.removeAll()
         
         // Draw scroll bar if needed
-        print("🎯 Scroll bar check: maxScrollOffset=\(maxScrollOffset), should show=\(maxScrollOffset > 0)")
         if maxScrollOffset > 0 {
             drawScrollBar(in: context, cardRect: cardRect, visibleHeight: visibleHeight)
         }
@@ -4023,9 +4004,6 @@ class TaskCardView: NSView {
                 let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
                 let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
                 
-                if index == 0 {
-                    print("🎯 Task 0 Y position: \(taskY) (taskStartY: \(taskStartY), taskScrollOffset: \(taskScrollOffset))")
-                }
                 
                 // Store task rectangle for hit testing (only if visible)
                 if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 80 {
@@ -4100,7 +4078,6 @@ class TaskCardView: NSView {
         }
     
     private func drawScrollBar(in context: CGContext, cardRect: NSRect, visibleHeight: CGFloat) {
-        print("🎯 Drawing scroll bar: maxScrollOffset=\(maxScrollOffset), taskScrollOffset=\(taskScrollOffset)")
         let scrollBarWidth: CGFloat = 8
         let scrollBarMargin: CGFloat = 4
         let scrollBarX = cardRect.maxX - scrollBarWidth - scrollBarMargin
