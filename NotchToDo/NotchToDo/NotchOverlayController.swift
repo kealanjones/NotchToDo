@@ -2376,7 +2376,6 @@ class SemiCircleView: NSView {
     }
     
         private func drawOrbs(in context: CGContext) {
-        print("🎯 Drawing orbs - isVisible: \(orbManager.isVisible), orbCount: \(orbManager.orbs.count)")
         
         guard orbManager.isVisible else { 
             print("🎯 Orbs not visible, skipping draw")
@@ -2387,10 +2386,8 @@ class SemiCircleView: NSView {
         let centerY = bounds.maxY - 10 // Match the circle center
         let radius = min(bounds.width, bounds.height) / 2 + 18.5 // Match the circle radius
         
-        print("🎯 Drawing at center: (\(centerX), \(centerY)), radius: \(radius)")
         
         for (index, orb) in orbManager.orbs.enumerated() {
-            print("🎯 Orb \(index): visible=\(orb.isVisible), angle=\(orb.angle), scale=\(orb.scale), animationScale=\(orb.animationScale)")
             
             // Skip drawing the dragged orb in its original position
             if isDragging && draggedOrb?.id == orb.id {
