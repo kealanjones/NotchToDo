@@ -3991,6 +3991,8 @@ class TaskCardView: NSView {
         let taskSpacing: CGFloat = 12       // More spacing between tasks
         let visibleHeight: CGFloat = 200    // Visible task area height
         
+        print("🎯 Drawing tasks: count=\(tasks.count), taskScrollOffset=\(taskScrollOffset), taskStartY=\(taskStartY)")
+        
         // Calculate scroll parameters
         calculateMaxScrollOffset()
         
@@ -4015,6 +4017,10 @@ class TaskCardView: NSView {
                 
                 let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
                 let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
+                
+                if index == 0 {
+                    print("🎯 Task 0 Y position: \(taskY) (taskStartY: \(taskStartY), taskScrollOffset: \(taskScrollOffset))")
+                }
                 
                 // Store task rectangle for hit testing (only if visible)
                 if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 80 {
