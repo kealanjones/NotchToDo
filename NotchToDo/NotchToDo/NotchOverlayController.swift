@@ -50,7 +50,7 @@ import QuartzCore
     }
     
     func addTask() {
-        let task = Task(title: "New Task \(taskCount + 1)")
+        let task = Task(title: "New Task \(tasks.count + 1)")
         tasks.append(task)
         taskCount = tasks.count
     }
@@ -60,6 +60,10 @@ import QuartzCore
             tasks.removeLast()
             taskCount = tasks.count
         }
+    }
+    
+    func syncTaskCount() {
+        taskCount = tasks.count
     }
     
     // MARK: - Physics Methods
@@ -925,8 +929,8 @@ class NotchOverlayController: ObservableObject {
             targetCard.updateTasks(target.tasks, projectName: target.name, orbColor: target.color)
             
             // Update orb task counters
-            source.taskCount = source.tasks.count
-            target.taskCount = target.tasks.count
+            source.syncTaskCount()
+            target.syncTaskCount()
             
             // Recalculate scroll for both task cards
             sourceCard.calculateMaxScrollOffset()
