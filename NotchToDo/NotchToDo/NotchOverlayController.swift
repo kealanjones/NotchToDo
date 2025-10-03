@@ -3983,7 +3983,7 @@ class TaskCardView: NSView {
     }
     
     private func drawTaskList(in context: CGContext, cardRect: NSRect) {
-        let taskStartY = cardRect.maxY - 80   // Much lower to clear title area completely
+        let taskStartY = cardRect.maxY - 80   // Start below title area
         let taskHeight: CGFloat = 35        // Slightly taller tasks
         let taskSpacing: CGFloat = 12       // More spacing between tasks
         let visibleHeight: CGFloat = 200    // Visible task area height
@@ -3999,8 +3999,8 @@ class TaskCardView: NSView {
             drawScrollBar(in: context, cardRect: cardRect, visibleHeight: visibleHeight)
         }
         
-        // Clip to visible task area - position below title with proper spacing, extend lower
-        let taskAreaRect = NSRect(x: cardRect.minX + 20, y: cardRect.minY + 20, width: cardRect.width - 40, height: cardRect.height - 100)
+        // Clip to visible task area - match where tasks are actually positioned
+        let taskAreaRect = NSRect(x: cardRect.minX + 20, y: taskStartY - 200, width: cardRect.width - 40, height: 200)
         context.saveGState()
         context.clip(to: taskAreaRect)
         
@@ -4014,14 +4014,13 @@ class TaskCardView: NSView {
                 let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
                 
                 
-                // Store task rectangle for hit testing (only if visible)
-                if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 80 {
+                // Store task rectangle for hit testing (only if visible in clipping area)
+                if taskY >= taskStartY - 200 && taskY <= taskStartY {
                     taskRects.append(taskRect)
                 }
                 
-                // Skip tasks that would go below the card bounds
-                if taskY < cardRect.minY + 20 {
-                    print("🎯 Skipping task \(index) '\(task.title)' - Y position \(taskY) is below card bounds")
+                // Skip tasks that would go below the clipping area
+                if taskY < taskStartY - 200 {
                     break
                 }
                 
@@ -4091,8 +4090,9 @@ class TaskCardView: NSView {
         let scrollBarWidth: CGFloat = 8
         let scrollBarMargin: CGFloat = 4
         let scrollBarX = cardRect.maxX - scrollBarWidth - scrollBarMargin
-        let scrollBarY = cardRect.minY + 20
-        let scrollBarHeight = cardRect.height - 100
+        let taskStartY = cardRect.maxY - 80
+        let scrollBarY = taskStartY - 200
+        let scrollBarHeight: CGFloat = 200
         
         // Calculate scroll thumb size and position
         let thumbHeight = max(20, scrollBarHeight * (visibleHeight / (visibleHeight + maxScrollOffset)))
