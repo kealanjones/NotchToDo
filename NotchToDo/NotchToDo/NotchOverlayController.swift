@@ -754,6 +754,10 @@ class NotchOverlayController: ObservableObject {
         window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         
         // Create task card view
+        print("🎯 Creating task card for orb '\(orb.name)' with \(orb.tasks.count) tasks")
+        for (index, task) in orb.tasks.enumerated() {
+            print("🎯   Orb task \(index): '\(task.title)'")
+        }
         let taskCardView = TaskCardView()
         taskCardView.setController(self)
         taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color)
@@ -2981,9 +2985,14 @@ class TaskCardView: NSView {
     }
     
     func updateTasks(_ tasks: [Task], projectName: String, orbColor: NSColor) {
+        print("🎯 TaskCardView.updateTasks called for '\(projectName)': received \(tasks.count) tasks")
+        for (index, task) in tasks.enumerated() {
+            print("🎯   Task \(index): '\(task.title)'")
+        }
         self.tasks = tasks
         self.projectName = projectName
         self.orbColor = orbColor
+        print("🎯 TaskCardView now has \(self.tasks.count) tasks")
         self.needsDisplay = true
     }
     
