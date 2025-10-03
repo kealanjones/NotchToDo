@@ -4010,6 +4010,7 @@ class TaskCardView: NSView {
         
         // Clip to visible task area - match where tasks are actually positioned
         let taskAreaRect = NSRect(x: cardRect.minX + 20, y: taskStartY - 200, width: cardRect.width - 40, height: 200)
+        print("🎯 CLIPPING AREA: \(taskAreaRect), taskStartY: \(taskStartY)")
         context.saveGState()
         context.clip(to: taskAreaRect)
         
@@ -4021,6 +4022,11 @@ class TaskCardView: NSView {
                 
                 let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
                 let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
+                
+                // Debug first few tasks positioning
+                if index < 3 {
+                    print("🎯 DRAWING Task \(index) '\(task.title)' at Y: \(taskY), taskStartY: \(taskStartY), cardRect: \(cardRect)")
+                }
                 
                 
                 // Store task rectangle for hit testing (only if visible in clipping area)
