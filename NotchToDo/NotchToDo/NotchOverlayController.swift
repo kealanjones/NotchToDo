@@ -3317,6 +3317,7 @@ class TaskCardView: NSView {
     func calculateMaxScrollOffset() {
         let taskHeight: CGFloat = 35
         let taskSpacing: CGFloat = 12
+        let taskStartY = bounds.maxY - 80  // Original position of first task
         
         // Simple approach: enable scrolling if we have more than 5 tasks
         if tasks.count <= 5 {
@@ -3331,19 +3332,18 @@ class TaskCardView: NSView {
         // Calculate total height needed for all tasks
         let totalTaskHeight = CGFloat(tasks.count) * (taskHeight + taskSpacing)
         
-        // Rough estimate of visible area height (about 5 tasks worth)
-        let visibleTaskHeight = CGFloat(5) * (taskHeight + taskSpacing)
+        // Calculate visible area bounds (same as in drawTaskList)
+        let visibleAreaTop = bounds.minY + 20
+        let visibleAreaHeight = bounds.height - 100
         
-        // Calculate how much extra height we have beyond what's visible
-        let extraHeight = totalTaskHeight - visibleTaskHeight
+        // The maximum we can scroll UP is when the last task reaches the bottom of visible area
+        let lastTaskOriginalY = taskStartY - (totalTaskHeight - taskHeight)
+        let maxScrollUp = max(0, lastTaskOriginalY - (visibleAreaTop + taskHeight))
         
-        // maxScrollOffset represents how much we can scroll UP to show more tasks below
-        // This should be the extra height beyond what's visible
-        maxScrollOffset = max(0, extraHeight)
+        // Set scroll bounds: 0 = no scrolling, maxScrollUp = maximum scroll up
+        maxScrollOffset = maxScrollUp
         
         // Ensure current scroll is within bounds
-        // 0 = top task at original position (no scrolling down past it)
-        // maxScrollOffset = bottom task just visible (maximum scrolling up)
         if taskScrollOffset > maxScrollOffset {
             taskScrollOffset = maxScrollOffset
         }
@@ -3351,7 +3351,7 @@ class TaskCardView: NSView {
             taskScrollOffset = 0
         }
         
-        print("🎯 Scroll bounds: \(tasks.count) tasks, can scroll 0 to \(maxScrollOffset), current: \(taskScrollOffset)")
+        print("🎯 Scroll bounds: \(tasks.count) tasks, taskStartY=\(taskStartY), maxScroll=\(maxScrollOffset), current=\(taskScrollOffset)")
     }
     
     private func startHoverDetection() {
