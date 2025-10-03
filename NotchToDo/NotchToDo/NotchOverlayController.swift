@@ -4013,9 +4013,6 @@ class TaskCardView: NSView {
                 let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
                 let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
                 
-                if index == 0 {
-                    print("🎯 Task 0 '\(task.title)' Y position: \(taskY), taskStartY: \(taskStartY), cardRect.maxY: \(cardRect.maxY), cardRect.minY: \(cardRect.minY)")
-                }
                 
                 // Store task rectangle for hit testing (only if visible)
                 if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 80 {
