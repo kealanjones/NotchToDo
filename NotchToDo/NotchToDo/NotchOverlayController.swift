@@ -754,10 +754,6 @@ class NotchOverlayController: ObservableObject {
         window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         
         // Create task card view
-        print("🎯 Creating task card for orb '\(orb.name)' with \(orb.tasks.count) tasks")
-        for (index, task) in orb.tasks.enumerated() {
-            print("🎯   Orb task \(index): '\(task.title)'")
-        }
         let taskCardView = TaskCardView()
         taskCardView.setController(self)
         taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color)
@@ -2985,14 +2981,9 @@ class TaskCardView: NSView {
     }
     
     func updateTasks(_ tasks: [Task], projectName: String, orbColor: NSColor) {
-        print("🎯 TaskCardView.updateTasks called for '\(projectName)': received \(tasks.count) tasks")
-        for (index, task) in tasks.enumerated() {
-            print("🎯   Task \(index): '\(task.title)'")
-        }
         self.tasks = tasks
         self.projectName = projectName
         self.orbColor = orbColor
-        print("🎯 TaskCardView now has \(self.tasks.count) tasks")
         self.needsDisplay = true
     }
     
@@ -4010,7 +4001,6 @@ class TaskCardView: NSView {
         
         // Clip to visible task area - span from card bottom to below header
         let taskAreaRect = NSRect(x: cardRect.minX + 20, y: cardRect.minY + 20, width: cardRect.width - 40, height: (cardRect.maxY - 70) - (cardRect.minY + 20))
-        print("🎯 CLIPPING AREA: \(taskAreaRect), taskStartY: \(taskStartY)")
         context.saveGState()
         context.clip(to: taskAreaRect)
         
@@ -4023,10 +4013,6 @@ class TaskCardView: NSView {
                 let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
                 let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
                 
-                // Debug first few tasks positioning
-                if index < 3 {
-                    print("🎯 DRAWING Task \(index) '\(task.title)' at Y: \(taskY), taskStartY: \(taskStartY), cardRect: \(cardRect)")
-                }
                 
                 
                 // Store task rectangle for hit testing (only if visible in clipping area)
