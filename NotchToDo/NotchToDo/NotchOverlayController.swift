@@ -4303,7 +4303,7 @@ class TaskCardView: NSView {
         context.restoreGState()
         
         // Subtle border
-        context.saveGState()
+            context.saveGState()
         let borderColor = isCompleted ? NSColor.systemGreen.withAlphaComponent(0.6) : NSColor.black.withAlphaComponent(0.15)
         context.setStrokeColor(borderColor.cgColor)
         context.setLineWidth(1.5)
@@ -4397,14 +4397,14 @@ class TaskDetailView: NSView {
     
     private func setupView() {
         self.wantsLayer = true
-        self.layer?.cornerRadius = 16 // Modern macOS Sequoia corner radius
+        self.layer?.cornerRadius = 32 // Large, sophisticated corner radius
         self.layer?.masksToBounds = false
         
         // Title field
         titleField = NSTextField(frame: NSRect(x: 30, y: 420, width: 340, height: 40))
         titleField.stringValue = task.title
         titleField.font = NSFont.systemFont(ofSize: 24, weight: .bold)
-        titleField.textColor = .labelColor
+        titleField.textColor = NSColor.white
         titleField.backgroundColor = .clear
         titleField.isBordered = false
         titleField.isEditable = true
@@ -4427,7 +4427,7 @@ class TaskDetailView: NSView {
         detailsTextView.string = task.details
         detailsTextView.font = NSFont.systemFont(ofSize: 14)
         detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.1)
-        detailsTextView.textColor = .labelColor
+        detailsTextView.textColor = NSColor.white
         detailsTextView.layer?.cornerRadius = 12
         detailsTextView.isEditable = true
         detailsTextView.delegate = self
@@ -4437,7 +4437,7 @@ class TaskDetailView: NSView {
         let priorityLabel = NSTextField(frame: NSRect(x: 30, y: 240, width: 100, height: 20))
         priorityLabel.stringValue = "Priority"
         priorityLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
-        priorityLabel.textColor = .secondaryLabelColor
+        priorityLabel.textColor = NSColor.white.withAlphaComponent(0.8)
         priorityLabel.backgroundColor = .clear
         priorityLabel.isBordered = false
         priorityLabel.isEditable = false
@@ -4456,7 +4456,7 @@ class TaskDetailView: NSView {
         self.priorityLabel = NSTextField(frame: NSRect(x: 240, y: 210, width: 50, height: 20))
         self.priorityLabel.stringValue = "\(task.priority)"
         self.priorityLabel.font = NSFont.systemFont(ofSize: 14, weight: .bold)
-        self.priorityLabel.textColor = .labelColor
+        self.priorityLabel.textColor = NSColor.white
         self.priorityLabel.backgroundColor = .clear
         self.priorityLabel.isBordered = false
         self.priorityLabel.isEditable = false
@@ -4557,35 +4557,56 @@ class TaskDetailView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        let cardRect = bounds.insetBy(dx: 8, dy: 8)
-        let cornerRadius: CGFloat = 16 // Modern macOS Sequoia corner radius
+        let cardRect = bounds.insetBy(dx: 2, dy: 2)
+        let cornerRadius: CGFloat = 32 // Large, modern corner radius
         
-        // Modern card background with subtle gradient
+        // Create sophisticated glassmorphism effect
         context.saveGState()
+        
+        // Main card path
         let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: cornerRadius, yRadius: cornerRadius)
         cardPath.addClip()
         
-        // Modern gradient background
+        // Dark, sophisticated background with multiple layers
         let backgroundGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                          colors: [
-                                              NSColor(red: 0.98, green: 0.98, blue: 0.99, alpha: 1.0).cgColor,
-                                              NSColor(red: 0.96, green: 0.97, blue: 0.98, alpha: 1.0).cgColor,
-                                              NSColor(red: 0.95, green: 0.96, blue: 0.97, alpha: 1.0).cgColor
-                                          ] as CFArray,
-                                          locations: [0.0, 0.5, 1.0])
+                                        colors: [
+                                              NSColor(red: 0.08, green: 0.09, blue: 0.12, alpha: 0.98).cgColor,
+                                              NSColor(red: 0.12, green: 0.13, blue: 0.16, alpha: 0.95).cgColor,
+                                              NSColor(red: 0.06, green: 0.07, blue: 0.10, alpha: 1.0).cgColor
+                                        ] as CFArray,
+                                          locations: [0.0, 0.4, 1.0])
         
         context.drawLinearGradient(backgroundGradient!,
                                  start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
                                  end: CGPoint(x: cardRect.midX, y: cardRect.minY),
                                  options: [])
         
+        // Add subtle inner glow for depth
+        context.setShadow(offset: CGSize.zero, blur: 30, color: NSColor.white.withAlphaComponent(0.08).cgColor)
+        context.setFillColor(NSColor.clear.cgColor)
+        context.fill(cardRect)
+        
         context.restoreGState()
         
-        // Modern border with subtle shadow
+        // Sophisticated animated border with multiple effects
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4, color: NSColor.black.withAlphaComponent(0.1).cgColor)
-        context.setStrokeColor(NSColor(red: 0.85, green: 0.86, blue: 0.88, alpha: 1.0).cgColor)
-        context.setLineWidth(0.5)
+        
+        // Outer glow effect
+        context.setShadow(offset: CGSize(width: 0, height: 12), blur: 40, color: NSColor.black.withAlphaComponent(0.4).cgColor)
+        
+        // Animated gradient border that shifts with animationPhase
+        let borderGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                      colors: [
+                                          NSColor(red: 0.3 + 0.1 * sin(animationPhase), green: 0.5 + 0.1 * cos(animationPhase * 1.3), blue: 0.9, alpha: 0.8).cgColor,
+                                          NSColor(red: 0.8, green: 0.3 + 0.1 * sin(animationPhase * 1.7), blue: 0.6 + 0.1 * cos(animationPhase), alpha: 0.7).cgColor,
+                                          NSColor(red: 0.9, green: 0.6 + 0.1 * cos(animationPhase * 1.1), blue: 0.3 + 0.1 * sin(animationPhase * 1.5), alpha: 0.9).cgColor,
+                                          NSColor(red: 0.4 + 0.1 * cos(animationPhase * 1.2), green: 0.8, blue: 0.3 + 0.1 * sin(animationPhase * 1.4), alpha: 0.8).cgColor
+                                      ] as CFArray,
+                                      locations: [0.0, 0.33, 0.66, 1.0])
+        
+        context.setLineWidth(3.0)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
         
         // Convert NSBezierPath to CGPath for compatibility
         let path = CGMutablePath()
@@ -4608,38 +4629,67 @@ class TaskDetailView: NSView {
         }
         
         context.addPath(path)
-        context.strokePath()
+        context.replacePathWithStrokedPath()
+        context.clip()
+        
+        context.drawLinearGradient(borderGradient!,
+                                 start: CGPoint(x: cardRect.minX, y: cardRect.midY),
+                                 end: CGPoint(x: cardRect.maxX, y: cardRect.midY),
+                                  options: [])
         
         context.restoreGState()
         
-        // Draw close button
-        drawCloseButton(in: context)
+        // Draw sophisticated close button
+        drawSophisticatedCloseButton(in: context)
+        
+        // Add subtle floating particles effect
+        drawFloatingParticles(in: context, cardRect: cardRect)
     }
     
-    private func drawCloseButton(in context: CGContext) {
+    private func drawSophisticatedCloseButton(in context: CGContext) {
         context.saveGState()
         
-        // Modern close button design
         let buttonRect = closeButtonRect
-        let buttonPath = NSBezierPath(roundedRect: buttonRect, xRadius: 8, yRadius: 8)
+        let buttonCornerRadius: CGFloat = 16
         
-        // Modern button background with subtle gradient
+        // Sophisticated button with glassmorphism effect
+        let buttonPath = NSBezierPath(roundedRect: buttonRect, xRadius: buttonCornerRadius, yRadius: buttonCornerRadius)
+        buttonPath.addClip()
+        
+        // Dark glassmorphism background
         let buttonGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                        colors: [
-                                           NSColor(red: 0.92, green: 0.93, blue: 0.94, alpha: 1.0).cgColor,
-                                           NSColor(red: 0.88, green: 0.89, blue: 0.91, alpha: 1.0).cgColor
+                                           NSColor(red: 0.15, green: 0.16, blue: 0.18, alpha: 0.9).cgColor,
+                                           NSColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 0.95).cgColor,
+                                           NSColor(red: 0.05, green: 0.06, blue: 0.08, alpha: 1.0).cgColor
                                        ] as CFArray,
-                                       locations: [0.0, 1.0])
+                                       locations: [0.0, 0.5, 1.0])
         
-        // Draw button gradient
         context.drawLinearGradient(buttonGradient!,
                                  start: CGPoint(x: buttonRect.midX, y: buttonRect.maxY),
                                  end: CGPoint(x: buttonRect.midX, y: buttonRect.minY),
                                  options: [])
         
-        // Modern button border
-        context.setStrokeColor(NSColor(red: 0.75, green: 0.76, blue: 0.78, alpha: 1.0).cgColor)
-        context.setLineWidth(0.5)
+        // Subtle inner glow
+        context.setShadow(offset: CGSize.zero, blur: 15, color: NSColor.white.withAlphaComponent(0.1).cgColor)
+        context.setFillColor(NSColor.clear.cgColor)
+        context.fill(buttonRect)
+        
+        context.restoreGState()
+        
+        // Animated border that pulses
+        context.saveGState()
+        let borderAlpha = 0.6 + 0.3 * sin(animationPhase * 2.0)
+        let borderGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                       colors: [
+                                           NSColor(red: 0.8, green: 0.3, blue: 0.3, alpha: borderAlpha).cgColor,
+                                           NSColor(red: 0.9, green: 0.5, blue: 0.5, alpha: borderAlpha * 0.8).cgColor
+                                       ] as CFArray,
+                                       locations: [0.0, 1.0])
+        
+        context.setLineWidth(2.0)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
         
         // Convert NSBezierPath to CGPath for compatibility
         let path = CGMutablePath()
@@ -4662,10 +4712,18 @@ class TaskDetailView: NSView {
         }
         
         context.addPath(path)
-        context.fillPath()
+        context.replacePathWithStrokedPath()
+        context.clip()
         
-        // Modern X icon
-        let iconSize: CGFloat = 10
+        context.drawLinearGradient(borderGradient!,
+                                 start: CGPoint(x: buttonRect.minX, y: buttonRect.midY),
+                                 end: CGPoint(x: buttonRect.maxX, y: buttonRect.midY),
+                                 options: [])
+        
+        context.restoreGState()
+        
+        // Sophisticated X icon with glow
+        let iconSize: CGFloat = 12
         let iconRect = NSRect(
             x: buttonRect.midX - iconSize/2,
             y: buttonRect.midY - iconSize/2,
@@ -4673,16 +4731,39 @@ class TaskDetailView: NSView {
             height: iconSize
         )
         
-        context.setStrokeColor(NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0).cgColor)
-        context.setLineWidth(1.5)
+        context.saveGState()
+        context.setShadow(offset: CGSize.zero, blur: 8, color: NSColor.white.withAlphaComponent(0.8).cgColor)
+        context.setStrokeColor(NSColor.white.cgColor)
+        context.setLineWidth(2.0)
         context.setLineCap(.round)
         
-        // Draw modern X
+        // Draw glowing X
         context.move(to: CGPoint(x: iconRect.minX, y: iconRect.minY))
         context.addLine(to: CGPoint(x: iconRect.maxX, y: iconRect.maxY))
         context.move(to: CGPoint(x: iconRect.maxX, y: iconRect.minY))
         context.addLine(to: CGPoint(x: iconRect.minX, y: iconRect.maxY))
         context.strokePath()
+        context.restoreGState()
+    }
+    
+    private func drawFloatingParticles(in context: CGContext, cardRect: NSRect) {
+        context.saveGState()
+        
+        // Create subtle floating particles
+        let particleCount = 8
+        for i in 0..<particleCount {
+            let particlePhase = animationPhase + Double(i) * 0.785 // Offset each particle
+            let radius = CGFloat(1.0 + 0.5 * sin(particlePhase * 1.5))
+            let alpha = CGFloat(0.3 + 0.2 * sin(particlePhase * 2.0))
+            
+            let x = cardRect.minX + CGFloat(i) * (cardRect.width / CGFloat(particleCount - 1)) + 20 * sin(particlePhase)
+            let y = cardRect.minY + 50 + 30 * cos(particlePhase * 1.3) + CGFloat(i) * 40
+            
+            if x >= cardRect.minX && x <= cardRect.maxX && y >= cardRect.minY && y <= cardRect.maxY {
+                context.setFillColor(NSColor.white.withAlphaComponent(alpha).cgColor)
+                context.fillEllipse(in: NSRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
+            }
+        }
         
         context.restoreGState()
     }
