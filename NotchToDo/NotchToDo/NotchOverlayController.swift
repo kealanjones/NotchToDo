@@ -4008,8 +4008,8 @@ class TaskCardView: NSView {
             drawScrollBar(in: context, cardRect: cardRect, visibleHeight: visibleHeight)
         }
         
-        // Clip to visible task area - start higher to include first task properly
-        let taskAreaRect = NSRect(x: cardRect.minX + 20, y: taskStartY - 180, width: cardRect.width - 40, height: 200)
+        // Clip to visible task area - span from card bottom to below header
+        let taskAreaRect = NSRect(x: cardRect.minX + 20, y: cardRect.minY + 20, width: cardRect.width - 40, height: (cardRect.maxY - 70) - (cardRect.minY + 20))
         print("🎯 CLIPPING AREA: \(taskAreaRect), taskStartY: \(taskStartY)")
         context.saveGState()
         context.clip(to: taskAreaRect)
@@ -4030,12 +4030,12 @@ class TaskCardView: NSView {
                 
                 
                 // Store task rectangle for hit testing (only if visible in clipping area)
-                if taskY >= taskStartY - 180 && taskY <= taskStartY + 20 {
+                if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 70 {
                     taskRects.append(taskRect)
                 }
                 
                 // Skip tasks that would go below the clipping area
-                if taskY < taskStartY - 180 {
+                if taskY < cardRect.minY + 20 {
                     break
                 }
                 
@@ -4105,9 +4105,9 @@ class TaskCardView: NSView {
         let scrollBarWidth: CGFloat = 8
         let scrollBarMargin: CGFloat = 4
         let scrollBarX = cardRect.maxX - scrollBarWidth - scrollBarMargin
-        let taskStartY = cardRect.maxY - 150
-        let scrollBarY = taskStartY - 180
-        let scrollBarHeight: CGFloat = 200
+        let taskStartY = cardRect.maxY - 150 // Keep taskStartY as is, as requested
+        let scrollBarY = cardRect.minY + 20
+        let scrollBarHeight = (cardRect.maxY - 70) - (cardRect.minY + 20)
         
         // Calculate scroll thumb size and position
         let thumbHeight = max(20, scrollBarHeight * (visibleHeight / (visibleHeight + maxScrollOffset)))
