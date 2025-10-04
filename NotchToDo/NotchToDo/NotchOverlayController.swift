@@ -4379,6 +4379,10 @@ class TaskDetailView: NSView {
     // Close button
     private var closeButtonRect = NSRect.zero
     
+    // Edit functionality
+    private var editButtonRect = NSRect.zero
+    private var isEditMode = false
+    
     init(task: Task, orbColor: NSColor) {
         self.task = task
         self.orbColor = orbColor
@@ -4407,7 +4411,7 @@ class TaskDetailView: NSView {
         titleField.textColor = NSColor.white
         titleField.backgroundColor = .clear
         titleField.isBordered = false
-        titleField.isEditable = true
+        titleField.isEditable = false // Start in non-edit mode
         titleField.target = self
         titleField.action = #selector(titleChanged)
         addSubview(titleField)
@@ -4416,7 +4420,7 @@ class TaskDetailView: NSView {
         let detailsLabel = NSTextField(frame: NSRect(x: 30, y: 380, width: 100, height: 20))
         detailsLabel.stringValue = "Details"
         detailsLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
-        detailsLabel.textColor = .secondaryLabelColor
+        detailsLabel.textColor = NSColor.white.withAlphaComponent(0.8)
         detailsLabel.backgroundColor = .clear
         detailsLabel.isBordered = false
         detailsLabel.isEditable = false
@@ -4429,7 +4433,7 @@ class TaskDetailView: NSView {
         detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.1)
         detailsTextView.textColor = NSColor.white
         detailsTextView.layer?.cornerRadius = 12
-        detailsTextView.isEditable = true
+        detailsTextView.isEditable = false // Start in non-edit mode
         detailsTextView.delegate = self
         addSubview(detailsTextView)
         
@@ -4448,6 +4452,7 @@ class TaskDetailView: NSView {
         prioritySlider.minValue = 1
         prioritySlider.maxValue = 5
         prioritySlider.intValue = Int32(task.priority)
+        prioritySlider.isEnabled = false // Start in non-edit mode
         prioritySlider.target = self
         prioritySlider.action = #selector(priorityChanged)
         addSubview(prioritySlider)
@@ -4466,7 +4471,7 @@ class TaskDetailView: NSView {
         let deadlineLabel = NSTextField(frame: NSRect(x: 30, y: 170, width: 100, height: 20))
         deadlineLabel.stringValue = "Deadline"
         deadlineLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
-        deadlineLabel.textColor = .secondaryLabelColor
+        deadlineLabel.textColor = NSColor.white.withAlphaComponent(0.8)
         deadlineLabel.backgroundColor = .clear
         deadlineLabel.isBordered = false
         deadlineLabel.isEditable = false
@@ -4481,12 +4486,16 @@ class TaskDetailView: NSView {
         } else {
             deadlinePicker.dateValue = Date()
         }
+        deadlinePicker.isEnabled = false // Start in non-edit mode
         deadlinePicker.target = self
         deadlinePicker.action = #selector(deadlineChanged)
         addSubview(deadlinePicker)
         
         // Close button
         closeButtonRect = NSRect(x: bounds.width - 40, y: bounds.height - 40, width: 30, height: 30)
+        
+        // Edit button
+        editButtonRect = NSRect(x: bounds.width - 80, y: bounds.height - 40, width: 30, height: 30)
     }
     
     override func mouseDown(with event: NSEvent) {
@@ -4495,6 +4504,12 @@ class TaskDetailView: NSView {
         // Check if click is on the close button
         if closeButtonRect.contains(locationInView) {
             closeTaskDetail()
+            return
+        }
+        
+        // Check if click is on the edit button
+        if editButtonRect.contains(locationInView) {
+            toggleEditMode()
             return
         }
         
@@ -4532,6 +4547,26 @@ class TaskDetailView: NSView {
     
     private func closeTaskDetail() {
         controller?.closeTaskDetail(for: task.id)
+    }
+    
+    private func toggleEditMode() {
+        isEditMode.toggle()
+        
+        if isEditMode {
+            // Enable editing
+            titleField.isEditable = true
+            detailsTextView.isEditable = true
+            deadlinePicker.isEnabled = true
+            prioritySlider.isEnabled = true
+        } else {
+            // Disable editing and save changes
+            titleField.isEditable = false
+            detailsTextView.isEditable = false
+            deadlinePicker.isEnabled = false
+            prioritySlider.isEnabled = false
+        }
+        
+        needsDisplay = true
     }
     
     @objc private func titleChanged() {
@@ -4642,6 +4677,9 @@ class TaskDetailView: NSView {
         // Draw sophisticated close button
         drawSophisticatedCloseButton(in: context)
         
+        // Draw edit button
+        drawEditButton(in: context)
+        
         // Add subtle floating particles effect
         drawFloatingParticles(in: context, cardRect: cardRect)
     }
@@ -4742,6 +4780,121 @@ class TaskDetailView: NSView {
         context.addLine(to: CGPoint(x: iconRect.maxX, y: iconRect.maxY))
         context.move(to: CGPoint(x: iconRect.maxX, y: iconRect.minY))
         context.addLine(to: CGPoint(x: iconRect.minX, y: iconRect.maxY))
+        context.strokePath()
+        context.restoreGState()
+    }
+    
+    private func drawEditButton(in context: CGContext) {
+        context.saveGState()
+        
+        let buttonRect = editButtonRect
+        let buttonCornerRadius: CGFloat = 16
+        
+        // Sophisticated button with glassmorphism effect
+        let buttonPath = NSBezierPath(roundedRect: buttonRect, xRadius: buttonCornerRadius, yRadius: buttonCornerRadius)
+        buttonPath.addClip()
+        
+        // Different gradient based on edit mode
+        let buttonGradient: CGGradient
+        if isEditMode {
+            // Active edit mode - blue gradient
+            buttonGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                      colors: [
+                                          NSColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 0.9).cgColor,
+                                          NSColor(red: 0.1, green: 0.3, blue: 0.7, alpha: 0.95).cgColor,
+                                          NSColor(red: 0.05, green: 0.2, blue: 0.6, alpha: 1.0).cgColor
+                                      ] as CFArray,
+                                      locations: [0.0, 0.5, 1.0])!
+        } else {
+            // Inactive edit mode - dark gradient
+            buttonGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                      colors: [
+                                          NSColor(red: 0.15, green: 0.16, blue: 0.18, alpha: 0.9).cgColor,
+                                          NSColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 0.95).cgColor,
+                                          NSColor(red: 0.05, green: 0.06, blue: 0.08, alpha: 1.0).cgColor
+                                      ] as CFArray,
+                                      locations: [0.0, 0.5, 1.0])!
+        }
+        
+        context.drawLinearGradient(buttonGradient,
+                                 start: CGPoint(x: buttonRect.midX, y: buttonRect.maxY),
+                                 end: CGPoint(x: buttonRect.midX, y: buttonRect.minY),
+                                 options: [])
+        
+        // Subtle inner glow
+        context.setShadow(offset: CGSize.zero, blur: 15, color: NSColor.white.withAlphaComponent(0.1).cgColor)
+        context.setFillColor(NSColor.clear.cgColor)
+        context.fill(buttonRect)
+        
+        context.restoreGState()
+        
+        // Animated border that changes based on edit mode
+        context.saveGState()
+        let borderAlpha = isEditMode ? (0.8 + 0.2 * sin(animationPhase * 3.0)) : 0.6
+        let borderGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                      colors: [
+                                          NSColor(red: 0.3, green: 0.6, blue: 0.9, alpha: borderAlpha).cgColor,
+                                          NSColor(red: 0.5, green: 0.7, blue: 1.0, alpha: borderAlpha * 0.8).cgColor
+                                      ] as CFArray,
+                                      locations: [0.0, 1.0])
+        
+        context.setLineWidth(2.0)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        
+        // Convert NSBezierPath to CGPath for compatibility
+        let path = CGMutablePath()
+        var points = [CGPoint](repeating: .zero, count: 3)
+        
+        for i in 0..<buttonPath.elementCount {
+            let element = buttonPath.element(at: i, associatedPoints: &points)
+            switch element {
+            case .moveTo:
+                path.move(to: points[0])
+            case .lineTo:
+                path.addLine(to: points[0])
+            case .curveTo:
+                path.addCurve(to: points[2], control1: points[0], control2: points[1])
+            case .closePath:
+                path.closeSubpath()
+            @unknown default:
+                break
+            }
+        }
+        
+        context.addPath(path)
+        context.replacePathWithStrokedPath()
+        context.clip()
+        
+        context.drawLinearGradient(borderGradient!,
+                                 start: CGPoint(x: buttonRect.minX, y: buttonRect.midY),
+                                 end: CGPoint(x: buttonRect.maxX, y: buttonRect.midY),
+                                 options: [])
+        
+        context.restoreGState()
+        
+        // Edit icon (pencil)
+        let iconSize: CGFloat = 12
+        let iconRect = NSRect(
+            x: buttonRect.midX - iconSize/2,
+            y: buttonRect.midY - iconSize/2,
+            width: iconSize,
+            height: iconSize
+        )
+        
+        context.saveGState()
+        context.setShadow(offset: CGSize.zero, blur: 8, color: NSColor.white.withAlphaComponent(0.8).cgColor)
+        context.setStrokeColor(NSColor.white.cgColor)
+        context.setLineWidth(2.0)
+        context.setLineCap(.round)
+        
+        // Draw pencil icon
+        context.move(to: CGPoint(x: iconRect.minX + 2, y: iconRect.maxY - 2))
+        context.addLine(to: CGPoint(x: iconRect.maxX - 2, y: iconRect.minY + 2))
+        context.move(to: CGPoint(x: iconRect.minX + 2, y: iconRect.maxY - 2))
+        context.addLine(to: CGPoint(x: iconRect.minX + 4, y: iconRect.maxY - 4))
+        context.move(to: CGPoint(x: iconRect.maxX - 2, y: iconRect.minY + 2))
+        context.addLine(to: CGPoint(x: iconRect.maxX - 4, y: iconRect.minY + 4))
         context.strokePath()
         context.restoreGState()
     }
