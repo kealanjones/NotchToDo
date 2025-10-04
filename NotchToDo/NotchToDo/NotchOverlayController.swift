@@ -4559,12 +4559,7 @@ class TaskDetailView: NSView {
         
         let cardRect = bounds.insetBy(dx: 10, dy: 10)
         
-        // Frosted glass background effect
-        context.saveGState()
-        let glassPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
-        glassPath.addClip()
-        
-        // Create real backdrop blur effect
+        // Create real backdrop blur effect first
         if let window = self.window {
             // Get the screen content behind the window
             let windowFrame = window.frame
@@ -4587,12 +4582,20 @@ class TaskDetailView: NSView {
                 if let outputImage = blurFilter?.outputImage {
                     let ciContext = CIContext()
                     if let blurredCGImage = ciContext.createCGImage(outputImage, from: outputImage.extent) {
-                        // Draw the blurred background
+                        // Save context state before clipping
+                        context.saveGState()
+                        // Draw the blurred background first
                         context.draw(blurredCGImage, in: cardRect)
+                        context.restoreGState()
                     }
                 }
             }
         }
+        
+        // Now apply the frosted glass effect with clipping
+        context.saveGState()
+        let glassPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
+        glassPath.addClip()
         
         // Light overlay to maintain readability while showing blur
         let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
