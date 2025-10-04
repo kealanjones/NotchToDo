@@ -4559,50 +4559,21 @@ class TaskDetailView: NSView {
         
         let cardRect = bounds.insetBy(dx: 10, dy: 10)
         
-        // Create real backdrop blur effect first
-        if let window = self.window {
-            // Get the screen content behind the window
-            let windowFrame = window.frame
-            let screenRect = NSRect(
-                x: windowFrame.minX + cardRect.minX,
-                y: windowFrame.minY + cardRect.minY,
-                width: cardRect.width,
-                height: cardRect.height
-            )
-            
-            // Capture the screen content
-            if let screenImage = CGWindowListCreateImage(screenRect, .optionOnScreenOnly, kCGNullWindowID, .bestResolution) {
-                
-                // Create Core Image context and apply blur
-                let ciImage = CIImage(cgImage: screenImage)
-                let blurFilter = CIFilter(name: "CIGaussianBlur")
-                blurFilter?.setValue(ciImage, forKey: kCIInputImageKey)
-                blurFilter?.setValue(25.0, forKey: kCIInputRadiusKey)
-                
-                if let outputImage = blurFilter?.outputImage {
-                    let ciContext = CIContext()
-                    if let blurredCGImage = ciContext.createCGImage(outputImage, from: outputImage.extent) {
-                        // Save context state before clipping
-                        context.saveGState()
-                        // Draw the blurred background first
-                        context.draw(blurredCGImage, in: cardRect)
-                        context.restoreGState()
-                    }
-                }
-            }
-        }
+        // Create clean white blur background for excellent readability
+        context.setFillColor(NSColor.white.cgColor)
+        context.fill(cardRect)
         
         // Now apply the frosted glass effect with clipping
         context.saveGState()
         let glassPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
         glassPath.addClip()
         
-        // Light overlay to maintain readability while showing blur
+        // Subtle overlay for frosted glass effect
         let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                       colors: [
-                                          NSColor.white.withAlphaComponent(0.3).cgColor,
-                                          NSColor.white.withAlphaComponent(0.25).cgColor,
-                                          NSColor.white.withAlphaComponent(0.2).cgColor
+                                          NSColor.white.withAlphaComponent(0.1).cgColor,
+                                          NSColor.white.withAlphaComponent(0.05).cgColor,
+                                          NSColor.white.withAlphaComponent(0.02).cgColor
                                       ] as CFArray,
                                       locations: [0.0, 0.5, 1.0])
         
