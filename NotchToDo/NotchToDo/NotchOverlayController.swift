@@ -4413,9 +4413,6 @@ class TaskDetailView: NSView {
         titleField.isBordered = false
         titleField.isEditable = false // Start in non-edit mode
         titleField.isSelectable = false // Start in non-edit mode
-        titleField.isAutomaticQuoteSubstitutionEnabled = false
-        titleField.isAutomaticDashSubstitutionEnabled = false
-        titleField.isAutomaticTextReplacementEnabled = false
         titleField.target = self
         titleField.action = #selector(titleChanged)
         addSubview(titleField)
