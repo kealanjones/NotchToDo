@@ -4374,6 +4374,7 @@ class TaskDetailView: NSView {
     // Drag functionality
     private var isDragging = false
     private var dragStartLocation = NSPoint.zero
+    private var originalWindowOrigin = NSPoint.zero
     
     // Close button
     private var closeButtonRect = NSRect.zero
@@ -4500,12 +4501,9 @@ class TaskDetailView: NSView {
         // Start dragging if clicked elsewhere
         isDragging = true
         
-        // Convert to screen coordinates for smooth dragging
-        let windowOrigin = window?.frame.origin ?? NSPoint.zero
-        dragStartLocation = NSPoint(
-            x: locationInView.x + windowOrigin.x,
-            y: locationInView.y + windowOrigin.y
-        )
+        // Store the initial mouse position and window origin
+        dragStartLocation = NSEvent.mouseLocation
+        originalWindowOrigin = window?.frame.origin ?? NSPoint.zero
     }
     
     override func mouseDragged(with event: NSEvent) {
@@ -4514,10 +4512,14 @@ class TaskDetailView: NSView {
         // Get the current mouse location in screen coordinates
         let currentScreenLocation = NSEvent.mouseLocation
         
-        // Calculate the new window origin directly from screen coordinates
+        // Calculate the offset from the initial mouse position
+        let deltaX = currentScreenLocation.x - dragStartLocation.x
+        let deltaY = currentScreenLocation.y - dragStartLocation.y
+        
+        // Apply the offset to the original window position
         let newOrigin = NSPoint(
-            x: currentScreenLocation.x - dragStartLocation.x,
-            y: currentScreenLocation.y - dragStartLocation.y
+            x: originalWindowOrigin.x + deltaX,
+            y: originalWindowOrigin.y + deltaY
         )
         
         // Update window position
