@@ -4412,6 +4412,7 @@ class TaskDetailView: NSView {
         titleField.backgroundColor = .clear
         titleField.isBordered = false
         titleField.isEditable = false // Start in non-edit mode
+        titleField.isSelectable = false // Start in non-edit mode
         titleField.target = self
         titleField.action = #selector(titleChanged)
         addSubview(titleField)
@@ -4434,6 +4435,7 @@ class TaskDetailView: NSView {
         detailsTextView.textColor = NSColor.white
         detailsTextView.layer?.cornerRadius = 12
         detailsTextView.isEditable = false // Start in non-edit mode
+        detailsTextView.isSelectable = false // Start in non-edit mode
         detailsTextView.delegate = self
         addSubview(detailsTextView)
         
@@ -4555,15 +4557,41 @@ class TaskDetailView: NSView {
         if isEditMode {
             // Enable editing
             titleField.isEditable = true
+            titleField.isSelectable = true
+            titleField.backgroundColor = NSColor.white.withAlphaComponent(0.15) // Visual feedback for edit mode
+            
             detailsTextView.isEditable = true
+            detailsTextView.isSelectable = true
+            detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.15) // Visual feedback for edit mode
+            
             deadlinePicker.isEnabled = true
             prioritySlider.isEnabled = true
+            
+            // Make the window key so text fields can receive focus
+            window?.makeKey()
+            // Focus on title field when entering edit mode
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.titleField.window?.makeFirstResponder(self.titleField)
+            }
         } else {
             // Disable editing and save changes
             titleField.isEditable = false
+            titleField.isSelectable = false
+            titleField.backgroundColor = .clear // Remove edit mode background
+            
             detailsTextView.isEditable = false
+            detailsTextView.isSelectable = false
+            detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.1) // Back to normal background
+            
             deadlinePicker.isEnabled = false
             prioritySlider.isEnabled = false
+            
+            // Save any pending changes
+            task.title = titleField.stringValue
+            task.details = detailsTextView.string
+            
+            // Remove focus from any text field
+            window?.makeFirstResponder(nil)
         }
         
         needsDisplay = true
