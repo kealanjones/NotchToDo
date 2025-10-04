@@ -4397,7 +4397,7 @@ class TaskDetailView: NSView {
     
     private func setupView() {
         self.wantsLayer = true
-        self.layer?.cornerRadius = 28
+        self.layer?.cornerRadius = 16 // Modern macOS Sequoia corner radius
         self.layer?.masksToBounds = false
         
         // Title field
@@ -4557,42 +4557,42 @@ class TaskDetailView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        let cardRect = bounds.insetBy(dx: 10, dy: 10)
+        let cardRect = bounds.insetBy(dx: 8, dy: 8)
+        let cornerRadius: CGFloat = 16 // Modern macOS Sequoia corner radius
         
-        // Create clean white blur background for excellent readability
-        context.setFillColor(NSColor.white.cgColor)
-        context.fill(cardRect)
-        
-        // Now apply the frosted glass effect with clipping
+        // Modern card background with subtle gradient
         context.saveGState()
-        let glassPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
-        glassPath.addClip()
+        let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: cornerRadius, yRadius: cornerRadius)
+        cardPath.addClip()
         
-        // Subtle overlay for frosted glass effect
-        let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                      colors: [
-                                          NSColor.white.withAlphaComponent(0.1).cgColor,
-                                          NSColor.white.withAlphaComponent(0.05).cgColor,
-                                          NSColor.white.withAlphaComponent(0.02).cgColor
-                                      ] as CFArray,
-                                      locations: [0.0, 0.5, 1.0])
+        // Modern gradient background
+        let backgroundGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                          colors: [
+                                              NSColor(red: 0.98, green: 0.98, blue: 0.99, alpha: 1.0).cgColor,
+                                              NSColor(red: 0.96, green: 0.97, blue: 0.98, alpha: 1.0).cgColor,
+                                              NSColor(red: 0.95, green: 0.96, blue: 0.97, alpha: 1.0).cgColor
+                                          ] as CFArray,
+                                          locations: [0.0, 0.5, 1.0])
         
-        context.drawLinearGradient(glassGradient!,
+        context.drawLinearGradient(backgroundGradient!,
                                  start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
                                  end: CGPoint(x: cardRect.midX, y: cardRect.minY),
                                  options: [])
         
+        context.restoreGState()
         
-        // Subtle border
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
-        context.setLineWidth(1.0)
+        // Modern border with subtle shadow
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4, color: NSColor.black.withAlphaComponent(0.1).cgColor)
+        context.setStrokeColor(NSColor(red: 0.85, green: 0.86, blue: 0.88, alpha: 1.0).cgColor)
+        context.setLineWidth(0.5)
         
         // Convert NSBezierPath to CGPath for compatibility
         let path = CGMutablePath()
         var points = [CGPoint](repeating: .zero, count: 3)
         
-        for i in 0..<glassPath.elementCount {
-            let element = glassPath.element(at: i, associatedPoints: &points)
+        for i in 0..<cardPath.elementCount {
+            let element = cardPath.element(at: i, associatedPoints: &points)
             switch element {
             case .moveTo:
                 path.move(to: points[0])
@@ -4619,12 +4619,27 @@ class TaskDetailView: NSView {
     private func drawCloseButton(in context: CGContext) {
         context.saveGState()
         
-        // Close button background
+        // Modern close button design
         let buttonRect = closeButtonRect
-        let buttonPath = NSBezierPath(ovalIn: buttonRect)
+        let buttonPath = NSBezierPath(roundedRect: buttonRect, xRadius: 8, yRadius: 8)
         
-        // Semi-transparent dark background
-        context.setFillColor(NSColor.black.withAlphaComponent(0.3).cgColor)
+        // Modern button background with subtle gradient
+        let buttonGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                       colors: [
+                                           NSColor(red: 0.92, green: 0.93, blue: 0.94, alpha: 1.0).cgColor,
+                                           NSColor(red: 0.88, green: 0.89, blue: 0.91, alpha: 1.0).cgColor
+                                       ] as CFArray,
+                                       locations: [0.0, 1.0])
+        
+        // Draw button gradient
+        context.drawLinearGradient(buttonGradient!,
+                                 start: CGPoint(x: buttonRect.midX, y: buttonRect.maxY),
+                                 end: CGPoint(x: buttonRect.midX, y: buttonRect.minY),
+                                 options: [])
+        
+        // Modern button border
+        context.setStrokeColor(NSColor(red: 0.75, green: 0.76, blue: 0.78, alpha: 1.0).cgColor)
+        context.setLineWidth(0.5)
         
         // Convert NSBezierPath to CGPath for compatibility
         let path = CGMutablePath()
@@ -4649,8 +4664,8 @@ class TaskDetailView: NSView {
         context.addPath(path)
         context.fillPath()
         
-        // X icon
-        let iconSize: CGFloat = 12
+        // Modern X icon
+        let iconSize: CGFloat = 10
         let iconRect = NSRect(
             x: buttonRect.midX - iconSize/2,
             y: buttonRect.midY - iconSize/2,
@@ -4658,11 +4673,11 @@ class TaskDetailView: NSView {
             height: iconSize
         )
         
-        context.setStrokeColor(NSColor.white.cgColor)
-        context.setLineWidth(2.0)
+        context.setStrokeColor(NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1.0).cgColor)
+        context.setLineWidth(1.5)
         context.setLineCap(.round)
         
-        // Draw X
+        // Draw modern X
         context.move(to: CGPoint(x: iconRect.minX, y: iconRect.minY))
         context.addLine(to: CGPoint(x: iconRect.maxX, y: iconRect.maxY))
         context.move(to: CGPoint(x: iconRect.maxX, y: iconRect.minY))
