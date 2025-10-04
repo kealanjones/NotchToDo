@@ -872,6 +872,9 @@ class NotchOverlayController: ObservableObject {
         window.ignoresMouseEvents = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = true
+        window.canBecomeKey = true
+        window.canBecomeMain = true
+        window.acceptsMouseMovedEvents = true
         window.contentView?.wantsLayer = true
         window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         
@@ -4484,7 +4487,7 @@ class TaskDetailView: NSView {
         addSubview(deadlineLabel)
         
         // Deadline picker - Calendar style
-        deadlinePicker = NSDatePicker(frame: NSRect(x: 30, y: 140, width: 200, height: 30))
+        deadlinePicker = NSDatePicker(frame: NSRect(x: 30, y: 140, width: 250, height: 150))
         deadlinePicker.datePickerStyle = .clockAndCalendar
         deadlinePicker.datePickerElements = [.yearMonthDay]
         if let deadline = task.deadline {
@@ -4551,6 +4554,14 @@ class TaskDetailView: NSView {
         isDragging = false
     }
     
+    override var acceptsFirstResponder: Bool {
+        return true
+    }
+    
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+    
     private func closeTaskDetail() {
         controller?.closeTaskDetail(for: task.id)
     }
@@ -4565,6 +4576,7 @@ class TaskDetailView: NSView {
             titleField.isBezeled = true
             titleField.bezelStyle = .roundedBezel
             titleField.backgroundColor = NSColor.controlBackgroundColor
+            titleField.window?.makeKey()
             
             detailsTextView.isEditable = true
             detailsTextView.isSelectable = true
@@ -4573,11 +4585,14 @@ class TaskDetailView: NSView {
             deadlinePicker.isEnabled = true
             prioritySlider.isEnabled = true
             
-            // Make the window key so text fields can receive focus
+            // Make the window key and order it front
             window?.makeKey()
+            window?.orderFront(nil)
+            
             // Focus on title field when entering edit mode
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 self.titleField.window?.makeFirstResponder(self.titleField)
+                self.titleField.selectText(nil)
             }
         } else {
             // Disable editing and save changes
