@@ -4374,9 +4374,6 @@ class TaskDetailView: NSView {
     // Drag functionality
     private var isDragging = false
     private var dragStartLocation = NSPoint.zero
-    private var initialWindowOrigin = NSPoint.zero
-    private var lastDragUpdateTime: TimeInterval = 0
-    private let dragUpdateInterval: TimeInterval = 1.0/60.0 // 60 FPS
     
     // Close button
     private var closeButtonRect = NSRect.zero
@@ -4502,29 +4499,28 @@ class TaskDetailView: NSView {
         
         // Start dragging if clicked elsewhere
         isDragging = true
-        dragStartLocation = locationInView
-        initialWindowOrigin = window?.frame.origin ?? NSPoint.zero
-        lastDragUpdateTime = CACurrentMediaTime()
+        
+        // Convert to screen coordinates for smooth dragging
+        let windowOrigin = window?.frame.origin ?? NSPoint.zero
+        dragStartLocation = NSPoint(
+            x: locationInView.x + windowOrigin.x,
+            y: locationInView.y + windowOrigin.y
+        )
     }
     
     override func mouseDragged(with event: NSEvent) {
         guard isDragging else { return }
         
-        // Throttle updates for smooth dragging
-        let currentTime = CACurrentMediaTime()
-        guard currentTime - lastDragUpdateTime >= dragUpdateInterval else { return }
-        lastDragUpdateTime = currentTime
+        // Get the current mouse location in screen coordinates
+        let currentScreenLocation = NSEvent.mouseLocation
         
-        let currentLocation = convert(event.locationInWindow, from: nil)
-        let deltaX = currentLocation.x - dragStartLocation.x
-        let deltaY = currentLocation.y - dragStartLocation.y
-        
+        // Calculate the new window origin directly from screen coordinates
         let newOrigin = NSPoint(
-            x: initialWindowOrigin.x + deltaX,
-            y: initialWindowOrigin.y + deltaY
+            x: currentScreenLocation.x - dragStartLocation.x,
+            y: currentScreenLocation.y - dragStartLocation.y
         )
         
-        // Direct window positioning for smooth dragging
+        // Update window position
         window?.setFrameOrigin(newOrigin)
     }
     
