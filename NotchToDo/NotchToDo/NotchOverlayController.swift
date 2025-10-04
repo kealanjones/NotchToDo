@@ -4405,8 +4405,8 @@ class TaskDetailView: NSView {
         self.layer?.cornerRadius = 32 // Large, sophisticated corner radius
         self.layer?.masksToBounds = false
         
-        // Title field - Short free text
-        titleField = NSTextField(frame: NSRect(x: 30, y: 420, width: 340, height: 40))
+        // Title field - Short free text (centered)
+        titleField = NSTextField(frame: NSRect(x: 40, y: 420, width: 320, height: 40))
         titleField.stringValue = task.title
         titleField.font = NSFont.systemFont(ofSize: 24, weight: .bold)
         titleField.textColor = NSColor.white
@@ -4418,23 +4418,24 @@ class TaskDetailView: NSView {
         titleField.action = #selector(titleChanged)
         addSubview(titleField)
         
-        // Details label
-        let detailsLabel = NSTextField(frame: NSRect(x: 30, y: 380, width: 100, height: 20))
+        // Details label (centered)
+        let detailsLabel = NSTextField(frame: NSRect(x: 40, y: 370, width: 320, height: 20))
         detailsLabel.stringValue = "Details"
         detailsLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         detailsLabel.textColor = NSColor.white.withAlphaComponent(0.8)
         detailsLabel.backgroundColor = .clear
         detailsLabel.isBordered = false
         detailsLabel.isEditable = false
+        detailsLabel.alignment = .center
         addSubview(detailsLabel)
         
-        // Details text view - Free text editor
-        detailsTextView = NSTextView(frame: NSRect(x: 30, y: 280, width: 340, height: 100))
+        // Details text view - Free text editor (centered)
+        detailsTextView = NSTextView(frame: NSRect(x: 40, y: 280, width: 320, height: 80))
         detailsTextView.string = task.details
         detailsTextView.font = NSFont.systemFont(ofSize: 14)
         detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.1)
         detailsTextView.textColor = NSColor.white
-        detailsTextView.layer?.cornerRadius = 12
+        detailsTextView.layer?.cornerRadius = 8
         detailsTextView.isEditable = false // Start in non-edit mode
         detailsTextView.isSelectable = false // Start in non-edit mode
         detailsTextView.isRichText = false // Plain text only
@@ -4444,18 +4445,19 @@ class TaskDetailView: NSView {
         detailsTextView.delegate = self
         addSubview(detailsTextView)
         
-        // Priority section
-        let priorityLabel = NSTextField(frame: NSRect(x: 30, y: 240, width: 100, height: 20))
+        // Priority section (centered)
+        let priorityLabel = NSTextField(frame: NSRect(x: 40, y: 240, width: 320, height: 20))
         priorityLabel.stringValue = "Priority"
         priorityLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         priorityLabel.textColor = NSColor.white.withAlphaComponent(0.8)
         priorityLabel.backgroundColor = .clear
         priorityLabel.isBordered = false
         priorityLabel.isEditable = false
+        priorityLabel.alignment = .center
         addSubview(priorityLabel)
         
-        // Priority slider
-        prioritySlider = NSSlider(frame: NSRect(x: 30, y: 210, width: 200, height: 20))
+        // Priority slider (centered)
+        prioritySlider = NSSlider(frame: NSRect(x: 40, y: 210, width: 240, height: 20))
         prioritySlider.minValue = 1
         prioritySlider.maxValue = 5
         prioritySlider.intValue = Int32(task.priority)
@@ -4464,8 +4466,8 @@ class TaskDetailView: NSView {
         prioritySlider.action = #selector(priorityChanged)
         addSubview(prioritySlider)
         
-        // Priority value label
-        self.priorityLabel = NSTextField(frame: NSRect(x: 240, y: 210, width: 50, height: 20))
+        // Priority value label (centered)
+        self.priorityLabel = NSTextField(frame: NSRect(x: 290, y: 210, width: 70, height: 20))
         self.priorityLabel.stringValue = "\(task.priority)"
         self.priorityLabel.font = NSFont.systemFont(ofSize: 14, weight: .bold)
         self.priorityLabel.textColor = NSColor.white
@@ -4474,19 +4476,20 @@ class TaskDetailView: NSView {
         self.priorityLabel.isEditable = false
         addSubview(self.priorityLabel)
         
-        // Deadline section
-        let deadlineLabel = NSTextField(frame: NSRect(x: 30, y: 170, width: 100, height: 20))
+        // Deadline section (centered)
+        let deadlineLabel = NSTextField(frame: NSRect(x: 40, y: 170, width: 320, height: 20))
         deadlineLabel.stringValue = "Deadline"
         deadlineLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         deadlineLabel.textColor = NSColor.white.withAlphaComponent(0.8)
         deadlineLabel.backgroundColor = .clear
         deadlineLabel.isBordered = false
         deadlineLabel.isEditable = false
+        deadlineLabel.alignment = .center
         addSubview(deadlineLabel)
         
-        // Deadline picker - Calendar style
-        deadlinePicker = NSDatePicker(frame: NSRect(x: 30, y: 140, width: 250, height: 150))
-        deadlinePicker.datePickerStyle = .clockAndCalendar
+        // Deadline picker - Text field style (centered, clickable)
+        deadlinePicker = NSDatePicker(frame: NSRect(x: 40, y: 140, width: 320, height: 30))
+        deadlinePicker.datePickerStyle = .textFieldAndStepper
         deadlinePicker.datePickerElements = [.yearMonthDay]
         if let deadline = task.deadline {
             deadlinePicker.dateValue = deadline
@@ -4574,11 +4577,15 @@ class TaskDetailView: NSView {
             titleField.isBezeled = true
             titleField.bezelStyle = .roundedBezel
             titleField.backgroundColor = NSColor.controlBackgroundColor
+            titleField.textColor = NSColor.black // Black text for white background
+            titleField.layer?.cornerRadius = 8 // Rounded edges
             titleField.window?.makeKey()
             
             detailsTextView.isEditable = true
             detailsTextView.isSelectable = true
             detailsTextView.backgroundColor = NSColor.controlBackgroundColor
+            detailsTextView.textColor = NSColor.black // Black text for white background
+            detailsTextView.layer?.cornerRadius = 8 // Rounded edges
             
             deadlinePicker.isEnabled = true
             prioritySlider.isEnabled = true
@@ -4598,10 +4605,13 @@ class TaskDetailView: NSView {
             titleField.isSelectable = false
             titleField.isBezeled = false
             titleField.backgroundColor = .clear // Remove edit mode background
+            titleField.textColor = NSColor.white // White text for dark background
+            titleField.layer?.cornerRadius = 0 // No rounded edges in view mode
             
             detailsTextView.isEditable = false
             detailsTextView.isSelectable = false
             detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.1) // Back to normal background
+            detailsTextView.textColor = NSColor.white // White text for dark background
             
             deadlinePicker.isEnabled = false
             prioritySlider.isEnabled = false
