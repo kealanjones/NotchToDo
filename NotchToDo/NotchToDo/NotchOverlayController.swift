@@ -859,7 +859,7 @@ class NotchOverlayController: ObservableObject {
         }
         
         // Create new task detail window
-        let window = NSWindow(
+        let window = TaskDetailWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
             styleMask: [.borderless],
             backing: .buffered,
@@ -872,8 +872,6 @@ class NotchOverlayController: ObservableObject {
         window.ignoresMouseEvents = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = true
-        window.canBecomeKey = true
-        window.canBecomeMain = true
         window.acceptsMouseMovedEvents = true
         window.contentView?.wantsLayer = true
         window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
@@ -4978,5 +4976,16 @@ extension TaskDetailView: NSTextViewDelegate {
         if let textView = notification.object as? NSTextView, textView == detailsTextView {
             task.details = textView.string
         }
+    }
+}
+
+// MARK: - TaskDetailWindow
+class TaskDetailWindow: NSWindow {
+    override var canBecomeKey: Bool {
+        return true
+    }
+    
+    override var canBecomeMain: Bool {
+        return true
     }
 }
