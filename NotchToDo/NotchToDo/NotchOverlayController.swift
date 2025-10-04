@@ -4564,27 +4564,42 @@ class TaskDetailView: NSView {
         let glassPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
         glassPath.addClip()
         
-        // Create backdrop blur effect using visual effect view approach
-        // Fill with a semi-transparent background that simulates blur
-        let blurGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                     colors: [
-                                         NSColor.white.withAlphaComponent(0.3).cgColor,
-                                         NSColor.white.withAlphaComponent(0.2).cgColor,
-                                         NSColor.white.withAlphaComponent(0.15).cgColor
-                                     ] as CFArray,
-                                     locations: [0.0, 0.5, 1.0])
+        // Create real backdrop blur effect
+        if let window = self.window {
+            // Get the screen content behind the window
+            let windowFrame = window.frame
+            let screenRect = NSRect(
+                x: windowFrame.minX + cardRect.minX,
+                y: windowFrame.minY + cardRect.minY,
+                width: cardRect.width,
+                height: cardRect.height
+            )
+            
+            // Capture the screen content
+            if let screenImage = CGWindowListCreateImage(screenRect, .optionOnScreenOnly, kCGNullWindowID, .bestResolution) {
+                
+                // Create Core Image context and apply blur
+                let ciImage = CIImage(cgImage: screenImage)
+                let blurFilter = CIFilter(name: "CIGaussianBlur")
+                blurFilter?.setValue(ciImage, forKey: kCIInputImageKey)
+                blurFilter?.setValue(25.0, forKey: kCIInputRadiusKey)
+                
+                if let outputImage = blurFilter?.outputImage {
+                    let ciContext = CIContext()
+                    if let blurredCGImage = ciContext.createCGImage(outputImage, from: outputImage.extent) {
+                        // Draw the blurred background
+                        context.draw(blurredCGImage, in: cardRect)
+                    }
+                }
+            }
+        }
         
-        context.drawLinearGradient(blurGradient!,
-                                 start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
-                                 end: CGPoint(x: cardRect.midX, y: cardRect.minY),
-                                 options: [])
-        
-        // Semi-transparent white overlay for better readability while showing blur
+        // Light overlay to maintain readability while showing blur
         let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                       colors: [
-                                          NSColor.white.withAlphaComponent(0.6).cgColor,
-                                          NSColor.white.withAlphaComponent(0.5).cgColor,
-                                          NSColor.white.withAlphaComponent(0.4).cgColor
+                                          NSColor.white.withAlphaComponent(0.3).cgColor,
+                                          NSColor.white.withAlphaComponent(0.25).cgColor,
+                                          NSColor.white.withAlphaComponent(0.2).cgColor
                                       ] as CFArray,
                                       locations: [0.0, 0.5, 1.0])
         
@@ -4593,19 +4608,6 @@ class TaskDetailView: NSView {
                                  end: CGPoint(x: cardRect.midX, y: cardRect.minY),
                                  options: [])
         
-        // Add subtle noise texture for more realistic frosted glass effect
-        context.setBlendMode(.overlay)
-        context.setFillColor(NSColor.white.withAlphaComponent(0.1).cgColor)
-        
-        // Create a simple noise pattern
-        for _ in 0..<50 {
-            let noiseX = cardRect.minX + CGFloat.random(in: 0...cardRect.width)
-            let noiseY = cardRect.minY + CGFloat.random(in: 0...cardRect.height)
-            let noiseSize = CGFloat.random(in: 1...3)
-            context.fillEllipse(in: CGRect(x: noiseX, y: noiseY, width: noiseSize, height: noiseSize))
-        }
-        
-        context.setBlendMode(.normal)
         
         // Subtle border
         context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
