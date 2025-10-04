@@ -896,8 +896,13 @@ class NotchOverlayController: ObservableObject {
     
     func closeTaskDetail(for taskId: UUID) {
         if let window = taskDetailWindows[taskId] {
-            window.close()
+            // Remove the window from tracking first
             taskDetailWindows.removeValue(forKey: taskId)
+            
+            // Close the window safely on main queue
+            DispatchQueue.main.async {
+                window.close()
+            }
             print("🎯 Task detail window closed for task ID: \(taskId)")
         }
     }
@@ -4568,57 +4573,63 @@ class TaskDetailView: NSView {
     }
     
     private func toggleEditMode() {
+        guard !isEditMode || (titleField != nil && detailsTextView != nil) else {
+            print("⚠️ ToggleEditMode: Missing UI components")
+            return
+        }
+        
         isEditMode.toggle()
         
         if isEditMode {
             // Enable editing
-            titleField.isEditable = true
-            titleField.isSelectable = true
-            titleField.isBezeled = true
-            titleField.bezelStyle = .roundedBezel
-            titleField.backgroundColor = NSColor.controlBackgroundColor
-            titleField.textColor = NSColor.black // Black text for white background
-            titleField.layer?.cornerRadius = 8 // Rounded edges
-            titleField.window?.makeKey()
+            titleField?.isEditable = true
+            titleField?.isSelectable = true
+            titleField?.isBezeled = true
+            titleField?.bezelStyle = .roundedBezel
+            titleField?.backgroundColor = NSColor.controlBackgroundColor
+            titleField?.textColor = NSColor.black // Black text for white background
+            titleField?.layer?.cornerRadius = 8 // Rounded edges
+            titleField?.window?.makeKey()
             
-            detailsTextView.isEditable = true
-            detailsTextView.isSelectable = true
-            detailsTextView.backgroundColor = NSColor.controlBackgroundColor
-            detailsTextView.textColor = NSColor.black // Black text for white background
-            detailsTextView.layer?.cornerRadius = 8 // Rounded edges
+            detailsTextView?.isEditable = true
+            detailsTextView?.isSelectable = true
+            detailsTextView?.backgroundColor = NSColor.controlBackgroundColor
+            detailsTextView?.textColor = NSColor.black // Black text for white background
+            detailsTextView?.layer?.cornerRadius = 8 // Rounded edges
             
-            deadlinePicker.isEnabled = true
-            prioritySlider.isEnabled = true
+            deadlinePicker?.isEnabled = true
+            prioritySlider?.isEnabled = true
             
             // Make the window key and order it front
             window?.makeKey()
             window?.orderFront(nil)
             
             // Focus on title field when entering edit mode
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                self.titleField.window?.makeFirstResponder(self.titleField)
-                self.titleField.selectText(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self = self else { return }
+                self.titleField?.window?.makeFirstResponder(self.titleField)
+                self.titleField?.selectText(nil)
             }
         } else {
             // Disable editing and save changes
-            titleField.isEditable = false
-            titleField.isSelectable = false
-            titleField.isBezeled = false
-            titleField.backgroundColor = .clear // Remove edit mode background
-            titleField.textColor = NSColor.white // White text for dark background
-            titleField.layer?.cornerRadius = 0 // No rounded edges in view mode
+            titleField?.isEditable = false
+            titleField?.isSelectable = false
+            titleField?.isBezeled = false
+            titleField?.backgroundColor = .clear // Remove edit mode background
+            titleField?.textColor = NSColor.white // White text for dark background
+            titleField?.layer?.cornerRadius = 0 // No rounded edges in view mode
             
-            detailsTextView.isEditable = false
-            detailsTextView.isSelectable = false
-            detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.1) // Back to normal background
-            detailsTextView.textColor = NSColor.white // White text for dark background
+            detailsTextView?.isEditable = false
+            detailsTextView?.isSelectable = false
+            detailsTextView?.backgroundColor = NSColor.white.withAlphaComponent(0.1) // Back to normal background
+            detailsTextView?.textColor = NSColor.white // White text for dark background
             
-            deadlinePicker.isEnabled = false
-            prioritySlider.isEnabled = false
+            deadlinePicker?.isEnabled = false
+            prioritySlider?.isEnabled = false
             
             // Save any pending changes
-            task.title = titleField.stringValue
-            task.details = detailsTextView.string
+            task.title = titleField?.stringValue ?? task.title
+            task.details = detailsTextView?.string ?? task.details
             
             // Remove focus from any text field
             window?.makeFirstResponder(nil)
@@ -4628,20 +4639,23 @@ class TaskDetailView: NSView {
     }
     
     @objc private func titleChanged() {
-        task.title = titleField.stringValue
+        task.title = titleField?.stringValue ?? task.title
     }
     
     @objc private func priorityChanged() {
-        task.priority = Int(prioritySlider.intValue)
-        priorityLabel.stringValue = "\(task.priority)"
+        guard let slider = prioritySlider else { return }
+        task.priority = Int(slider.intValue)
+        priorityLabel?.stringValue = "\(task.priority)"
     }
     
     @objc private func deadlineChanged() {
-        task.deadline = deadlinePicker.dateValue
+        guard let picker = deadlinePicker else { return }
+        task.deadline = picker.dateValue
     }
     
     private func startAnimation() {
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
             self.animationPhase += 0.02
             self.needsDisplay = true
         }
@@ -4983,9 +4997,12 @@ class TaskDetailView: NSView {
 // MARK: - NSTextViewDelegate
 extension TaskDetailView: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
-        if let textView = notification.object as? NSTextView, textView == detailsTextView {
-            task.details = textView.string
+        guard let textView = notification.object as? NSTextView,
+              textView == detailsTextView,
+              detailsTextView != nil else {
+            return
         }
+        task.details = textView.string
     }
 }
 
