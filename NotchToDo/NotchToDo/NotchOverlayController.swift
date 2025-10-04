@@ -4404,7 +4404,7 @@ class TaskDetailView: NSView {
         self.layer?.cornerRadius = 32 // Large, sophisticated corner radius
         self.layer?.masksToBounds = false
         
-        // Title field
+        // Title field - Short free text
         titleField = NSTextField(frame: NSRect(x: 30, y: 420, width: 340, height: 40))
         titleField.stringValue = task.title
         titleField.font = NSFont.systemFont(ofSize: 24, weight: .bold)
@@ -4413,6 +4413,9 @@ class TaskDetailView: NSView {
         titleField.isBordered = false
         titleField.isEditable = false // Start in non-edit mode
         titleField.isSelectable = false // Start in non-edit mode
+        titleField.isAutomaticQuoteSubstitutionEnabled = false
+        titleField.isAutomaticDashSubstitutionEnabled = false
+        titleField.isAutomaticTextReplacementEnabled = false
         titleField.target = self
         titleField.action = #selector(titleChanged)
         addSubview(titleField)
@@ -4427,7 +4430,7 @@ class TaskDetailView: NSView {
         detailsLabel.isEditable = false
         addSubview(detailsLabel)
         
-        // Details text view
+        // Details text view - Free text editor
         detailsTextView = NSTextView(frame: NSRect(x: 30, y: 280, width: 340, height: 100))
         detailsTextView.string = task.details
         detailsTextView.font = NSFont.systemFont(ofSize: 14)
@@ -4436,6 +4439,10 @@ class TaskDetailView: NSView {
         detailsTextView.layer?.cornerRadius = 12
         detailsTextView.isEditable = false // Start in non-edit mode
         detailsTextView.isSelectable = false // Start in non-edit mode
+        detailsTextView.isRichText = false // Plain text only
+        detailsTextView.isAutomaticQuoteSubstitutionEnabled = false
+        detailsTextView.isAutomaticDashSubstitutionEnabled = false
+        detailsTextView.isAutomaticTextReplacementEnabled = false
         detailsTextView.delegate = self
         addSubview(detailsTextView)
         
@@ -4479,10 +4486,10 @@ class TaskDetailView: NSView {
         deadlineLabel.isEditable = false
         addSubview(deadlineLabel)
         
-        // Deadline picker
+        // Deadline picker - Calendar style
         deadlinePicker = NSDatePicker(frame: NSRect(x: 30, y: 140, width: 200, height: 30))
-        deadlinePicker.datePickerStyle = .textFieldAndStepper
-        deadlinePicker.datePickerElements = [.yearMonthDay, .hourMinute]
+        deadlinePicker.datePickerStyle = .clockAndCalendar
+        deadlinePicker.datePickerElements = [.yearMonthDay]
         if let deadline = task.deadline {
             deadlinePicker.dateValue = deadline
         } else {
@@ -4558,11 +4565,13 @@ class TaskDetailView: NSView {
             // Enable editing
             titleField.isEditable = true
             titleField.isSelectable = true
-            titleField.backgroundColor = NSColor.white.withAlphaComponent(0.15) // Visual feedback for edit mode
+            titleField.isBezeled = true
+            titleField.bezelStyle = .roundedBezel
+            titleField.backgroundColor = NSColor.controlBackgroundColor
             
             detailsTextView.isEditable = true
             detailsTextView.isSelectable = true
-            detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.15) // Visual feedback for edit mode
+            detailsTextView.backgroundColor = NSColor.controlBackgroundColor
             
             deadlinePicker.isEnabled = true
             prioritySlider.isEnabled = true
@@ -4577,6 +4586,7 @@ class TaskDetailView: NSView {
             // Disable editing and save changes
             titleField.isEditable = false
             titleField.isSelectable = false
+            titleField.isBezeled = false
             titleField.backgroundColor = .clear // Remove edit mode background
             
             detailsTextView.isEditable = false
