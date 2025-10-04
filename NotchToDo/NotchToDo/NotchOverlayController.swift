@@ -4564,18 +4564,27 @@ class TaskDetailView: NSView {
         let glassPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
         glassPath.addClip()
         
-        // Backdrop blur effect
-        if let blurFilter = CIFilter(name: "CIGaussianBlur") {
-            blurFilter.setValue(20.0, forKey: kCIInputRadiusKey)
-            // Apply blur to background content
-        }
+        // Create backdrop blur effect using visual effect view approach
+        // Fill with a semi-transparent background that simulates blur
+        let blurGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                     colors: [
+                                         NSColor.white.withAlphaComponent(0.3).cgColor,
+                                         NSColor.white.withAlphaComponent(0.2).cgColor,
+                                         NSColor.white.withAlphaComponent(0.15).cgColor
+                                     ] as CFArray,
+                                     locations: [0.0, 0.5, 1.0])
         
-        // Less transparent white overlay for better readability
+        context.drawLinearGradient(blurGradient!,
+                                 start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
+                                 end: CGPoint(x: cardRect.midX, y: cardRect.minY),
+                                 options: [])
+        
+        // Semi-transparent white overlay for better readability while showing blur
         let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                       colors: [
-                                          NSColor.white.withAlphaComponent(0.85).cgColor,
-                                          NSColor.white.withAlphaComponent(0.75).cgColor,
-                                          NSColor.white.withAlphaComponent(0.65).cgColor
+                                          NSColor.white.withAlphaComponent(0.6).cgColor,
+                                          NSColor.white.withAlphaComponent(0.5).cgColor,
+                                          NSColor.white.withAlphaComponent(0.4).cgColor
                                       ] as CFArray,
                                       locations: [0.0, 0.5, 1.0])
         
@@ -4583,6 +4592,20 @@ class TaskDetailView: NSView {
                                  start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
                                  end: CGPoint(x: cardRect.midX, y: cardRect.minY),
                                  options: [])
+        
+        // Add subtle noise texture for more realistic frosted glass effect
+        context.setBlendMode(.overlay)
+        context.setFillColor(NSColor.white.withAlphaComponent(0.1).cgColor)
+        
+        // Create a simple noise pattern
+        for _ in 0..<50 {
+            let noiseX = cardRect.minX + CGFloat.random(in: 0...cardRect.width)
+            let noiseY = cardRect.minY + CGFloat.random(in: 0...cardRect.height)
+            let noiseSize = CGFloat.random(in: 1...3)
+            context.fillEllipse(in: CGRect(x: noiseX, y: noiseY, width: noiseSize, height: noiseSize))
+        }
+        
+        context.setBlendMode(.normal)
         
         // Subtle border
         context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
