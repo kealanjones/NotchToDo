@@ -4375,6 +4375,8 @@ class TaskDetailView: NSView {
     private var isDragging = false
     private var dragStartLocation = NSPoint.zero
     private var initialWindowOrigin = NSPoint.zero
+    private var lastDragUpdateTime: TimeInterval = 0
+    private let dragUpdateInterval: TimeInterval = 1.0/60.0 // 60 FPS
     
     // Close button
     private var closeButtonRect = NSRect.zero
@@ -4502,10 +4504,16 @@ class TaskDetailView: NSView {
         isDragging = true
         dragStartLocation = locationInView
         initialWindowOrigin = window?.frame.origin ?? NSPoint.zero
+        lastDragUpdateTime = CACurrentMediaTime()
     }
     
     override func mouseDragged(with event: NSEvent) {
         guard isDragging else { return }
+        
+        // Throttle updates for smooth dragging
+        let currentTime = CACurrentMediaTime()
+        guard currentTime - lastDragUpdateTime >= dragUpdateInterval else { return }
+        lastDragUpdateTime = currentTime
         
         let currentLocation = convert(event.locationInWindow, from: nil)
         let deltaX = currentLocation.x - dragStartLocation.x
@@ -4516,6 +4524,7 @@ class TaskDetailView: NSView {
             y: initialWindowOrigin.y + deltaY
         )
         
+        // Direct window positioning for smooth dragging
         window?.setFrameOrigin(newOrigin)
     }
     
