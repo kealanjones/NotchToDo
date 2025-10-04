@@ -6,9 +6,12 @@ import QuartzCore
     class Task: ObservableObject, Identifiable {
         let id = UUID()
         @Published var title: String
-    @Published var isCompleted: Bool = false
+        @Published var isCompleted: Bool = false
+        @Published var details: String = ""
+        @Published var deadline: Date?
+        @Published var priority: Int = 1 // 1-5 scale (1 = low, 5 = high)
         
-    init(title: String) {
+        init(title: String) {
             self.title = title
         }
     }
@@ -466,6 +469,7 @@ class NotchOverlayController: ObservableObject {
     private var semiCircleView: SemiCircleWithOrbsView? // Added
     private var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
     private var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
+    private var taskDetailWindows: [UUID: NSWindow] = [:] // Track task detail windows by task ID
     private var isVisible = false
     var isSemiCircleVisible = false // Added
     private var orbManager = OrbManager()
@@ -845,6 +849,56 @@ class NotchOverlayController: ObservableObject {
             }
         }
         print("❌ Could not find orb for task card view")
+    }
+    
+    func showTaskDetail(for task: Task, orbColor: NSColor) {
+        // Close existing task detail window for this task if open
+        if let existingWindow = taskDetailWindows[task.id] {
+            existingWindow.close()
+            taskDetailWindows.removeValue(forKey: task.id)
+        }
+        
+        // Create new task detail window
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.level = .floating
+        window.ignoresMouseEvents = false
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.isMovable = true
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        
+        // Create the task detail view
+        let taskDetailView = TaskDetailView(task: task, orbColor: orbColor)
+        taskDetailView.controller = self
+        window.contentView = taskDetailView
+        
+        // Position the window near the mouse cursor
+        if let mouseLocation = NSEvent.mouseLocation as NSPoint? {
+            let windowFrame = NSRect(x: mouseLocation.x - 210, y: mouseLocation.y - 260, width: 420, height: 520)
+            window.setFrame(windowFrame, display: true)
+        }
+        
+        // Show the window
+        window.makeKeyAndOrderFront(nil)
+        taskDetailWindows[task.id] = window
+        
+        print("🎯 Task detail window opened for task: '\(task.title)'")
+    }
+    
+    func closeTaskDetail(for taskId: UUID) {
+        if let window = taskDetailWindows[taskId] {
+            window.close()
+            taskDetailWindows.removeValue(forKey: taskId)
+            print("🎯 Task detail window closed for task ID: \(taskId)")
+        }
     }
     
     // MARK: - Task Drag and Drop Between Cards
@@ -3099,6 +3153,13 @@ class TaskCardView: NSView {
         print("🎯 Task '\(task.title)' marked as \(task.isCompleted ? "completed" : "incomplete")")
     }
     
+    private func openTaskDetail(for index: Int) {
+        guard index < tasks.count else { return }
+        
+        let task = tasks[index]
+        controller?.showTaskDetail(for: task, orbColor: orbColor)
+    }
+    
     private func startCelebrationAnimation() {
         guard !isCelebrating else { return }
         
@@ -3452,6 +3513,12 @@ class TaskCardView: NSView {
             // Check if click is on a checkbox
             if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
                 toggleTaskCompletion(at: checkboxIndex)
+                return
+            }
+            
+            // Check if click is on a task (to open task detail)
+            if let taskIndex = getClickedTaskIndex(at: locationInView) {
+                openTaskDetail(for: taskIndex)
                 return
             }
         
@@ -4283,6 +4350,199 @@ class TaskCardView: NSView {
             context.addEllipse(in: CGRect(x: particleX - particleSize/2, y: particleY - particleSize/2, width: particleSize, height: particleSize))
             context.fillPath()
             context.restoreGState()
+        }
+    }
+}
+
+// MARK: - Task Detail View
+class TaskDetailView: NSView {
+    private var task: Task
+    private var orbColor: NSColor
+    weak var controller: NotchOverlayController?
+    
+    // UI Components
+    private var titleField: NSTextField!
+    private var detailsTextView: NSTextView!
+    private var deadlinePicker: NSDatePicker!
+    private var prioritySlider: NSSlider!
+    private var priorityLabel: NSTextField!
+    
+    // Animation
+    private var animationTimer: Timer?
+    private var animationPhase: CGFloat = 0.0
+    
+    init(task: Task, orbColor: NSColor) {
+        self.task = task
+        self.orbColor = orbColor
+        super.init(frame: NSRect(x: 0, y: 0, width: 400, height: 500))
+        setupView()
+        startAnimation()
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    deinit {
+        animationTimer?.invalidate()
+    }
+    
+    private func setupView() {
+        self.wantsLayer = true
+        self.layer?.cornerRadius = 28
+        self.layer?.masksToBounds = false
+        
+        // Title field
+        titleField = NSTextField(frame: NSRect(x: 30, y: 420, width: 340, height: 40))
+        titleField.stringValue = task.title
+        titleField.font = NSFont.systemFont(ofSize: 24, weight: .bold)
+        titleField.textColor = .labelColor
+        titleField.backgroundColor = .clear
+        titleField.isBordered = false
+        titleField.isEditable = true
+        titleField.target = self
+        titleField.action = #selector(titleChanged)
+        addSubview(titleField)
+        
+        // Details label
+        let detailsLabel = NSTextField(frame: NSRect(x: 30, y: 380, width: 100, height: 20))
+        detailsLabel.stringValue = "Details"
+        detailsLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        detailsLabel.textColor = .secondaryLabelColor
+        detailsLabel.backgroundColor = .clear
+        detailsLabel.isBordered = false
+        detailsLabel.isEditable = false
+        addSubview(detailsLabel)
+        
+        // Details text view
+        detailsTextView = NSTextView(frame: NSRect(x: 30, y: 280, width: 340, height: 100))
+        detailsTextView.string = task.details
+        detailsTextView.font = NSFont.systemFont(ofSize: 14)
+        detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.1)
+        detailsTextView.textColor = .labelColor
+        detailsTextView.layer?.cornerRadius = 12
+        detailsTextView.isEditable = true
+        detailsTextView.delegate = self
+        addSubview(detailsTextView)
+        
+        // Priority section
+        let priorityLabel = NSTextField(frame: NSRect(x: 30, y: 240, width: 100, height: 20))
+        priorityLabel.stringValue = "Priority"
+        priorityLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        priorityLabel.textColor = .secondaryLabelColor
+        priorityLabel.backgroundColor = .clear
+        priorityLabel.isBordered = false
+        priorityLabel.isEditable = false
+        addSubview(priorityLabel)
+        
+        // Priority slider
+        prioritySlider = NSSlider(frame: NSRect(x: 30, y: 210, width: 200, height: 20))
+        prioritySlider.minValue = 1
+        prioritySlider.maxValue = 5
+        prioritySlider.intValue = Int32(task.priority)
+        prioritySlider.target = self
+        prioritySlider.action = #selector(priorityChanged)
+        addSubview(prioritySlider)
+        
+        // Priority value label
+        self.priorityLabel = NSTextField(frame: NSRect(x: 240, y: 210, width: 50, height: 20))
+        self.priorityLabel.stringValue = "\(task.priority)"
+        self.priorityLabel.font = NSFont.systemFont(ofSize: 14, weight: .bold)
+        self.priorityLabel.textColor = .labelColor
+        self.priorityLabel.backgroundColor = .clear
+        self.priorityLabel.isBordered = false
+        self.priorityLabel.isEditable = false
+        addSubview(self.priorityLabel)
+        
+        // Deadline section
+        let deadlineLabel = NSTextField(frame: NSRect(x: 30, y: 170, width: 100, height: 20))
+        deadlineLabel.stringValue = "Deadline"
+        deadlineLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        deadlineLabel.textColor = .secondaryLabelColor
+        deadlineLabel.backgroundColor = .clear
+        deadlineLabel.isBordered = false
+        deadlineLabel.isEditable = false
+        addSubview(deadlineLabel)
+        
+        // Deadline picker
+        deadlinePicker = NSDatePicker(frame: NSRect(x: 30, y: 140, width: 200, height: 30))
+        deadlinePicker.datePickerStyle = .textFieldAndStepper
+        deadlinePicker.datePickerElements = [.yearMonthDay, .hourMinute]
+        if let deadline = task.deadline {
+            deadlinePicker.dateValue = deadline
+        } else {
+            deadlinePicker.dateValue = Date()
+        }
+        deadlinePicker.target = self
+        deadlinePicker.action = #selector(deadlineChanged)
+        addSubview(deadlinePicker)
+    }
+    
+    @objc private func titleChanged() {
+        task.title = titleField.stringValue
+    }
+    
+    @objc private func priorityChanged() {
+        task.priority = Int(prioritySlider.intValue)
+        priorityLabel.stringValue = "\(task.priority)"
+    }
+    
+    @objc private func deadlineChanged() {
+        task.deadline = deadlinePicker.dateValue
+    }
+    
+    private func startAnimation() {
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
+            self.animationPhase += 0.02
+            self.needsDisplay = true
+        }
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        let cardRect = bounds.insetBy(dx: 10, dy: 10)
+        
+        // Frosted glass background effect
+        context.saveGState()
+        let glassPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
+        glassPath.addClip()
+        
+        // Backdrop blur effect
+        if let blurFilter = CIFilter(name: "CIGaussianBlur") {
+            blurFilter.setValue(20.0, forKey: kCIInputRadiusKey)
+            // Apply blur to background content
+        }
+        
+        // Semi-transparent white overlay
+        let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                      colors: [
+                                          NSColor.white.withAlphaComponent(0.6).cgColor,
+                                          NSColor.white.withAlphaComponent(0.4).cgColor,
+                                          NSColor.white.withAlphaComponent(0.3).cgColor
+                                      ] as CFArray,
+                                      locations: [0.0, 0.5, 1.0])
+        
+        context.drawLinearGradient(glassGradient!,
+                                 start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
+                                 end: CGPoint(x: cardRect.midX, y: cardRect.minY),
+                                 options: [])
+        
+        // Subtle border
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
+        context.setLineWidth(1.0)
+        context.addPath(glassPath.cgPath)
+        context.strokePath()
+        
+        context.restoreGState()
+    }
+}
+
+// MARK: - NSTextViewDelegate
+extension TaskDetailView: NSTextViewDelegate {
+    func textDidChange(_ notification: Notification) {
+        if let textView = notification.object as? NSTextView, textView == detailsTextView {
+            task.details = textView.string
         }
     }
 }
