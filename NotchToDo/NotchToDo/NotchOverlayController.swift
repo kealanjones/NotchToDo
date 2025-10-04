@@ -4371,6 +4371,14 @@ class TaskDetailView: NSView {
     private var animationTimer: Timer?
     private var animationPhase: CGFloat = 0.0
     
+    // Drag functionality
+    private var isDragging = false
+    private var dragStartLocation = NSPoint.zero
+    private var initialWindowOrigin = NSPoint.zero
+    
+    // Close button
+    private var closeButtonRect = NSRect.zero
+    
     init(task: Task, orbColor: NSColor) {
         self.task = task
         self.orbColor = orbColor
@@ -4476,6 +4484,47 @@ class TaskDetailView: NSView {
         deadlinePicker.target = self
         deadlinePicker.action = #selector(deadlineChanged)
         addSubview(deadlinePicker)
+        
+        // Close button
+        closeButtonRect = NSRect(x: bounds.width - 40, y: bounds.height - 40, width: 30, height: 30)
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        let locationInView = convert(event.locationInWindow, from: nil)
+        
+        // Check if click is on the close button
+        if closeButtonRect.contains(locationInView) {
+            closeTaskDetail()
+            return
+        }
+        
+        // Start dragging if clicked elsewhere
+        isDragging = true
+        dragStartLocation = locationInView
+        initialWindowOrigin = window?.frame.origin ?? NSPoint.zero
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragging else { return }
+        
+        let currentLocation = convert(event.locationInWindow, from: nil)
+        let deltaX = currentLocation.x - dragStartLocation.x
+        let deltaY = currentLocation.y - dragStartLocation.y
+        
+        let newOrigin = NSPoint(
+            x: initialWindowOrigin.x + deltaX,
+            y: initialWindowOrigin.y + deltaY
+        )
+        
+        window?.setFrameOrigin(newOrigin)
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        isDragging = false
+    }
+    
+    private func closeTaskDetail() {
+        controller?.closeTaskDetail(for: task.id)
     }
     
     @objc private func titleChanged() {
@@ -4514,12 +4563,12 @@ class TaskDetailView: NSView {
             // Apply blur to background content
         }
         
-        // Semi-transparent white overlay
+        // Less transparent white overlay for better readability
         let glassGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                       colors: [
-                                          NSColor.white.withAlphaComponent(0.6).cgColor,
-                                          NSColor.white.withAlphaComponent(0.4).cgColor,
-                                          NSColor.white.withAlphaComponent(0.3).cgColor
+                                          NSColor.white.withAlphaComponent(0.85).cgColor,
+                                          NSColor.white.withAlphaComponent(0.75).cgColor,
+                                          NSColor.white.withAlphaComponent(0.65).cgColor
                                       ] as CFArray,
                                       locations: [0.0, 0.5, 1.0])
         
@@ -4553,6 +4602,65 @@ class TaskDetailView: NSView {
         }
         
         context.addPath(path)
+        context.strokePath()
+        
+        context.restoreGState()
+        
+        // Draw close button
+        drawCloseButton(in: context)
+    }
+    
+    private func drawCloseButton(in context: CGContext) {
+        context.saveGState()
+        
+        // Close button background
+        let buttonRect = closeButtonRect
+        let buttonPath = NSBezierPath(ovalIn: buttonRect)
+        
+        // Semi-transparent dark background
+        context.setFillColor(NSColor.black.withAlphaComponent(0.3).cgColor)
+        
+        // Convert NSBezierPath to CGPath for compatibility
+        let path = CGMutablePath()
+        var points = [CGPoint](repeating: .zero, count: 3)
+        
+        for i in 0..<buttonPath.elementCount {
+            let element = buttonPath.element(at: i, associatedPoints: &points)
+            switch element {
+            case .moveTo:
+                path.move(to: points[0])
+            case .lineTo:
+                path.addLine(to: points[0])
+            case .curveTo:
+                path.addCurve(to: points[2], control1: points[0], control2: points[1])
+            case .closePath:
+                path.closeSubpath()
+            @unknown default:
+                break
+            }
+        }
+        
+        context.addPath(path)
+        context.fillPath()
+        
+        // X icon
+        let iconSize: CGFloat = 12
+        let iconRect = NSRect(
+            x: buttonRect.midX - iconSize/2,
+            y: buttonRect.midY - iconSize/2,
+            width: iconSize,
+            height: iconSize
+        )
+        
+        context.setStrokeColor(NSColor.white.cgColor)
+        context.setLineWidth(2.0)
+        context.setLineCap(.round)
+        
+        // Draw X
+        context.move(to: CGPoint(x: iconRect.minX, y: iconRect.minY))
+        context.addLine(to: CGPoint(x: iconRect.maxX, y: iconRect.maxY))
+        context.move(to: CGPoint(x: iconRect.maxX, y: iconRect.minY))
+        context.addLine(to: CGPoint(x: iconRect.minX, y: iconRect.maxY))
         context.strokePath()
         
         context.restoreGState()
