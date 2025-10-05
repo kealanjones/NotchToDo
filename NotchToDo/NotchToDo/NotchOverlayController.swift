@@ -914,24 +914,44 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         print("🎯 Found window for task ID: \(taskId), window: \(window)")
         
-        // Remove the window from tracking first
-        taskDetailWindows.removeValue(forKey: taskId)
-        
-        // Get the TaskDetailView and clean it up immediately
+        // Get the TaskDetailView and clean it up BEFORE removing from tracking
         if let taskDetailView = window.contentView as? TaskDetailView {
-            print("🎯 Cleaning up TaskDetailView immediately: \(taskDetailView)")
+            print("🎯 Cleaning up TaskDetailView: \(taskDetailView)")
             taskDetailView.isDeallocating = true
+            
+            // Stop animation timer immediately
+            if let timer = taskDetailView.animationTimer {
+                timer.invalidate()
+                taskDetailView.animationTimer = nil
+            }
+            
+            // Clear delegate to break retain cycle
             taskDetailView.delegate = nil
+            
+            // Clear all UI component references
+            taskDetailView.titleField = nil
+            taskDetailView.detailsTextView = nil
+            taskDetailView.deadlinePicker = nil
+            taskDetailView.prioritySlider = nil
+            taskDetailView.priorityLabel = nil
         }
         
-        // Clear content view immediately to break retain cycle
+        // Remove from tracking AFTER cleanup
+        taskDetailWindows.removeValue(forKey: taskId)
+        
+        // Hide window first
+        window.orderOut(nil)
+        
+        // Clear content view to break retain cycle
         window.contentView = nil
         
-        // Hide and close immediately
-        window.orderOut(nil)
-        window.close()
+        // Close window with a small delay to ensure cleanup completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            window.close()
+            print("🎯 Window closed after delay")
+        }
         
-        print("🎯 Task detail window closed immediately for task ID: \(taskId)")
+        print("🎯 Task detail window close initiated for task ID: \(taskId)")
     }
     
     // MARK: - Task Drag and Drop Between Cards
@@ -4398,14 +4418,14 @@ class TaskDetailView: NSView {
     weak var delegate: TaskDetailViewDelegate?
     
     // UI Components
-    private var titleField: NSTextField!
-    private var detailsTextView: NSTextView!
-    private var deadlinePicker: NSDatePicker!
-    private var prioritySlider: NSSlider!
-    private var priorityLabel: NSTextField!
+    var titleField: NSTextField!
+    var detailsTextView: NSTextView!
+    var deadlinePicker: NSDatePicker!
+    var prioritySlider: NSSlider!
+    var priorityLabel: NSTextField!
     
     // Animation
-    private var animationTimer: Timer?
+    var animationTimer: Timer?
     private var animationPhase: CGFloat = 0.0
     
     // Drag functionality
