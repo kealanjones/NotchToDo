@@ -4388,6 +4388,7 @@ class TaskDetailView: NSView {
     // Edit functionality
     private var editButtonRect = NSRect.zero
     private var isEditMode = false
+    private var isDeallocating = false
     
     init(task: Task, orbColor: NSColor) {
         self.task = task
@@ -4402,7 +4403,21 @@ class TaskDetailView: NSView {
     }
     
     deinit {
+        print("🧹 TaskDetailView deinit starting")
+        isDeallocating = true
+        
         animationTimer?.invalidate()
+        animationTimer = nil
+        
+        // Clear all references to prevent any lingering access
+        titleField = nil
+        detailsTextView = nil
+        deadlinePicker = nil
+        prioritySlider = nil
+        priorityLabel = nil
+        controller = nil
+        
+        print("🧹 TaskDetailView deinit completed")
     }
     
     private func setupView() {
@@ -4569,10 +4584,16 @@ class TaskDetailView: NSView {
     }
     
     private func closeTaskDetail() {
+        guard !isDeallocating else { return }
         controller?.closeTaskDetail(for: task.id)
     }
     
     private func toggleEditMode() {
+        guard !isDeallocating else {
+            print("⚠️ ToggleEditMode: View is deallocating")
+            return
+        }
+        
         guard !isEditMode || (titleField != nil && detailsTextView != nil) else {
             print("⚠️ ToggleEditMode: Missing UI components")
             return
@@ -4655,13 +4676,14 @@ class TaskDetailView: NSView {
     
     private func startAnimation() {
         animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+            guard let self = self, !self.isDeallocating else { return }
             self.animationPhase += 0.02
             self.needsDisplay = true
         }
     }
     
     override func draw(_ dirtyRect: NSRect) {
+        guard !isDeallocating else { return }
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         let cardRect = bounds.insetBy(dx: 2, dy: 2)
