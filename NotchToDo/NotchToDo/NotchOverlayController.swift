@@ -4696,30 +4696,50 @@ class TaskDetailView: NSView {
             
             // Focus on title field when entering edit mode
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                guard let self = self else { return }
-                self.titleField?.window?.makeFirstResponder(self.titleField)
-                self.titleField?.selectText(nil)
+                guard let self = self, !self.isDeallocating else { return }
+                guard let titleField = self.titleField else { return }
+                titleField.window?.makeFirstResponder(titleField)
+                titleField.selectText(nil)
             }
         } else {
-            // Disable editing and save changes
-            titleField?.isEditable = false
-            titleField?.isSelectable = false
-            titleField?.isBezeled = false
-            titleField?.backgroundColor = .clear // Remove edit mode background
-            titleField?.textColor = NSColor.white // White text for dark background
-            titleField?.layer?.cornerRadius = 0 // No rounded edges in view mode
+            // Disable editing and save changes safely
+            guard let titleField = titleField,
+                  let detailsTextView = detailsTextView,
+                  let deadlinePicker = deadlinePicker,
+                  let prioritySlider = prioritySlider else {
+                print("⚠️ ToggleEditMode: Missing UI components during save")
+                return
+            }
             
-            detailsTextView?.isEditable = false
-            detailsTextView?.isSelectable = false
-            detailsTextView?.backgroundColor = NSColor.white.withAlphaComponent(0.1) // Back to normal background
-            detailsTextView?.textColor = NSColor.white // White text for dark background
+            // Save changes BEFORE disabling components
+            let newTitle = titleField.stringValue
+            let newDetails = detailsTextView.string
             
-            deadlinePicker?.isEnabled = false
-            prioritySlider?.isEnabled = false
+            if !newTitle.isEmpty && newTitle != task.title {
+                task.title = newTitle
+                print("🎯 Saved title: '\(newTitle)'")
+            }
             
-            // Save any pending changes
-            task.title = titleField?.stringValue ?? task.title
-            task.details = detailsTextView?.string ?? task.details
+            if newDetails != task.details {
+                task.details = newDetails
+                print("🎯 Saved details: '\(newDetails)'")
+            }
+            
+            // Now disable editing
+            titleField.isEditable = false
+            titleField.isSelectable = false
+            titleField.isBezeled = false
+            titleField.backgroundColor = .clear
+            titleField.textColor = NSColor.white
+            titleField.layer?.cornerRadius = 0
+            
+            detailsTextView.isEditable = false
+            detailsTextView.isSelectable = false
+            detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.1)
+            detailsTextView.textColor = NSColor.white
+            
+            deadlinePicker.isEnabled = false
+            prioritySlider.isEnabled = false
             
             // Remove focus from any text field
             window?.makeFirstResponder(nil)
@@ -4729,17 +4749,18 @@ class TaskDetailView: NSView {
     }
     
     @objc private func titleChanged() {
-        task.title = titleField?.stringValue ?? task.title
+        guard !isDeallocating, let titleField = titleField else { return }
+        task.title = titleField.stringValue
     }
     
     @objc private func priorityChanged() {
-        guard let slider = prioritySlider else { return }
+        guard !isDeallocating, let slider = prioritySlider else { return }
         task.priority = Int(slider.intValue)
         priorityLabel?.stringValue = "\(task.priority)"
     }
     
     @objc private func deadlineChanged() {
-        guard let picker = deadlinePicker else { return }
+        guard !isDeallocating, let picker = deadlinePicker else { return }
         task.deadline = picker.dateValue
     }
     
@@ -5088,12 +5109,13 @@ class TaskDetailView: NSView {
 // MARK: - NSTextViewDelegate
 extension TaskDetailView: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
-        guard let textView = notification.object as? NSTextView,
+        guard !isDeallocating,
+              let textView = notification.object as? NSTextView,
               textView == detailsTextView,
-              detailsTextView != nil else {
+              let detailsTextView = detailsTextView else {
             return
         }
-        task.details = textView.string
+        task.details = detailsTextView.string
     }
 }
 
