@@ -852,8 +852,11 @@ class NotchOverlayController: ObservableObject {
     }
     
     func showTaskDetail(for task: Task, orbColor: NSColor) {
+        print("🎯 Opening task detail for task: '\(task.title)' (ID: \(task.id))")
+        
         // Close existing task detail window for this task if open
         if let existingWindow = taskDetailWindows[task.id] {
+            print("🎯 Closing existing window for task ID: \(task.id)")
             existingWindow.close()
             taskDetailWindows.removeValue(forKey: task.id)
         }
@@ -865,6 +868,8 @@ class NotchOverlayController: ObservableObject {
             backing: .buffered,
             defer: false
         )
+        
+        print("🎯 Created TaskDetailWindow: \(window)")
         
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -878,42 +883,52 @@ class NotchOverlayController: ObservableObject {
         
         // Create the task detail view
         let taskDetailView = TaskDetailView(task: task, orbColor: orbColor)
+        print("🎯 Created TaskDetailView: \(taskDetailView)")
+        
         taskDetailView.controller = self
         window.contentView = taskDetailView
         
         // Position the window near the mouse cursor
-        if let mouseLocation = NSEvent.mouseLocation as NSPoint? {
-            let windowFrame = NSRect(x: mouseLocation.x - 210, y: mouseLocation.y - 260, width: 420, height: 520)
-            window.setFrame(windowFrame, display: true)
-        }
+        let mouseLocation = NSEvent.mouseLocation
+        let windowFrame = NSRect(x: mouseLocation.x - 210, y: mouseLocation.y - 260, width: 420, height: 520)
+        window.setFrame(windowFrame, display: true)
         
         // Show the window
         window.makeKeyAndOrderFront(nil)
         taskDetailWindows[task.id] = window
         
-        print("🎯 Task detail window opened for task: '\(task.title)'")
+        print("🎯 Task detail window opened and stored for task: '\(task.title)'")
     }
     
     func closeTaskDetail(for taskId: UUID) {
+        print("🎯 Closing task detail for task ID: \(taskId)")
+        
         guard let window = taskDetailWindows[taskId] else {
             print("⚠️ No window found for task ID: \(taskId)")
             return
         }
+        
+        print("🎯 Found window for task ID: \(taskId), window: \(window)")
         
         // Remove the window from tracking first
         taskDetailWindows.removeValue(forKey: taskId)
         
         // Get the TaskDetailView and set it to deallocating state
         if let taskDetailView = window.contentView as? TaskDetailView {
+            print("🎯 Setting TaskDetailView to deallocating state: \(taskDetailView)")
             taskDetailView.isDeallocating = true
+        } else {
+            print("⚠️ Could not cast window.contentView to TaskDetailView")
         }
         
         // Close the window safely on main queue
         DispatchQueue.main.async { [weak window] in
+            print("🎯 Closing window on main queue: \(window)")
             window?.close()
+            print("🎯 Window close() called")
         }
         
-        print("🎯 Task detail window closed for task ID: \(taskId)")
+        print("🎯 Task detail window close initiated for task ID: \(taskId)")
     }
     
     // MARK: - Task Drag and Drop Between Cards
