@@ -885,6 +885,7 @@ class NotchOverlayController: ObservableObject {
         let taskDetailView = TaskDetailView(task: task, orbColor: orbColor)
         print("🎯 Created TaskDetailView: \(taskDetailView)")
         
+        // Set weak reference to prevent retain cycle
         taskDetailView.controller = self
         window.contentView = taskDetailView
         
@@ -917,9 +918,14 @@ class NotchOverlayController: ObservableObject {
         if let taskDetailView = window.contentView as? TaskDetailView {
             print("🎯 Setting TaskDetailView to deallocating state: \(taskDetailView)")
             taskDetailView.isDeallocating = true
+            // Clear the controller reference to break retain cycle
+            taskDetailView.controller = nil
         } else {
             print("⚠️ Could not cast window.contentView to TaskDetailView")
         }
+        
+        // Clear the content view to break retain cycle
+        window.contentView = nil
         
         // Close the window safely on main queue
         DispatchQueue.main.async { [weak window] in
