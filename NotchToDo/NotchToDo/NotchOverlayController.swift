@@ -461,7 +461,7 @@ extension NSScreen {
     }
 }
 
-class NotchOverlayController: ObservableObject {
+class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private var overlayWindow: NSWindow?
     private var overlayView: NotchOverlayView?
     private var notchIndicatorWindow: NSWindow?
@@ -885,8 +885,11 @@ class NotchOverlayController: ObservableObject {
         let taskDetailView = TaskDetailView(task: task, orbColor: orbColor)
         print("🎯 Created TaskDetailView: \(taskDetailView)")
         
-        // Set weak reference to prevent retain cycle
-        taskDetailView.controller = self
+        // Set delegate to prevent retain cycle
+        taskDetailView.delegate = self
+        
+        // Set the view in the window for proper cleanup
+        window.setTaskDetailView(taskDetailView)
         window.contentView = taskDetailView
         
         // Position the window near the mouse cursor
@@ -914,30 +917,11 @@ class NotchOverlayController: ObservableObject {
         // Remove the window from tracking first
         taskDetailWindows.removeValue(forKey: taskId)
         
-        // Get the TaskDetailView and perform aggressive cleanup
-        if let taskDetailView = window.contentView as? TaskDetailView {
-            print("🎯 Performing aggressive cleanup of TaskDetailView: \(taskDetailView)")
-            
-            // Set deallocating state first
-            taskDetailView.isDeallocating = true
-            
-            // Clear all references immediately
-            taskDetailView.controller = nil
-            
-            // Force cleanup of any timers or observers
-            taskDetailView.cleanupBeforeDealloc()
-        } else {
-            print("⚠️ Could not cast window.contentView to TaskDetailView")
-        }
-        
-        // Clear the content view to break retain cycle
-        window.contentView = nil
-        
-        // Hide the window first, then close it
+        // Hide the window first
         window.orderOut(nil)
         
-        // Close the window on main queue with delay to ensure cleanup
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak window] in
+        // Let the window handle its own cleanup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak window] in
             print("🎯 Closing window on main queue: \(window)")
             window?.close()
             print("🎯 Window close() called")
@@ -4400,10 +4384,14 @@ class TaskCardView: NSView {
 }
 
 // MARK: - Task Detail View
+protocol TaskDetailViewDelegate: AnyObject {
+    func closeTaskDetail(for taskId: UUID)
+}
+
 class TaskDetailView: NSView {
     private var task: Task
     private var orbColor: NSColor
-    weak var controller: NotchOverlayController?
+    weak var delegate: TaskDetailViewDelegate?
     
     // UI Components
     private var titleField: NSTextField!
@@ -4460,7 +4448,7 @@ class TaskDetailView: NSView {
         deadlinePicker = nil
         prioritySlider = nil
         priorityLabel = nil
-        controller = nil
+        delegate = nil
         
         // Remove from superview if still attached
         removeFromSuperview()
@@ -4641,7 +4629,7 @@ class TaskDetailView: NSView {
         isClosing = true
         isDeallocating = true
         
-        controller?.closeTaskDetail(for: task.id)
+        delegate?.closeTaskDetail(for: task.id)
     }
     
     func cleanupBeforeDealloc() {
@@ -4660,8 +4648,8 @@ class TaskDetailView: NSView {
         prioritySlider = nil
         priorityLabel = nil
         
-        // Clear controller reference
-        controller = nil
+        // Clear delegate reference
+        delegate = nil
         
         print("🧹 TaskDetailView cleanupBeforeDealloc completed")
     }
@@ -5108,11 +5096,42 @@ extension TaskDetailView: NSTextViewDelegate {
 
 // MARK: - TaskDetailWindow
 class TaskDetailWindow: NSWindow {
+    private var taskDetailView: TaskDetailView?
+    
     override var canBecomeKey: Bool {
         return true
     }
     
     override var canBecomeMain: Bool {
         return true
+    }
+    
+    func setTaskDetailView(_ view: TaskDetailView) {
+        taskDetailView = view
+    }
+    
+    override func close() {
+        print("🧹 TaskDetailWindow close() called")
+        
+        // Perform cleanup before closing
+        if let view = taskDetailView {
+            print("🧹 Cleaning up TaskDetailView before window close")
+            view.isDeallocating = true
+            view.cleanupBeforeDealloc()
+        }
+        
+        // Clear the reference
+        taskDetailView = nil
+        
+        // Clear content view
+        contentView = nil
+        
+        super.close()
+        
+        print("🧹 TaskDetailWindow close() completed")
+    }
+    
+    deinit {
+        print("🧹 TaskDetailWindow deinit")
     }
 }
