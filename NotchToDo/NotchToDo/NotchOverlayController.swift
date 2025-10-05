@@ -862,7 +862,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         }
         
         // Create new task detail window
-        let window = NSWindow(
+        let window = TaskDetailWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
             styleMask: [.borderless],
             backing: .buffered,
@@ -5074,6 +5074,17 @@ extension TaskDetailView: NSTextViewDelegate {
             return
         }
         task.details = textView.string
+    }
+}
+
+// MARK: - TaskDetailWindow
+class TaskDetailWindow: NSWindow {
+    override var canBecomeKey: Bool {
+        return true
+    }
+    
+    override var canBecomeMain: Bool {
+        return true
     }
 }
 
