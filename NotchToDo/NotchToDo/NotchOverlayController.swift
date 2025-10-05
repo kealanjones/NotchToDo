@@ -908,14 +908,9 @@ class NotchOverlayController: ObservableObject {
             taskDetailView.isDeallocating = true
         }
         
-        // Close the window safely on main queue with additional safety
+        // Close the window safely on main queue
         DispatchQueue.main.async { [weak window] in
-            guard let window = window else { return }
-            
-            // Additional safety check
-            if !window.isClosed {
-                window.close()
-            }
+            window?.close()
         }
         
         print("🎯 Task detail window closed for task ID: \(taskId)")
