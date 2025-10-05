@@ -914,12 +914,18 @@ class NotchOverlayController: ObservableObject {
         // Remove the window from tracking first
         taskDetailWindows.removeValue(forKey: taskId)
         
-        // Get the TaskDetailView and set it to deallocating state
+        // Get the TaskDetailView and perform aggressive cleanup
         if let taskDetailView = window.contentView as? TaskDetailView {
-            print("🎯 Setting TaskDetailView to deallocating state: \(taskDetailView)")
+            print("🎯 Performing aggressive cleanup of TaskDetailView: \(taskDetailView)")
+            
+            // Set deallocating state first
             taskDetailView.isDeallocating = true
-            // Clear the controller reference to break retain cycle
+            
+            // Clear all references immediately
             taskDetailView.controller = nil
+            
+            // Force cleanup of any timers or observers
+            taskDetailView.cleanupBeforeDealloc()
         } else {
             print("⚠️ Could not cast window.contentView to TaskDetailView")
         }
@@ -927,8 +933,11 @@ class NotchOverlayController: ObservableObject {
         // Clear the content view to break retain cycle
         window.contentView = nil
         
-        // Close the window safely on main queue
-        DispatchQueue.main.async { [weak window] in
+        // Hide the window first, then close it
+        window.orderOut(nil)
+        
+        // Close the window on main queue with delay to ensure cleanup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak window] in
             print("🎯 Closing window on main queue: \(window)")
             window?.close()
             print("🎯 Window close() called")
@@ -4453,6 +4462,9 @@ class TaskDetailView: NSView {
         priorityLabel = nil
         controller = nil
         
+        // Remove from superview if still attached
+        removeFromSuperview()
+        
         print("🧹 TaskDetailView deinit completed")
     }
     
@@ -4630,6 +4642,28 @@ class TaskDetailView: NSView {
         isDeallocating = true
         
         controller?.closeTaskDetail(for: task.id)
+    }
+    
+    func cleanupBeforeDealloc() {
+        print("🧹 TaskDetailView cleanupBeforeDealloc starting")
+        
+        // Invalidate timer immediately
+        if let timer = animationTimer {
+            timer.invalidate()
+            animationTimer = nil
+        }
+        
+        // Clear all UI component references
+        titleField = nil
+        detailsTextView = nil
+        deadlinePicker = nil
+        prioritySlider = nil
+        priorityLabel = nil
+        
+        // Clear controller reference
+        controller = nil
+        
+        print("🧹 TaskDetailView cleanupBeforeDealloc completed")
     }
     
     private func toggleEditMode() {
