@@ -895,16 +895,30 @@ class NotchOverlayController: ObservableObject {
     }
     
     func closeTaskDetail(for taskId: UUID) {
-        if let window = taskDetailWindows[taskId] {
-            // Remove the window from tracking first
-            taskDetailWindows.removeValue(forKey: taskId)
+        guard let window = taskDetailWindows[taskId] else {
+            print("⚠️ No window found for task ID: \(taskId)")
+            return
+        }
+        
+        // Remove the window from tracking first
+        taskDetailWindows.removeValue(forKey: taskId)
+        
+        // Get the TaskDetailView and set it to deallocating state
+        if let taskDetailView = window.contentView as? TaskDetailView {
+            taskDetailView.isDeallocating = true
+        }
+        
+        // Close the window safely on main queue with additional safety
+        DispatchQueue.main.async { [weak window] in
+            guard let window = window else { return }
             
-            // Close the window safely on main queue
-            DispatchQueue.main.async {
+            // Additional safety check
+            if !window.isClosed {
                 window.close()
             }
-            print("🎯 Task detail window closed for task ID: \(taskId)")
         }
+        
+        print("🎯 Task detail window closed for task ID: \(taskId)")
     }
     
     // MARK: - Task Drag and Drop Between Cards
@@ -4388,7 +4402,8 @@ class TaskDetailView: NSView {
     // Edit functionality
     private var editButtonRect = NSRect.zero
     private var isEditMode = false
-    private var isDeallocating = false
+    var isDeallocating = false
+    private var isClosing = false
     
     init(task: Task, orbColor: NSColor) {
         self.task = task
@@ -4404,10 +4419,15 @@ class TaskDetailView: NSView {
     
     deinit {
         print("🧹 TaskDetailView deinit starting")
+        
+        // Prevent any further operations
         isDeallocating = true
         
-        animationTimer?.invalidate()
-        animationTimer = nil
+        // Safely invalidate timer
+        if let timer = animationTimer {
+            timer.invalidate()
+            animationTimer = nil
+        }
         
         // Clear all references to prevent any lingering access
         titleField = nil
@@ -4584,7 +4604,15 @@ class TaskDetailView: NSView {
     }
     
     private func closeTaskDetail() {
-        guard !isDeallocating else { return }
+        guard !isDeallocating && !isClosing else { 
+            print("⚠️ closeTaskDetail: View is deallocating or already closing")
+            return 
+        }
+        
+        // Set flags to prevent multiple calls
+        isClosing = true
+        isDeallocating = true
+        
         controller?.closeTaskDetail(for: task.id)
     }
     
