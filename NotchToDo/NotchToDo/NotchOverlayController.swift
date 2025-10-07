@@ -470,6 +470,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
     private var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
     private var taskDetailWindows: [UUID: NSWindow] = [:] // Track task detail windows by task ID
+    private var taskDetailDelegates: [UUID: TaskDetailWindowDelegate] = [:] // Track window delegates
     private var isVisible = false
     var isSemiCircleVisible = false // Added
     private var orbManager = OrbManager()
@@ -888,8 +889,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         let taskDetailView = TaskDetailView(task: task, orbColor: orbColor)
         print("🎯 Created TaskDetailView: \(taskDetailView)")
         
-        // Set delegate to prevent retain cycle
-        taskDetailView.delegate = self
+        // Don't set delegate to avoid any potential retain cycles
+        // taskDetailView.delegate = self
         window.contentView = taskDetailView
         
         // Position the window near the mouse cursor
@@ -900,6 +901,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         // Show the window
         window.makeKeyAndOrderFront(nil)
         taskDetailWindows[task.id] = window
+        
+        // Set up window delegate to handle closing
+        let windowDelegate = TaskDetailWindowDelegate(taskId: task.id, controller: self)
+        window.delegate = windowDelegate
+        taskDetailDelegates[task.id] = windowDelegate
         
         print("🎯 Task detail window opened and stored for task: '\(task.title)'")
     }
@@ -914,17 +920,10 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         // Remove from tracking IMMEDIATELY to prevent any further access
         taskDetailWindows.removeValue(forKey: taskId)
+        taskDetailDelegates.removeValue(forKey: taskId)
         
-        // Get the TaskDetailView and aggressively clean it up
-        if let taskDetailView = window.contentView as? TaskDetailView {
-            print("🎯 Aggressively cleaning up TaskDetailView")
-            
-            // Clear delegate immediately
-            taskDetailView.delegate = nil
-            
-            // Clear the content view immediately to break retain cycle
-            window.contentView = nil
-        }
+        // Clear the content view immediately to break retain cycle
+        window.contentView = nil
         
         // Hide window first
         window.orderOut(nil)
@@ -4396,7 +4395,6 @@ protocol TaskDetailViewDelegate: AnyObject {
 class TaskDetailView: NSView {
     private var task: Task
     private var orbColor: NSColor
-    weak var delegate: TaskDetailViewDelegate?
     
     // UI Components - Simple and clean
     private var titleField: NSTextField!
@@ -4429,7 +4427,6 @@ class TaskDetailView: NSView {
     
     deinit {
         print("🧹 Simple TaskDetailView deinit")
-        delegate = nil
     }
     
     private func setupSimpleView() {
@@ -4512,7 +4509,8 @@ class TaskDetailView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         
         if closeButtonRect.contains(location) {
-            delegate?.closeTaskDetail(for: task.id)
+            // Close window directly without delegate
+            window?.close()
             return
         }
         
@@ -4669,4 +4667,19 @@ class TaskDetailWindow: NSWindow {
     }
 }
 
-// MARK: - TaskDetailWindow
+// MARK: - TaskDetailWindowDelegate
+class TaskDetailWindowDelegate: NSObject, NSWindowDelegate {
+    private let taskId: UUID
+    private weak var controller: NotchOverlayController?
+    
+    init(taskId: UUID, controller: NotchOverlayController) {
+        self.taskId = taskId
+        self.controller = controller
+        super.init()
+    }
+    
+    func windowWillClose(_ notification: Notification) {
+        print("🎯 Window delegate: window will close for task ID: \(taskId)")
+        controller?.closeTaskDetail(for: taskId)
+    }
+}
