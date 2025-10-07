@@ -905,26 +905,34 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     func closeTaskDetail(for taskId: UUID) {
-        print("🎯 Simple close for task ID: \(taskId)")
+        print("🎯 Aggressive close for task ID: \(taskId)")
         
         guard let window = taskDetailWindows[taskId] else {
             print("⚠️ No window found for task ID: \(taskId)")
             return
         }
         
-        // Simple cleanup - just clear delegate
-        if let taskDetailView = window.contentView as? TaskDetailView {
-            taskDetailView.delegate = nil
-        }
-        
-        // Remove from tracking
+        // Remove from tracking IMMEDIATELY to prevent any further access
         taskDetailWindows.removeValue(forKey: taskId)
         
-        // Hide and close window
+        // Get the TaskDetailView and aggressively clean it up
+        if let taskDetailView = window.contentView as? TaskDetailView {
+            print("🎯 Aggressively cleaning up TaskDetailView")
+            
+            // Clear delegate immediately
+            taskDetailView.delegate = nil
+            
+            // Clear the content view immediately to break retain cycle
+            window.contentView = nil
+        }
+        
+        // Hide window first
         window.orderOut(nil)
+        
+        // Close window immediately without delay
         window.close()
         
-        print("🎯 Task detail window closed for task ID: \(taskId)")
+        print("🎯 Task detail window aggressively closed for task ID: \(taskId)")
     }
     
     // MARK: - Task Drag and Drop Between Cards
@@ -4482,8 +4490,7 @@ class TaskDetailView: NSView {
         prioritySlider.maxValue = 10
         prioritySlider.intValue = Int32(task.priority)
         prioritySlider.isEnabled = false
-        prioritySlider.target = self
-        prioritySlider.action = #selector(priorityChanged)
+        // Remove target-action to prevent retain cycle
         addSubview(prioritySlider)
     }
     
@@ -4585,10 +4592,6 @@ class TaskDetailView: NSView {
         print("🎯 Saved changes: '\(task.title)'")
     }
     
-    @objc private func priorityChanged() {
-        task.priority = Int(prioritySlider.intValue)
-        priorityLabel.stringValue = "Priority: \(task.priority)"
-    }
     
     // MARK: - Simple Drawing
     
