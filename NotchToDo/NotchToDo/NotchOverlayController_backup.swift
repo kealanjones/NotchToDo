@@ -905,26 +905,53 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     func closeTaskDetail(for taskId: UUID) {
-        print("🎯 Simple close for task ID: \(taskId)")
+        print("🎯 Closing task detail for task ID: \(taskId)")
         
         guard let window = taskDetailWindows[taskId] else {
             print("⚠️ No window found for task ID: \(taskId)")
             return
         }
         
-        // Simple cleanup - just clear delegate
+        print("🎯 Found window for task ID: \(taskId), window: \(window)")
+        
+        // Get the TaskDetailView and clean it up BEFORE removing from tracking
         if let taskDetailView = window.contentView as? TaskDetailView {
+            print("🎯 Cleaning up TaskDetailView: \(taskDetailView)")
+            taskDetailView.isDeallocating = true
+            
+            // Stop animation timer immediately
+            if let timer = taskDetailView.animationTimer {
+                timer.invalidate()
+                taskDetailView.animationTimer = nil
+            }
+            
+            // Clear delegate to break retain cycle
             taskDetailView.delegate = nil
+            
+            // Clear all UI component references
+            taskDetailView.titleField = nil
+            taskDetailView.detailsTextView = nil
+            taskDetailView.deadlinePicker = nil
+            taskDetailView.prioritySlider = nil
+            taskDetailView.priorityLabel = nil
         }
         
-        // Remove from tracking
+        // Remove from tracking AFTER cleanup
         taskDetailWindows.removeValue(forKey: taskId)
         
-        // Hide and close window
+        // Hide window first
         window.orderOut(nil)
-        window.close()
         
-        print("🎯 Task detail window closed for task ID: \(taskId)")
+        // Clear content view to break retain cycle
+        window.contentView = nil
+        
+        // Close window with a small delay to ensure cleanup completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            window.close()
+            print("🎯 Window closed after delay")
+        }
+        
+        print("🎯 Task detail window close initiated for task ID: \(taskId)")
     }
     
     // MARK: - Task Drag and Drop Between Cards
