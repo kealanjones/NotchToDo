@@ -470,7 +470,6 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
     private var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
     private var taskDetailWindows: [UUID: NSWindow] = [:] // Track task detail windows by task ID
-    private var taskDetailDelegates: [UUID: TaskDetailWindowDelegate] = [:] // Track window delegates
     private var isVisible = false
     var isSemiCircleVisible = false // Added
     private var orbManager = OrbManager()
@@ -856,10 +855,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         print("🎯 Opening task detail for task: '\(task.title)' (ID: \(task.id))")
         
         // Close existing task detail window for this task if open
-        if let existingWindow = taskDetailWindows[task.id] {
+        if taskDetailWindows[task.id] != nil {
             print("🎯 Closing existing window for task ID: \(task.id)")
-            existingWindow.close()
-            taskDetailWindows.removeValue(forKey: task.id)
+            closeTaskDetail(for: task.id)
         }
         
         // Create new task detail window with modern styling
@@ -890,6 +888,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         // Create the task detail view
         let taskDetailView = TaskDetailView(task: task, orbColor: orbColor)
+        taskDetailView.setDelegate(self)
         print("🎯 Created TaskDetailView: \(taskDetailView)")
         
         // Don't set delegate to avoid any potential retain cycles
@@ -914,26 +913,26 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         window.makeKeyAndOrderFront(nil)
         taskDetailWindows[task.id] = window
         
-        // Set up window delegate to handle closing
-        let windowDelegate = TaskDetailWindowDelegate(taskId: task.id, controller: self)
-        window.delegate = windowDelegate
-        taskDetailDelegates[task.id] = windowDelegate
-        
         print("🎯 Task detail window opened and stored for task: '\(task.title)'")
     }
-    
+
     func closeTaskDetail(for taskId: UUID) {
-        print("🎯 Aggressive close for task ID: \(taskId)")
+        print("🎯 Close requested for task ID: \(taskId)")
         
         guard let window = taskDetailWindows.removeValue(forKey: taskId) else {
-            print("⚠️ No window found for task ID: \(taskId)")
+            print("⚠️ Close requested but no window found for task ID: \(taskId)")
             return
         }
-
-        taskDetailDelegates.removeValue(forKey: taskId)
+        
+        if let detailView = window.contentView as? TaskDetailView {
+            detailView.prepareForClose()
+        }
+        
+        window.makeFirstResponder(nil)
+        window.orderOut(nil)
+        window.contentView = nil
         window.delegate = nil
-
-        // Let AppKit handle the remainder of the close sequence.
+        
         print("🎯 Task detail window closed for task ID: \(taskId)")
     }
     
@@ -4413,6 +4412,7 @@ protocol TaskDetailViewDelegate: AnyObject {
 class TaskDetailView: NSView {
     private var task: Task
     private var orbColor: NSColor
+    private weak var delegate: TaskDetailViewDelegate?
     
     // UI Components - Simple and clean
     private var titleField: NSTextField!
@@ -4420,6 +4420,7 @@ class TaskDetailView: NSView {
     private var deadlinePicker: NSDatePicker!
     private var prioritySlider: NSSlider!
     private var priorityLabel: NSTextField!
+    private var deadlineObserver: NSObjectProtocol?
     
     // Simple state - no complex cleanup needed
     private var isEditMode = false
@@ -4430,6 +4431,7 @@ class TaskDetailView: NSView {
     private var isDragging = false
     private var dragStartLocation = NSPoint.zero
     private var originalWindowOrigin = NSPoint.zero
+    private var isClosing = false
     
     init(task: Task, orbColor: NSColor) {
         self.task = task
@@ -4439,12 +4441,20 @@ class TaskDetailView: NSView {
         setupSimpleView()
     }
     
+    func setDelegate(_ delegate: TaskDetailViewDelegate?) {
+        self.delegate = delegate
+    }
+    
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
     deinit {
         print("🧹 Simple TaskDetailView deinit")
+        delegate = nil
+        if let observer = deadlineObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
     
     private func setupSimpleView() {
@@ -4512,6 +4522,14 @@ class TaskDetailView: NSView {
         deadlinePicker.layer?.cornerRadius = 8
         deadlinePicker.textColor = .white
         deadlinePicker.backgroundColor = .clear
+        deadlineObserver = NotificationCenter.default.addObserver(
+            forName: NSControl.textDidEndEditingNotification,
+            object: deadlinePicker,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.task.deadline = self.deadlinePicker.dateValue
+        }
         
         addSubview(deadlinePicker)
     }
@@ -4549,9 +4567,10 @@ class TaskDetailView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         
         if closeButtonRect.contains(location) {
-            // Ensure edits are committed before closing
+            guard !isClosing else { return }
+            isClosing = true
             window?.makeFirstResponder(nil)
-            window?.close()
+            delegate?.closeTaskDetail(for: task.id)
             return
         }
         
@@ -4786,6 +4805,31 @@ class TaskDetailView: NSView {
     
 }
 
+extension TaskDetailView {
+    fileprivate func prepareForClose() {
+        // Ensure any edit state is reset to avoid callbacks after deinit.
+        if isEditMode {
+            saveChanges()
+            isEditMode = false
+        }
+        window?.makeFirstResponder(nil)
+        detailsTextView?.delegate = nil
+        prioritySlider?.target = nil
+        titleField?.target = nil
+        if let observer = deadlineObserver {
+            NotificationCenter.default.removeObserver(observer)
+            deadlineObserver = nil
+        }
+        titleField = nil
+        detailsTextView = nil
+        deadlinePicker = nil
+        prioritySlider = nil
+        priorityLabel = nil
+        isClosing = true
+        delegate = nil
+    }
+}
+
 // MARK: - NSTextViewDelegate
 extension TaskDetailView: NSTextViewDelegate {
     @objc func textDidChange(_ notification: Notification) {
@@ -4806,27 +4850,5 @@ class TaskDetailWindow: NSWindow {
     
     override var canBecomeMain: Bool {
         return true
-    }
-}
-
-// MARK: - TaskDetailWindowDelegate
-class TaskDetailWindowDelegate: NSObject, NSWindowDelegate {
-    private let taskId: UUID
-    private weak var controller: NotchOverlayController?
-    
-    init(taskId: UUID, controller: NotchOverlayController) {
-        self.taskId = taskId
-        self.controller = controller
-        super.init()
-    }
-    
-    func windowWillClose(_ notification: Notification) {
-        print("🎯 Window delegate: window will close for task ID: \(taskId)")
-        
-        guard let controller else { return }
-        let taskId = self.taskId
-        DispatchQueue.main.async { [weak controller] in
-            controller?.closeTaskDetail(for: taskId)
-        }
     }
 }
