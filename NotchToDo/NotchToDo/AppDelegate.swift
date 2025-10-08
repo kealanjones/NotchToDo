@@ -45,6 +45,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         wakeWordEngine?.onTriggered = { [weak self] in
             self?.handleWakeWordTriggered()
         }
+        try? wakeWordEngine?.start()
         
         speechRecognizer = MockSpeechRecognizer()
         speechRecognizer?.onPartial = { [weak self] partial in
@@ -86,9 +87,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("Intent routed: \(effect?.description ?? "none")")
         
         // Add task to overlay if it's a create task action
-        if case .createTask(let title, _) = effect {
+        if case .some(.createTask(let title, _)) = effect {
             overlayController?.addTask(title)
         }
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        wakeWordEngine?.stop()
+        speechRecognizer?.stop()
     }
 }
 

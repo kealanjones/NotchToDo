@@ -17,7 +17,11 @@ class MockWakeWordEngine: WakeWordEngine {
         
         // Simulate wake word detection after 2 seconds
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            self?.onTriggered?()
+            guard let self else { return }
+            self.isRunning = false
+            self.timer?.invalidate()
+            self.timer = nil
+            self.onTriggered?()
         }
     }
     
@@ -27,4 +31,3 @@ class MockWakeWordEngine: WakeWordEngine {
         timer = nil
     }
 }
-

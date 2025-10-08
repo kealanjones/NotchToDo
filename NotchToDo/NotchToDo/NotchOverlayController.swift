@@ -862,9 +862,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             taskDetailWindows.removeValue(forKey: task.id)
         }
         
-        // Create new task detail window
+        // Create new task detail window with modern styling
         let window = TaskDetailWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 500),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -882,6 +882,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         window.contentView?.wantsLayer = true
         window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         
+        // Add subtle shadow for modern look
+        window.hasShadow = true
+        
         // Make window key-able
         window.makeKey()
         
@@ -893,9 +896,18 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         // taskDetailView.delegate = self
         window.contentView = taskDetailView
         
-        // Position the window near the mouse cursor
-        let mouseLocation = NSEvent.mouseLocation
-        let windowFrame = NSRect(x: mouseLocation.x - 210, y: mouseLocation.y - 260, width: 420, height: 520)
+        // Position the window to the side of task lists
+        let screenFrame = NSScreen.main?.frame ?? NSRect.zero
+        let windowWidth: CGFloat = 400
+        let windowHeight: CGFloat = 500
+        
+        // Position to the right side of the screen, centered vertically
+        let windowFrame = NSRect(
+            x: screenFrame.maxX - windowWidth - 50, // 50px from right edge
+            y: screenFrame.midY - windowHeight/2,   // Centered vertically
+            width: windowWidth,
+            height: windowHeight
+        )
         window.setFrame(windowFrame, display: true)
         
         // Show the window
@@ -913,25 +925,16 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     func closeTaskDetail(for taskId: UUID) {
         print("🎯 Aggressive close for task ID: \(taskId)")
         
-        guard let window = taskDetailWindows[taskId] else {
+        guard let window = taskDetailWindows.removeValue(forKey: taskId) else {
             print("⚠️ No window found for task ID: \(taskId)")
             return
         }
-        
-        // Remove from tracking IMMEDIATELY to prevent any further access
-        taskDetailWindows.removeValue(forKey: taskId)
+
         taskDetailDelegates.removeValue(forKey: taskId)
-        
-        // Clear the content view immediately to break retain cycle
-        window.contentView = nil
-        
-        // Hide window first
-        window.orderOut(nil)
-        
-        // Close window immediately without delay
-        window.close()
-        
-        print("🎯 Task detail window aggressively closed for task ID: \(taskId)")
+        window.delegate = nil
+
+        // Let AppKit handle the remainder of the close sequence.
+        print("🎯 Task detail window closed for task ID: \(taskId)")
     }
     
     // MARK: - Task Drag and Drop Between Cards
@@ -1493,6 +1496,17 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private func showSemiCircle() {
         guard let window = semiCircleWindow else { 
             print("🚨 ERROR: semiCircleWindow is nil!")
+            return 
+        }
+        
+        if isSemiCircleVisible {
+            positionSemiCircle(window)
+            window.alphaValue = 1.0
+            window.orderFront(nil)
+            if orbManager.visibleOrbCount == 0 {
+                orbManager.showOrbs()
+            }
+            resetFadeTimerWithoutShowing()
             return 
         }
         
@@ -3040,6 +3054,7 @@ class TaskCardView: NSView {
     private var celebrationPhase: CGFloat = 0.0
     private var isCelebrating = false
     private var celebrationTimer: Timer?
+    private var animationTimer: Timer?
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -3482,10 +3497,13 @@ class TaskCardView: NSView {
     deinit {
         hoverTimer?.invalidate()
         celebrationTimer?.invalidate()
+        animationTimer?.invalidate()
     }
     
     private func startAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { _ in
+        animationTimer?.invalidate()
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
             self.animationPhase += 0.02
             self.needsDisplay = true
         }
@@ -4431,7 +4449,7 @@ class TaskDetailView: NSView {
     
     private func setupSimpleView() {
         self.wantsLayer = true
-        self.layer?.cornerRadius = 32
+        self.layer?.cornerRadius = 24
         self.layer?.masksToBounds = false
         
         // Simple UI setup without complex callbacks
@@ -4456,8 +4474,13 @@ class TaskDetailView: NSView {
         titleField.isBezeled = false
         titleField.backgroundColor = .clear
         titleField.textColor = .white
-        titleField.font = NSFont.systemFont(ofSize: 18, weight: .bold)
+        titleField.font = NSFont.systemFont(ofSize: 20, weight: .semibold)
         titleField.alignment = .center
+        
+        // Modern rounded corners for text field
+        titleField.wantsLayer = true
+        titleField.layer?.cornerRadius = 8
+        
         addSubview(titleField)
     }
     
@@ -4467,8 +4490,13 @@ class TaskDetailView: NSView {
         detailsTextView.isEditable = false
         detailsTextView.isSelectable = false
         detailsTextView.backgroundColor = .clear
-        detailsTextView.textColor = .white
-        detailsTextView.font = NSFont.systemFont(ofSize: 14)
+        detailsTextView.textColor = NSColor.white.withAlphaComponent(0.9)
+        detailsTextView.font = NSFont.systemFont(ofSize: 15)
+        
+        // Modern rounded corners for text view
+        detailsTextView.wantsLayer = true
+        detailsTextView.layer?.cornerRadius = 12
+        
         addSubview(detailsTextView)
     }
     
@@ -4478,6 +4506,13 @@ class TaskDetailView: NSView {
         deadlinePicker.isEnabled = false
         deadlinePicker.datePickerStyle = .textFieldAndStepper
         deadlinePicker.datePickerElements = [.yearMonthDay]
+        
+        // Modern styling for date picker
+        deadlinePicker.wantsLayer = true
+        deadlinePicker.layer?.cornerRadius = 8
+        deadlinePicker.textColor = .white
+        deadlinePicker.backgroundColor = .clear
+        
         addSubview(deadlinePicker)
     }
     
@@ -4487,7 +4522,11 @@ class TaskDetailView: NSView {
         prioritySlider.maxValue = 10
         prioritySlider.intValue = Int32(task.priority)
         prioritySlider.isEnabled = false
-        // Remove target-action to prevent retain cycle
+        
+        // Modern styling for slider
+        prioritySlider.wantsLayer = true
+        prioritySlider.layer?.cornerRadius = 10
+        
         addSubview(prioritySlider)
     }
     
@@ -4498,7 +4537,8 @@ class TaskDetailView: NSView {
         priorityLabel.isSelectable = false
         priorityLabel.isBezeled = false
         priorityLabel.backgroundColor = .clear
-        priorityLabel.textColor = .white
+        priorityLabel.textColor = NSColor.white.withAlphaComponent(0.8)
+        priorityLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
         priorityLabel.alignment = .center
         addSubview(priorityLabel)
     }
@@ -4509,7 +4549,8 @@ class TaskDetailView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         
         if closeButtonRect.contains(location) {
-            // Close window directly without delegate
+            // Ensure edits are committed before closing
+            window?.makeFirstResponder(nil)
             window?.close()
             return
         }
@@ -4546,35 +4587,37 @@ class TaskDetailView: NSView {
     private func toggleEditMode() {
         isEditMode.toggle()
         
-        if isEditMode {
-            // Enter edit mode
-            titleField.isEditable = true
-            titleField.isSelectable = true
-            detailsTextView.isEditable = true
-            detailsTextView.isSelectable = true
-            prioritySlider.isEnabled = true
-            deadlinePicker.isEnabled = true
-            
-            titleField.backgroundColor = .white
-            titleField.textColor = .black
-            detailsTextView.backgroundColor = .white
-            detailsTextView.textColor = .black
-        } else {
-            // Exit edit mode and save
-            saveChanges()
-            
-            titleField.isEditable = false
-            titleField.isSelectable = false
-            detailsTextView.isEditable = false
-            detailsTextView.isSelectable = false
-            prioritySlider.isEnabled = false
-            deadlinePicker.isEnabled = false
-            
-            titleField.backgroundColor = .clear
-            titleField.textColor = .white
-            detailsTextView.backgroundColor = .clear
-            detailsTextView.textColor = .white
-        }
+                if isEditMode {
+                    // Enter edit mode with modern styling
+                    titleField.isEditable = true
+                    titleField.isSelectable = true
+                    detailsTextView.isEditable = true
+                    detailsTextView.isSelectable = true
+                    prioritySlider.isEnabled = true
+                    deadlinePicker.isEnabled = true
+                    
+                    // Modern edit mode colors
+                    titleField.backgroundColor = NSColor.white.withAlphaComponent(0.95)
+                    titleField.textColor = .black
+                    detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.95)
+                    detailsTextView.textColor = .black
+                } else {
+                    // Exit edit mode and save
+                    saveChanges()
+                    
+                    titleField.isEditable = false
+                    titleField.isSelectable = false
+                    detailsTextView.isEditable = false
+                    detailsTextView.isSelectable = false
+                    prioritySlider.isEnabled = false
+                    deadlinePicker.isEnabled = false
+                    
+                    // Restore view mode colors
+                    titleField.backgroundColor = .clear
+                    titleField.textColor = .white
+                    detailsTextView.backgroundColor = .clear
+                    detailsTextView.textColor = NSColor.white.withAlphaComponent(0.9)
+                }
         
         needsDisplay = true
     }
@@ -4596,29 +4639,104 @@ class TaskDetailView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        // Simple dark background
-        context.setFillColor(NSColor.black.withAlphaComponent(0.8).cgColor)
-        context.fill(bounds)
+        // Modern glassmorphism background
+        drawModernBackground(in: context)
         
-        // Simple border
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
-        context.setLineWidth(2)
-        context.stroke(bounds)
+        // Draw header section
+        drawHeaderSection(in: context)
         
-        // Draw close button
+        // Draw close and edit buttons
         drawCloseButton(in: context)
         drawEditButton(in: context)
     }
     
-    private func drawCloseButton(in context: CGContext) {
-        context.setFillColor(NSColor.red.withAlphaComponent(0.8).cgColor)
-        context.fillEllipse(in: closeButtonRect)
+    private func drawModernBackground(in context: CGContext) {
+        let cornerRadius: CGFloat = 24
         
-        // Draw X
+        // Create rounded rect path
+        let rect = bounds
+        let path = CGPath(roundedRect: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        
+        // Background gradient (dark with subtle color)
+        context.addPath(path)
+        context.clip()
+        
+        let colors = [
+            NSColor(red: 0.15, green: 0.15, blue: 0.20, alpha: 0.95).cgColor,
+            NSColor(red: 0.10, green: 0.10, blue: 0.15, alpha: 0.95).cgColor
+        ]
+        
+        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
+        context.drawLinearGradient(gradient, start: CGPoint(x: rect.minX, y: rect.maxY), end: CGPoint(x: rect.minX, y: rect.minY), options: [])
+        
+        // Subtle border
+        context.resetClip()
+        context.addPath(path)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.15).cgColor)
+        context.setLineWidth(1.5)
+        context.strokePath()
+        
+        // Inner highlight
+        context.addPath(path)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.08).cgColor)
+        context.setLineWidth(0.5)
+        let insetRect = rect.insetBy(dx: 1, dy: 1)
+        let insetPath = CGPath(roundedRect: insetRect, cornerWidth: cornerRadius - 1, cornerHeight: cornerRadius - 1, transform: nil)
+        context.addPath(insetPath)
+        context.strokePath()
+    }
+    
+    private func drawHeaderSection(in context: CGContext) {
+        let headerHeight: CGFloat = 80
+        let headerRect = NSRect(x: bounds.minX, y: bounds.maxY - headerHeight, width: bounds.width, height: headerHeight)
+        
+        // Header background with subtle gradient
+        let headerColors = [
+            NSColor.white.withAlphaComponent(0.08).cgColor,
+            NSColor.white.withAlphaComponent(0.03).cgColor
+        ]
+        
+        let headerGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: headerColors as CFArray, locations: [0.0, 1.0])!
+        context.drawLinearGradient(headerGradient, start: CGPoint(x: headerRect.minX, y: headerRect.maxY), end: CGPoint(x: headerRect.minX, y: headerRect.minY), options: [])
+        
+        // Header separator line
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.12).cgColor)
+        context.setLineWidth(0.5)
+        context.move(to: CGPoint(x: headerRect.minX + 20, y: headerRect.minY))
+        context.addLine(to: CGPoint(x: headerRect.maxX - 20, y: headerRect.minY))
+        context.strokePath()
+    }
+    
+    private func drawCloseButton(in context: CGContext) {
+        // Modern close button with rounded corners and shadow
+        let buttonRect = closeButtonRect.insetBy(dx: 2, dy: 2)
+        let cornerRadius: CGFloat = 8
+        
+        // Shadow
+        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 4, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+        
+        // Button background with gradient
+        let path = CGPath(roundedRect: buttonRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        context.addPath(path)
+        
+        let colors = [
+            NSColor(red: 0.9, green: 0.3, blue: 0.3, alpha: 0.9).cgColor,
+            NSColor(red: 0.8, green: 0.2, blue: 0.2, alpha: 0.9).cgColor
+        ]
+        
+        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
+        context.drawLinearGradient(gradient, start: CGPoint(x: buttonRect.minX, y: buttonRect.maxY), end: CGPoint(x: buttonRect.minX, y: buttonRect.minY), options: [])
+        
+        // Reset shadow
+        context.setShadow(offset: CGSize.zero, blur: 0, color: nil)
+        
+        // Draw X icon
         context.setStrokeColor(NSColor.white.cgColor)
         context.setLineWidth(2)
-        let center = CGPoint(x: closeButtonRect.midX, y: closeButtonRect.midY)
-        let size: CGFloat = 12
+        context.setLineCap(.round)
+        
+        let center = CGPoint(x: buttonRect.midX, y: buttonRect.midY)
+        let size: CGFloat = 10
         
         context.move(to: CGPoint(x: center.x - size/2, y: center.y - size/2))
         context.addLine(to: CGPoint(x: center.x + size/2, y: center.y + size/2))
@@ -4628,17 +4746,41 @@ class TaskDetailView: NSView {
     }
     
     private func drawEditButton(in context: CGContext) {
-        let color = isEditMode ? NSColor.orange : NSColor.blue
-        context.setFillColor(color.withAlphaComponent(0.8).cgColor)
-        context.fillEllipse(in: editButtonRect)
+        // Modern edit button with rounded corners and shadow
+        let buttonRect = editButtonRect.insetBy(dx: 2, dy: 2)
+        let cornerRadius: CGFloat = 8
         
-        // Draw pencil icon (simplified)
+        // Shadow
+        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 4, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+        
+        // Button background with gradient
+        let path = CGPath(roundedRect: buttonRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        context.addPath(path)
+        
+        let baseColor = isEditMode ? NSColor.systemOrange : NSColor.systemBlue
+        let colors = [
+            baseColor.withAlphaComponent(0.9).cgColor,
+            baseColor.withAlphaComponent(0.7).cgColor
+        ]
+        
+        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
+        context.drawLinearGradient(gradient, start: CGPoint(x: buttonRect.minX, y: buttonRect.maxY), end: CGPoint(x: buttonRect.minX, y: buttonRect.minY), options: [])
+        
+        // Reset shadow
+        context.setShadow(offset: CGSize.zero, blur: 0, color: nil)
+        
+        // Draw pencil icon
         context.setStrokeColor(NSColor.white.cgColor)
         context.setLineWidth(2)
-        let center = CGPoint(x: editButtonRect.midX, y: editButtonRect.midY)
+        context.setLineCap(.round)
         
-        context.move(to: CGPoint(x: center.x - 6, y: center.y + 6))
-        context.addLine(to: CGPoint(x: center.x + 6, y: center.y - 6))
+        let center = CGPoint(x: buttonRect.midX, y: buttonRect.midY)
+        
+        // Draw pencil icon (more detailed)
+        context.move(to: CGPoint(x: center.x - 4, y: center.y + 4))
+        context.addLine(to: CGPoint(x: center.x + 4, y: center.y - 4))
+        context.move(to: CGPoint(x: center.x - 4, y: center.y + 4))
+        context.addLine(to: CGPoint(x: center.x - 2, y: center.y + 2))
         context.strokePath()
     }
     
@@ -4680,6 +4822,11 @@ class TaskDetailWindowDelegate: NSObject, NSWindowDelegate {
     
     func windowWillClose(_ notification: Notification) {
         print("🎯 Window delegate: window will close for task ID: \(taskId)")
-        controller?.closeTaskDetail(for: taskId)
+        
+        guard let controller else { return }
+        let taskId = self.taskId
+        DispatchQueue.main.async { [weak controller] in
+            controller?.closeTaskDetail(for: taskId)
+        }
     }
 }
