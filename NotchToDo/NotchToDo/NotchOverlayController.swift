@@ -186,6 +186,16 @@ struct OrbColorPalette {
     }
 }
 
+private extension NSColor {
+    func highlighted() -> NSColor {
+        return blended(withFraction: 0.35, of: .white) ?? self
+    }
+    
+    func shadowed() -> NSColor {
+        return blended(withFraction: 0.35, of: .black) ?? self
+    }
+}
+
     // MARK: - Orb Manager
     class OrbManager: ObservableObject {
         @Published var orbs: [ProjectOrb] = []
@@ -258,7 +268,7 @@ struct OrbColorPalette {
             let animationDuration = 0.8
             let startTime = CACurrentMediaTime()
             
-            let timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
+            Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
                 let elapsed = CACurrentMediaTime() - startTime
                 let progress = min(elapsed / animationDuration, 1.0)
                 
@@ -345,9 +355,6 @@ struct OrbColorPalette {
         
         for (index, orb) in orbs.enumerated() {
             let angle = startAngle + angleStep * Double(index)
-            let x = semiCircleCenterX + semiCircleRadius * cos(angle)
-            let y = semiCircleCenterY + semiCircleRadius * sin(angle)
-            
             orb.angle = angle
             orb.radius = semiCircleRadius
             orb.scale = scale
@@ -430,7 +437,7 @@ struct OrbColorPalette {
         
         private func animateOrbGrowth(orb: ProjectOrb, duration: Double) {
             let startTime = CACurrentMediaTime()
-            let timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
+            Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
                 let elapsed = CACurrentMediaTime() - startTime
                 let progress = min(elapsed / duration, 1.0)
                 
@@ -467,7 +474,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private var notchIndicatorWindow: NSWindow?
     private var semiCircleWindow: NSWindow?
     private var semiCircleView: SemiCircleWithOrbsView? // Added
-    private var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
+    internal var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
     private var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
     private var taskDetailWindows: [UUID: NSWindow] = [:] // Track task detail windows by task ID
     private var isVisible = false
@@ -483,7 +490,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     // Task drag visualization
     var draggedTaskWindow: NSWindow?
     var draggedTaskView: TaskDragView?
-
+    
+    // Card size preferences (stores custom sizes per orb)
+    internal var customCardSizes: [UUID: CGSize] = [:]
     
     @Published var isVerticallyExpanding = false
     
@@ -726,11 +735,24 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         showSemiCircle()
     }
     
+    private func calculateCardHeight(for taskCount: Int) -> CGFloat {
+        let minHeight: CGFloat = 200
+        let maxHeight: CGFloat = 600
+        let headerHeight: CGFloat = TaskRowMetrics.headerHeight
+        let rowStride: CGFloat = TaskRowMetrics.rowHeight + TaskRowMetrics.rowSpacing
+        let padding: CGFloat = TaskRowMetrics.cardInset * 2
+        
+        let visibleRows = min(taskCount, 8)
+        let calculatedHeight = headerHeight + (CGFloat(visibleRows) * rowStride) + padding
+        
+        return max(minHeight, min(maxHeight, calculatedHeight))
+    }
+    
     func showTaskCard(for orb: ProjectOrb) {
         print("🎯 showTaskCard() called for orb: \(orb.name)")
         
         // Check if this orb already has a task card open
-        if let existingWindow = taskCardWindows[orb.id] {
+        if taskCardWindows[orb.id] != nil {
             print("🎯 Toggling off existing task card for orb: \(orb.name)")
             hideTaskCard(for: orb)
             return
@@ -739,9 +761,13 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         print("🎯 Creating new task card for orb: \(orb.name)")
         print("🎯 Orb has \(orb.tasks.count) tasks")
         
+        // Calculate dynamic height, or use custom size if set
+        let cardWidth: CGFloat = customCardSizes[orb.id]?.width ?? 300
+        let cardHeight: CGFloat = customCardSizes[orb.id]?.height ?? calculateCardHeight(for: orb.tasks.count)
+        
         // Create a new task card window for this orb
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: cardWidth, height: cardHeight),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -776,34 +802,78 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         let screenFrame = screen.frame
         let semiCircleFrame = semiCircleWindow.frame
         
-        // Position card below the semi-circle with some gap
-        let cardWidth = window.frame.width
-        let cardHeight = window.frame.height
-        let gap: CGFloat = 20
+        // Calculate radial cascade position based on orb's angle
+        let windowWidth = window.frame.width
+        let windowHeight = window.frame.height
         
-        // Offset multiple cards slightly to avoid overlap
-        let cardOffset = CGFloat(taskCardWindows.count) * 20
-        let x = semiCircleFrame.midX - cardWidth / 2 + cardOffset
-        let y = semiCircleFrame.minY - cardHeight - gap - cardOffset
+        // Semi-circle center point
+        let semiCircleCenterX = semiCircleFrame.midX
+        let semiCircleCenterY = semiCircleFrame.minY + 79.0 // Match OrbManager's semiCircleCenterY
         
-        // Ensure the card stays on screen
-        let finalX = max(10, min(x, screenFrame.width - cardWidth - 10))
-        let finalY = max(10, min(y, screenFrame.height - cardHeight - 10))
+        // Cascade radius depends on number of open cards
+        let baseCascadeRadius: CGFloat = 200
+        let radiusIncrement: CGFloat = 40
+        let cascadeRadius = baseCascadeRadius + (CGFloat(taskCardWindows.count) * radiusIncrement)
         
-        window.setFrameOrigin(NSPoint(x: finalX, y: finalY))
+        // Calculate position along the radial line from orb's angle
+        let orbAngle = orb.angle // Radians from orb position
+        let cardX = semiCircleCenterX + cos(orbAngle) * cascadeRadius - (windowWidth / 2)
+        let cardY = semiCircleCenterY + sin(orbAngle) * cascadeRadius - windowHeight
         
-        // Show the window and track it
+        // Ensure the card stays on screen with boundary checking
+        let finalX = max(10, min(cardX, screenFrame.width - windowWidth - 10))
+        let finalY = max(10, min(cardY, screenFrame.height - windowHeight - 10))
+        
+        // Calculate orb center position for animation start point
+        let orbCenterX = semiCircleCenterX + cos(orbAngle) * 102.5 // orb radius from semi-circle center
+        let orbCenterY = semiCircleCenterY + sin(orbAngle) * 102.5
+        
+        // Start at orb center with small scale
+        let startScale: CGFloat = 0.3
+        let startX = orbCenterX - (windowWidth * startScale) / 2
+        let startY = orbCenterY - (windowHeight * startScale) / 2
+        let startFrame = NSRect(x: startX, y: startY, width: windowWidth * startScale, height: windowHeight * startScale)
+        
+        window.setFrame(startFrame, display: false)
+        window.alphaValue = 0.0
         window.makeKeyAndOrderFront(nil)
+        
+        // Track it immediately
         taskCardWindows[orb.id] = window
         currentOpenOrb = orb
         
-        print("🎯 Task card shown at position: \(window.frame) below semi-circle at: \(semiCircleFrame)")
+        // Final frame
+        let finalFrame = NSRect(x: finalX, y: finalY, width: windowWidth, height: windowHeight)
+        
+        // Animate entry with bounce (scale to 1.1 then 1.0)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1.0)
+            window.animator().alphaValue = 1.0
+            
+            // Animate to slightly oversized (1.1x scale)
+            let bounceWidth = windowWidth * 1.1
+            let bounceHeight = windowHeight * 1.1
+            let bounceX = finalX - (bounceWidth - windowWidth) / 2
+            let bounceY = finalY - (bounceHeight - windowHeight) / 2
+            let bounceFrame = NSRect(x: bounceX, y: bounceY, width: bounceWidth, height: bounceHeight)
+            window.animator().setFrame(bounceFrame, display: true)
+        }, completionHandler: {
+            // Settle to final size
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.15
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.0, 0.2, 1.0)
+                window.animator().setFrame(finalFrame, display: true)
+            })
+        })
+        
+        print("🎯 Task card animating in at position: \(finalFrame)")
         print("🎯 Total open task cards: \(taskCardWindows.count)")
     }
     
     func hideTaskCard() {
         // Hide all task cards
-        for (orbId, window) in taskCardWindows {
+        for (_, window) in taskCardWindows {
             window.orderOut(nil)
         }
         taskCardWindows.removeAll()
@@ -813,16 +883,48 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     func hideTaskCard(for orb: ProjectOrb) {
         if let window = taskCardWindows[orb.id] {
-            window.orderOut(nil)
-            taskCardWindows.removeValue(forKey: orb.id)
-            
-            // Update currentOpenOrb if this was the current one
-            if currentOpenOrb?.id == orb.id {
-                currentOpenOrb = taskCardWindows.isEmpty ? nil : orbManager.orbs.first { taskCardWindows[$0.id] != nil }
+            // Calculate orb center for exit animation
+            guard let screen = NSScreen.main,
+                  let semiCircleWindow = semiCircleWindow else {
+                window.orderOut(nil)
+                taskCardWindows.removeValue(forKey: orb.id)
+                return
             }
             
-            print("🎯 Task card hidden for orb: \(orb.name)")
-            print("🎯 Remaining open task cards: \(taskCardWindows.count)")
+            let semiCircleFrame = semiCircleWindow.frame
+            let semiCircleCenterX = semiCircleFrame.midX
+            let semiCircleCenterY = semiCircleFrame.minY + 79.0
+            
+            let orbAngle = orb.angle
+            let orbCenterX = semiCircleCenterX + cos(orbAngle) * 102.5
+            let orbCenterY = semiCircleCenterY + sin(orbAngle) * 102.5
+            
+            // Animate exit to orb center
+            let currentFrame = window.frame
+            let endScale: CGFloat = 0.3
+            let endWidth = currentFrame.width * endScale
+            let endHeight = currentFrame.height * endScale
+            let endX = orbCenterX - endWidth / 2
+            let endY = orbCenterY - endHeight / 2
+            let endFrame = NSRect(x: endX, y: endY, width: endWidth, height: endHeight)
+            
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.3
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 0.6, 1.0)
+                window.animator().alphaValue = 0.0
+                window.animator().setFrame(endFrame, display: true)
+            }, completionHandler: {
+                window.orderOut(nil)
+                self.taskCardWindows.removeValue(forKey: orb.id)
+                
+                // Update currentOpenOrb if this was the current one
+                if self.currentOpenOrb?.id == orb.id {
+                    self.currentOpenOrb = self.taskCardWindows.isEmpty ? nil : self.orbManager.orbs.first { self.taskCardWindows[$0.id] != nil }
+                }
+                
+                print("🎯 Task card animated out for orb: \(orb.name)")
+                print("🎯 Remaining open task cards: \(self.taskCardWindows.count)")
+            })
         }
     }
     
@@ -862,7 +964,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         // Create new task detail window with modern styling
         let window = TaskDetailWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 440, height: 560),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -874,6 +976,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         window.backgroundColor = .clear
         window.level = .floating
         window.ignoresMouseEvents = false
+        window.hasShadow = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = true
         window.acceptsMouseMovedEvents = true
@@ -891,14 +994,15 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         taskDetailView.setDelegate(self)
         print("🎯 Created TaskDetailView: \(taskDetailView)")
         
-        // Don't set delegate to avoid any potential retain cycles
-        // taskDetailView.delegate = self
         window.contentView = taskDetailView
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.cornerRadius = 24
+        window.contentView?.layer?.masksToBounds = true
         
         // Position the window to the side of task lists
         let screenFrame = NSScreen.main?.frame ?? NSRect.zero
-        let windowWidth: CGFloat = 400
-        let windowHeight: CGFloat = 500
+        let windowWidth: CGFloat = 440
+        let windowHeight: CGFloat = 560
         
         // Position to the right side of the screen, centered vertically
         let windowFrame = NSRect(
@@ -947,7 +1051,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         )
         
         // Check if we're over any other task card
-        for (orbId, window) in taskCardWindows {
+        for (_, window) in taskCardWindows {
             if window.contentView !== sourceCard && window.isVisible {
                 let windowFrame = window.frame
                 if windowFrame.contains(screenLocation) {
@@ -2797,6 +2901,197 @@ extension NotchIndicatorView {
     }
 }
 
+// MARK: - Task Row Helpers
+private struct TaskRowGeometry {
+    let index: Int
+    let rowRect: NSRect
+    let checkboxRect: NSRect
+    let dragRect: NSRect
+}
+
+private struct TaskRowChip {
+    let text: String
+    let foreground: NSColor
+    let background: NSColor
+    let border: NSColor?
+}
+
+private func glassBaseFill(for orbColor: NSColor) -> NSColor {
+    let neutral = NSColor(calibratedWhite: 1.0, alpha: 0.02)
+    let accent = orbColor.withAlphaComponent(0.07)
+    return neutral.blended(withFraction: 0.18, of: accent) ?? neutral
+}
+
+private func glassGradientStops(for orbColor: NSColor) -> [CGColor] {
+    let accent = orbColor.withAlphaComponent(0.08)
+    let top = NSColor.white.withAlphaComponent(0.08).blended(withFraction: 0.1, of: accent) ?? NSColor.white.withAlphaComponent(0.08)
+    let mid = NSColor.white.withAlphaComponent(0.06).blended(withFraction: 0.08, of: accent) ?? NSColor.white.withAlphaComponent(0.06)
+    let bottom = NSColor.white.withAlphaComponent(0.04).blended(withFraction: 0.12, of: accent) ?? NSColor.white.withAlphaComponent(0.04)
+    return [top.cgColor, mid.cgColor, bottom.cgColor]
+}
+
+private enum TaskRowMetrics {
+    static let rowHeight: CGFloat = 72
+    static let rowSpacing: CGFloat = 16
+    static let listInset: CGFloat = 28
+    static let rowVerticalPadding: CGFloat = 20
+    static let rowHorizontalPadding: CGFloat = 20
+    static let accentInset: CGFloat = 20
+    static let accentWidth: CGFloat = 4
+    static let accentCornerRadius: CGFloat = 2
+    static let contentSpacing: CGFloat = 20
+    static let checkboxSize: CGFloat = 24
+    static let checkboxTrailingInset: CGFloat = 18
+    static let dragHitWidth: CGFloat = 44
+    static let chipHeight: CGFloat = 18
+    static let chipHorizontalPadding: CGFloat = 8
+    static let chipSpacing: CGFloat = 6
+    static let chipVerticalSpacing: CGFloat = 4
+    static let metadataTopInset: CGFloat = 26
+    static let headerHeight: CGFloat = 64
+    static let headerDividerSpacing: CGFloat = 10
+    static let cardInset: CGFloat = 24
+    static let dragGripHeight: CGFloat = 18
+}
+
+private let taskRowRelativeFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.dateTimeStyle = .named
+    formatter.unitsStyle = .short
+    return formatter
+}()
+
+private func makeTaskRowChips(for task: Task, orbColor: NSColor, referenceDate: Date = Date()) -> [TaskRowChip] {
+    var chips: [TaskRowChip] = []
+    
+    // Build combined pill with priority + deadline
+    var pillText = ""
+    var pillForeground: NSColor = NSColor.white.withAlphaComponent(0.95)
+    var pillBackground: NSColor = NSColor.white.withAlphaComponent(0.15)
+    
+    // Priority indicator (textual)
+    let priorityColor: NSColor
+    let priorityLabelText: String
+    switch task.priority {
+    case Int.min...1:
+        priorityColor = NSColor.systemBlue.withAlphaComponent(0.75)
+        priorityLabelText = "Low"
+    case 2:
+        priorityColor = NSColor.systemGreen.withAlphaComponent(0.75)
+        priorityLabelText = "Medium"
+    case 3:
+        priorityColor = NSColor.systemYellow.withAlphaComponent(0.75)
+        priorityLabelText = "High"
+    case 4:
+        priorityColor = NSColor.systemOrange.withAlphaComponent(0.75)
+        priorityLabelText = "Urgent"
+    default:
+        priorityColor = NSColor.systemRed.withAlphaComponent(0.85)
+        priorityLabelText = "Critical"
+    }
+    
+    // Deadline text
+    var deadlineText = ""
+    if task.isCompleted {
+        deadlineText = "Completed"
+        pillBackground = NSColor.systemGreen.withAlphaComponent(0.20)
+        pillForeground = NSColor.systemGreen.withAlphaComponent(0.9)
+    } else if let deadline = task.deadline {
+        let calendar = Calendar.current
+        if deadline < referenceDate {
+            deadlineText = "Overdue"
+            pillBackground = NSColor.systemRed.withAlphaComponent(0.20)
+            pillForeground = NSColor.systemRed.withAlphaComponent(0.9)
+        } else if calendar.isDateInToday(deadline) {
+            deadlineText = "Today"
+            pillBackground = NSColor.systemOrange.withAlphaComponent(0.20)
+            pillForeground = NSColor.systemOrange.withAlphaComponent(0.9)
+        } else if calendar.isDateInTomorrow(deadline) {
+            deadlineText = "Tomorrow"
+            pillBackground = NSColor.systemYellow.withAlphaComponent(0.20)
+            pillForeground = NSColor.systemYellow.withAlphaComponent(0.9)
+        } else {
+            let relative = taskRowRelativeFormatter.localizedString(for: deadline, relativeTo: referenceDate)
+            deadlineText = relative
+            pillBackground = orbColor.withAlphaComponent(0.18)
+            pillForeground = orbColor.withAlphaComponent(0.85)
+        }
+    }
+    
+    // Combine priority dots + deadline
+    if !task.isCompleted && !deadlineText.isEmpty {
+        pillText = "\(priorityLabelText) • \(deadlineText)"
+        pillBackground = orbColor.withAlphaComponent(0.16)
+        pillForeground = orbColor.withAlphaComponent(0.85)
+    } else if !task.isCompleted {
+        pillText = "\(priorityLabelText) Priority"
+        pillBackground = priorityColor.withAlphaComponent(0.18)
+        pillForeground = priorityColor.withAlphaComponent(0.9)
+    } else {
+        pillText = deadlineText
+    }
+    
+    if !pillText.isEmpty {
+        chips.append(TaskRowChip(
+            text: pillText,
+            foreground: pillForeground,
+            background: pillBackground,
+            border: nil
+        ))
+    }
+    
+    return chips
+}
+
+private func drawTaskChips(_ chips: [TaskRowChip], startingAt startX: CGFloat, baselineY: CGFloat, context: CGContext) -> CGFloat {
+    var currentX = startX
+    let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+    let pillPadding: CGFloat = TaskRowMetrics.chipHorizontalPadding
+    let pillHeight: CGFloat = TaskRowMetrics.chipHeight
+    
+    for chip in chips {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: chip.foreground
+        ]
+        let textSize = chip.text.size(withAttributes: attributes)
+        let pillWidth = textSize.width + (pillPadding * 2)
+        let pillRect = CGRect(
+            x: currentX,
+            y: baselineY,
+            width: pillWidth,
+            height: pillHeight
+        )
+        
+        // Draw pill background
+        let pillPath = NSBezierPath(roundedRect: pillRect, xRadius: pillHeight / 2, yRadius: pillHeight / 2)
+        context.saveGState()
+        context.setFillColor(chip.background.cgColor)
+        pillPath.fill()
+        context.restoreGState()
+        
+        // Draw pill border if specified
+        if let border = chip.border {
+            context.saveGState()
+            context.setStrokeColor(border.cgColor)
+            context.setLineWidth(1.0)
+            pillPath.stroke()
+            context.restoreGState()
+        }
+        
+        // Draw text centered in pill
+        let textRect = CGRect(
+            x: pillRect.minX + pillPadding,
+            y: baselineY + (pillHeight - textSize.height) / 2,
+            width: textSize.width,
+            height: textSize.height
+        )
+        chip.text.draw(in: textRect, withAttributes: attributes)
+        currentX += pillWidth + TaskRowMetrics.chipSpacing
+    }
+    return currentX
+}
+
 // MARK: - Task Drag View
 class TaskDragView: NSView {
     private var task: Task
@@ -2805,7 +3100,7 @@ class TaskDragView: NSView {
     init(task: Task, orbColor: NSColor) {
         self.task = task
         self.orbColor = orbColor
-        super.init(frame: NSRect(x: 0, y: 0, width: 260, height: 35))
+        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: TaskRowMetrics.rowHeight))
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
     }
@@ -2816,190 +3111,72 @@ class TaskDragView: NSView {
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
-        let taskRect = bounds.insetBy(dx: 0, dy: 0)
-        
-        // Draw dragged task with elevated appearance
+
+        let rowRect = bounds.insetBy(dx: 4, dy: 4)
+        let path = NSBezierPath(roundedRect: rowRect, xRadius: 16, yRadius: 16)
+
         context.saveGState()
-        
-        // Shadow for floating effect
-        context.setShadow(offset: CGSize(width: 0, height: 4), blur: 12, color: NSColor.black.withAlphaComponent(0.3).cgColor)
-        
-        // Task background with glass morphism
-        let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
-        taskPath.addClip()
-        
-        let taskGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                    colors: [
-                                        NSColor.white.withAlphaComponent(0.9).cgColor,
-                                        NSColor.white.withAlphaComponent(0.7).cgColor,
-                                        NSColor.white.withAlphaComponent(0.5).cgColor
-                                    ] as CFArray,
-                                    locations: [0.0, 0.5, 1.0])!
-        
-        context.drawLinearGradient(taskGradient,
-                                 start: CGPoint(x: taskRect.minX, y: taskRect.minY),
-                                 end: CGPoint(x: taskRect.maxX, y: taskRect.maxY),
-                                 options: [])
+        context.setFillColor(NSColor.white.withAlphaComponent(0.32).cgColor)
+        path.fill()
         context.restoreGState()
-        
-        // Task border
+
+        let indicatorRect = CGRect(x: rowRect.minX + TaskRowMetrics.accentInset, y: rowRect.midY - 3, width: 6, height: 6)
         context.saveGState()
-        context.setStrokeColor(NSColor.black.withAlphaComponent(0.2).cgColor)
-        context.setLineWidth(1.0)
-        let taskBorderPath = NSBezierPath(roundedRect: taskRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11)
-        taskBorderPath.stroke()
+        context.setFillColor(orbColor.withAlphaComponent(0.6).cgColor)
+        context.fillEllipse(in: indicatorRect)
         context.restoreGState()
-        
-        // Draw grab handle on the left
-        drawGrabHandle(in: context, taskRect: taskRect)
-        
-        // Draw checkbox on the right (completed state)
-        drawRoundedCheckbox(in: context, taskRect: taskRect, isCompleted: task.isCompleted)
-        
-        // Task title - centered between grab handle and checkbox
-        let taskTitleRect = CGRect(x: taskRect.minX + 35, y: taskRect.minY + (taskRect.height - 22) / 2, width: taskRect.width - 80, height: 22)
-        let taskFont = NSFont(name: "SF Pro Text", size: 14) ?? NSFont.systemFont(ofSize: 14, weight: .medium)
-        let taskAttributes: [NSAttributedString.Key: Any] = [
-            .font: taskFont,
-            .foregroundColor: task.isCompleted ? NSColor.black.withAlphaComponent(0.4) : NSColor.black,
-            .strokeColor: NSColor.white.withAlphaComponent(0.3),
-            .strokeWidth: -0.5
+
+        let checkboxRect = CGRect(
+            x: rowRect.maxX - TaskRowMetrics.checkboxSize - TaskRowMetrics.checkboxTrailingInset,
+            y: rowRect.midY - TaskRowMetrics.checkboxSize / 2,
+            width: TaskRowMetrics.checkboxSize,
+            height: TaskRowMetrics.checkboxSize
+        )
+        drawRoundedCheckbox(in: context, rect: checkboxRect, isCompleted: task.isCompleted)
+
+        let contentX = indicatorRect.maxX + TaskRowMetrics.contentSpacing
+        let contentWidth = max(0, checkboxRect.minX - contentX - TaskRowMetrics.contentSpacing)
+        let titleRect = CGRect(x: contentX, y: rowRect.midY - 10, width: contentWidth, height: 20)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
+            .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 0.98),
+            .paragraphStyle: paragraph
         ]
-        task.title.draw(in: taskTitleRect, withAttributes: taskAttributes)
+        task.title.draw(in: titleRect, withAttributes: titleAttributes)
     }
-    
-    private func drawGrabHandle(in context: CGContext, taskRect: CGRect) {
-        let grabHandleSize: CGFloat = 20
-        let grabHandleX = taskRect.minX + 8
-        let grabHandleY = taskRect.minY + (taskRect.height - grabHandleSize) / 2
-        let grabHandleRect = CGRect(x: grabHandleX, y: grabHandleY, width: grabHandleSize, height: grabHandleSize)
-        
-        // Draw subtle grab handle background
+    private func drawRoundedCheckbox(in context: CGContext, rect: CGRect, isCompleted: Bool) {
+        let checkboxPath = NSBezierPath(roundedRect: rect, xRadius: rect.width / 2, yRadius: rect.height / 2)
+
         context.saveGState()
-        let grabHandlePath = NSBezierPath(roundedRect: grabHandleRect, xRadius: 4, yRadius: 4)
-        
-        // Glass morphism effect for grab handle
-        let grabHandleGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                          colors: [
-                                              NSColor.white.withAlphaComponent(0.3).cgColor,
-                                              NSColor.white.withAlphaComponent(0.1).cgColor,
-                                              NSColor.white.withAlphaComponent(0.05).cgColor
-                                          ] as CFArray,
-                                          locations: [0.0, 0.5, 1.0])!
-        
-        grabHandlePath.addClip()
-        context.drawLinearGradient(grabHandleGradient,
-                                 start: CGPoint(x: grabHandleRect.minX, y: grabHandleRect.minY),
-                                 end: CGPoint(x: grabHandleRect.maxX, y: grabHandleRect.maxY),
-                                 options: [])
+        // Use orb color when completed
+        let fillColor = isCompleted ? orbColor.withAlphaComponent(0.75) : NSColor.white.withAlphaComponent(0.15)
+        context.setFillColor(fillColor.cgColor)
+        checkboxPath.fill()
         context.restoreGState()
-        
-        // Draw three horizontal grip lines
+
         context.saveGState()
-        context.setStrokeColor(NSColor.black.withAlphaComponent(0.3).cgColor)
-        context.setLineWidth(1.0)
-        
-        let lineSpacing: CGFloat = 3
-        let lineY = grabHandleRect.midY
-        let lineStartX = grabHandleRect.minX + 4
-        let lineEndX = grabHandleRect.maxX - 4
-        
-        // Draw three grip lines
-        for i in 0..<3 {
-            let y = lineY - lineSpacing + CGFloat(i) * lineSpacing
-            context.move(to: CGPoint(x: lineStartX, y: y))
-            context.addLine(to: CGPoint(x: lineEndX, y: y))
-        }
-        context.strokePath()
-        context.restoreGState()
-    }
-    
-    private func drawRoundedCheckbox(in context: CGContext, taskRect: CGRect, isCompleted: Bool) {
-        let checkboxSize: CGFloat = 22
-        let checkboxX = taskRect.maxX - checkboxSize - 8
-        let checkboxY = taskRect.minY + (taskRect.height - checkboxSize) / 2
-        let checkboxRect = CGRect(x: checkboxX, y: checkboxY, width: checkboxSize, height: checkboxSize)
-        
-        // More rounded and interesting checkbox design
-        context.saveGState()
-        
-        // Create a more rounded checkbox (closer to a circle)
-        let checkboxPath = NSBezierPath(roundedRect: checkboxRect, xRadius: checkboxSize/2, yRadius: checkboxSize/2)
-        
-        if isCompleted {
-            // Completed state - green with gradient
-            let completedGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                             colors: [
-                                                 NSColor.systemGreen.withAlphaComponent(0.9).cgColor,
-                                                 NSColor.systemGreen.withAlphaComponent(0.7).cgColor,
-                                                 NSColor.systemGreen.withAlphaComponent(0.5).cgColor
-                                             ] as CFArray,
-                                             locations: [0.0, 0.5, 1.0])!
-            
-            checkboxPath.addClip()
-            context.drawRadialGradient(completedGradient,
-                                     startCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
-                                     startRadius: 0,
-                                     endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
-                                     endRadius: checkboxSize/2,
-                                     options: [])
-            
-            // Add subtle glow effect for completed state
-            context.restoreGState()
-            context.saveGState()
-            context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4, color: NSColor.systemGreen.withAlphaComponent(0.4).cgColor)
-            context.setFillColor(NSColor.clear.cgColor)
-            checkboxPath.fill()
-            context.restoreGState()
-            
-        } else {
-            // Uncompleted state - subtle glass morphism
-            let uncompletedGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                               colors: [
-                                                   NSColor.white.withAlphaComponent(0.6).cgColor,
-                                                   NSColor.white.withAlphaComponent(0.3).cgColor,
-                                                   NSColor.white.withAlphaComponent(0.1).cgColor
-                                               ] as CFArray,
-                                               locations: [0.0, 0.5, 1.0])!
-            
-            checkboxPath.addClip()
-            context.drawRadialGradient(uncompletedGradient,
-                                     startCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
-                                     startRadius: 0,
-                                     endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
-                                     endRadius: checkboxSize/2,
-                                     options: [])
-        }
-        
-        context.restoreGState()
-        
-        // Subtle border
-        context.saveGState()
-        let borderColor = isCompleted ? NSColor.systemGreen.withAlphaComponent(0.6) : NSColor.black.withAlphaComponent(0.15)
+        let borderColor = isCompleted ? orbColor.withAlphaComponent(0.85) : NSColor.white.withAlphaComponent(0.35)
         context.setStrokeColor(borderColor.cgColor)
-        context.setLineWidth(1.5)
+        context.setLineWidth(1.3)
         checkboxPath.stroke()
         context.restoreGState()
-        
-        // Checkmark for completed state
+
         if isCompleted {
             context.saveGState()
             context.setStrokeColor(NSColor.white.cgColor)
-            context.setLineWidth(2.5)
+            context.setLineWidth(2.2)
             context.setLineCap(.round)
             context.setLineJoin(.round)
-            
-            // Draw a more elegant checkmark
             let checkmarkPath = NSBezierPath()
-            let checkmarkSize = checkboxSize * 0.6
-            let startX = checkboxRect.midX - checkmarkSize * 0.3
-            let startY = checkboxRect.midY
-            let midX = checkboxRect.midX
-            let midY = checkboxRect.midY + checkmarkSize * 0.2
-            let endX = checkboxRect.midX + checkmarkSize * 0.3
-            let endY = checkboxRect.midY - checkmarkSize * 0.2
-            
+            let size = rect.width * 0.56
+            let startX = rect.midX - size * 0.35
+            let startY = rect.midY - size * 0.1
+            let midX = rect.midX - size * 0.05
+            let midY = rect.midY + size * 0.34
+            let endX = rect.midX + size * 0.4
+            let endY = rect.midY - size * 0.3
             checkmarkPath.move(to: CGPoint(x: startX, y: startY))
             checkmarkPath.line(to: CGPoint(x: midX, y: midY))
             checkmarkPath.line(to: CGPoint(x: endX, y: endY))
@@ -3016,31 +3193,31 @@ class TaskCardView: NSView {
     private var orbColor: NSColor = .systemBlue
     private var animationPhase: Double = 0.0
     private weak var controller: NotchOverlayController?
-    
-    // Drag functionality
-    private var isDragging = false
-    private var dragStartLocation = NSPoint.zero
-    private var initialWindowOrigin = NSPoint.zero
-    private var lastDragUpdateTime: TimeInterval = 0
-    private let dragUpdateInterval: TimeInterval = 1.0/60.0 // 60 FPS
-    
-    // Hover detection
-    private var hoverTimer: Timer?
-    private var isMouseOver = false
+    private let glassEffectView = PassthroughVisualEffectView()
     
     // Pin functionality
     private var isPinned = false
     private var pinButtonRect = NSRect.zero
+    private var isHoveringPin = false
     
     // Close button functionality
     private var closeButtonRect = NSRect.zero
+    private var isHoveringClose = false
+    
+    // Card hover state
+    private var isHoveringCard = false
+
+    // Card dragging
+    private var isDraggingCard = false
+    private var dragStartScreenLocation = NSPoint.zero
+    private var initialWindowOrigin = NSPoint.zero
     
     // Task drag and drop functionality
     private var isDraggingTask = false
     private var draggedTask: Task?
     private var draggedTaskIndex: Int = -1
     private var taskDragStartLocation = NSPoint.zero
-    private var taskRects: [NSRect] = []
+    private var rowGeometries: [TaskRowGeometry] = []
     var isShowingDropIndicator = false
     
     // Scroll functionality
@@ -3049,36 +3226,62 @@ class TaskCardView: NSView {
     private var scrollBarRect = NSRect.zero
     private var isHoveringScrollBar = false
     
+    private var dragGripRect: NSRect {
+        let cardRect = bounds.insetBy(dx: TaskRowMetrics.cardInset, dy: TaskRowMetrics.cardInset)
+        let gripHeight = min(TaskRowMetrics.dragGripHeight, max(0, cardRect.height))
+        return NSRect(
+            x: cardRect.minX,
+            y: cardRect.maxY - gripHeight,
+            width: cardRect.width,
+            height: gripHeight
+        )
+    }
+    
     // Celebration animation properties
     private var celebrationPhase: CGFloat = 0.0
     private var isCelebrating = false
     private var celebrationTimer: Timer?
     private var animationTimer: Timer?
     
+    // Task completion animation
+    private var completionAnimations: [UUID: (progress: CGFloat, scale: CGFloat, opacity: CGFloat)] = [:]
+    private var completionAnimationTimers: [UUID: Timer] = [:]
+    
+    // Resize functionality
+    private var isResizing = false
+    private var resizeStartLocation = NSPoint.zero
+    private var resizeStartSize = NSSize.zero
+    private var resizeHandleRect = NSRect.zero
+    private var isHoveringResizeHandle = false
+    
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        self.wantsLayer = true
-        self.layer?.backgroundColor = NSColor.clear.cgColor
-        
-        // Enable backdrop filter effect for frosted glass
-        if #available(macOS 10.15, *) {
-            self.layer?.cornerRadius = 28
-            self.layer?.masksToBounds = false
-            // Note: macOS doesn't have direct backdrop-filter support like CSS
-            // We'll use high opacity and visual effects to simulate it
-        }
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 28
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.22).cgColor
+        layer?.shadowOpacity = 1.0
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
+        layer?.shadowRadius = 12
         startAnimation()
         setupDragTracking()
-        startHoverDetection()
+        configureGlassEffect()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        self.wantsLayer = true
-        self.layer?.backgroundColor = NSColor.clear.cgColor
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 28
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.22).cgColor
+        layer?.shadowOpacity = 1.0
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
+        layer?.shadowRadius = 12
         startAnimation()
         setupDragTracking()
-        startHoverDetection()
+        configureGlassEffect()
     }
     
     func updateTasks(_ tasks: [Task], projectName: String, orbColor: NSColor) {
@@ -3090,6 +3293,17 @@ class TaskCardView: NSView {
     
     func setController(_ controller: NotchOverlayController?) {
         self.controller = controller
+    }
+    
+    override func layout() {
+        super.layout()
+        let cardRect = bounds.insetBy(dx: TaskRowMetrics.cardInset, dy: TaskRowMetrics.cardInset)
+        glassEffectView.frame = cardRect
+        glassEffectView.layer?.cornerRadius = 28
+    }
+    
+    override var isOpaque: Bool {
+        return false
     }
     
     func getPinnedState() -> Bool {
@@ -3116,67 +3330,20 @@ class TaskCardView: NSView {
     
     // MARK: - Task Drag and Drop
     
+    private func rowGeometry(at location: NSPoint) -> TaskRowGeometry? {
+        return rowGeometries.first { $0.rowRect.contains(location) }
+    }
+    
     private func getClickedTaskIndex(at location: NSPoint) -> Int? {
-        for (index, taskRect) in taskRects.enumerated() {
-            if taskRect.contains(location) {
-                return index
-            }
-        }
-        return nil
+        return rowGeometry(at: location)?.index
     }
     
     private func getClickedGrabHandleIndex(at location: NSPoint) -> Int? {
-        let grabHandleSize: CGFloat = 20
-        let taskHeight: CGFloat = 35
-        let taskSpacing: CGFloat = 12
-        let taskStartY = bounds.maxY - 150  // Match the task positioning
-        
-        for (index, task) in tasks.enumerated() {
-            let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
-            let taskRect = CGRect(x: bounds.minX + 20, y: taskY, width: bounds.width - 40, height: taskHeight)
-            
-            // Calculate grab handle position (on the left)
-            let grabHandleX = taskRect.minX + 8
-            let grabHandleY = taskRect.minY + (taskRect.height - grabHandleSize) / 2
-            let grabHandleRect = CGRect(
-                x: grabHandleX, 
-                y: grabHandleY, 
-                width: grabHandleSize, 
-                height: grabHandleSize
-            )
-            
-            if grabHandleRect.contains(location) {
-                return index
-            }
-        }
-        return nil
+        return rowGeometries.first { $0.dragRect.contains(location) }?.index
     }
     
     private func getClickedCheckboxIndex(at location: NSPoint) -> Int? {
-        let checkboxSize: CGFloat = 22
-        let taskHeight: CGFloat = 35
-        let taskSpacing: CGFloat = 12
-        let taskStartY = bounds.maxY - 150  // Match the task positioning
-        
-        for (index, task) in tasks.enumerated() {
-            let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
-            let taskRect = CGRect(x: bounds.minX + 20, y: taskY, width: bounds.width - 40, height: taskHeight)
-            
-            // Calculate checkbox position (now on the right)
-            let checkboxX = taskRect.maxX - checkboxSize - 8
-            let checkboxY = taskRect.minY + (taskRect.height - checkboxSize) / 2
-            let checkboxRect = CGRect(
-                x: checkboxX, 
-                y: checkboxY, 
-                width: checkboxSize, 
-                height: checkboxSize
-            )
-            
-            if checkboxRect.contains(location) {
-                return index
-            }
-        }
-        return nil
+        return rowGeometries.first { $0.checkboxRect.contains(location) }?.index
     }
     
     private func toggleTaskCompletion(at index: Int) {
@@ -3186,11 +3353,17 @@ class TaskCardView: NSView {
         let wasCompleted = task.isCompleted
         task.isCompleted.toggle()
         
-        // Trigger celebration animation if task was just completed
+        // Trigger completion animation if task was just completed
         if !wasCompleted && task.isCompleted {
+            startTaskCompletionAnimation(for: task)
             startCelebrationAnimation()
             // Notify controller to trigger orb dancing
             controller?.triggerOrbCelebration()
+        } else if wasCompleted && !task.isCompleted {
+            // Reset animation state when uncompleting
+            completionAnimations.removeValue(forKey: task.id)
+            completionAnimationTimers[task.id]?.invalidate()
+            completionAnimationTimers.removeValue(forKey: task.id)
         }
         
         // Recalculate scroll in case task visibility changed
@@ -3198,6 +3371,61 @@ class TaskCardView: NSView {
         needsDisplay = true
         
         print("🎯 Task '\(task.title)' marked as \(task.isCompleted ? "completed" : "incomplete")")
+    }
+    
+    private func startTaskCompletionAnimation(for task: Task) {
+        // Initialize animation state
+        completionAnimations[task.id] = (progress: 0.0, scale: 1.0, opacity: 1.0)
+        
+        let animationDuration: TimeInterval = 0.3
+        let frameRate: TimeInterval = 1.0 / 60.0
+        let totalFrames = Int(animationDuration / frameRate)
+        var currentFrame = 0
+        
+        // Invalidate existing timer if any
+        completionAnimationTimers[task.id]?.invalidate()
+        
+        let timer = Timer.scheduledTimer(withTimeInterval: frameRate, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            currentFrame += 1
+            let progress = CGFloat(currentFrame) / CGFloat(totalFrames)
+            
+            // Calculate animated values
+            var strikethroughProgress = min(progress, 1.0)
+            
+            // Scale pulse: 1.0 → 1.05 (halfway) → 1.0
+            let scaleProgress = progress * 2.0
+            var scale: CGFloat
+            if scaleProgress <= 1.0 {
+                scale = 1.0 + (0.05 * scaleProgress) // 1.0 to 1.05
+            } else {
+                scale = 1.05 - (0.05 * (scaleProgress - 1.0)) // 1.05 to 1.0
+            }
+            
+            // Fade to 50% opacity
+            let opacity = 1.0 - (0.5 * progress)
+            
+            self.completionAnimations[task.id] = (
+                progress: strikethroughProgress,
+                scale: scale,
+                opacity: opacity
+            )
+            
+            self.needsDisplay = true
+            
+            if currentFrame >= totalFrames {
+                timer.invalidate()
+                self.completionAnimationTimers.removeValue(forKey: task.id)
+                // Final state
+                self.completionAnimations[task.id] = (progress: 1.0, scale: 1.0, opacity: 0.5)
+            }
+        }
+        
+        completionAnimationTimers[task.id] = timer
     }
     
     private func openTaskDetail(for index: Int) {
@@ -3332,9 +3560,12 @@ class TaskCardView: NSView {
     }
     
     private func createDragWindow(for task: Task) {
-        // Create a floating window for the dragged task
+        // Create a floating window for the dragged task (1.1x scale)
+        let baseWidth: CGFloat = 260
+        let baseHeight: CGFloat = 35
+        let scaleFactor: CGFloat = 1.1
         let dragWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 260, height: 35),
+            contentRect: NSRect(x: 0, y: 0, width: baseWidth * scaleFactor, height: baseHeight * scaleFactor),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -3342,14 +3573,31 @@ class TaskCardView: NSView {
         
         dragWindow.isOpaque = false
         dragWindow.backgroundColor = NSColor.clear
-        dragWindow.hasShadow = false // We'll handle shadow in the view
+        dragWindow.hasShadow = true // Enable shadow
         dragWindow.level = .screenSaver
-        dragWindow.ignoresMouseEvents = true // Don't interfere with mouse events
+        dragWindow.ignoresMouseEvents = true
         dragWindow.collectionBehavior = [.canJoinAllSpaces, .stationary]
         
         // Create drag view
         let dragView = TaskDragView(task: task, orbColor: orbColor)
+        dragView.frame = NSRect(x: 0, y: 0, width: baseWidth * scaleFactor, height: baseHeight * scaleFactor)
         dragWindow.contentView = dragView
+        
+        // Add rotation jitter (-3° to +3°)
+        let rotationAngle = CGFloat.random(in: -3...3)
+        if let contentView = dragWindow.contentView {
+            contentView.wantsLayer = true
+            contentView.layer?.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            contentView.layer?.position = CGPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
+            contentView.layer?.transform = CATransform3DMakeRotation(rotationAngle * .pi / 180, 0, 0, 1)
+            
+            // Add stronger shadow
+            contentView.shadow = NSShadow()
+            contentView.layer?.shadowColor = NSColor.black.cgColor
+            contentView.layer?.shadowOpacity = 0.5
+            contentView.layer?.shadowOffset = CGSize(width: 0, height: -4)
+            contentView.layer?.shadowRadius = 20
+        }
         
         // Position window at current mouse location
         let mouseLocation = NSEvent.mouseLocation
@@ -3366,6 +3614,23 @@ class TaskCardView: NSView {
         // Store references
         controller?.draggedTaskWindow = dragWindow
         controller?.draggedTaskView = dragView
+        
+        // Start pulsing animation
+        startDragPulseAnimation()
+    }
+    
+    private func startDragPulseAnimation() {
+        guard let dragWindow = controller?.draggedTaskWindow else { return }
+        
+        let animation = CABasicAnimation(keyPath: "transform.scale")
+        animation.fromValue = 1.08
+        animation.toValue = 1.12
+        animation.duration = 0.6
+        animation.autoreverses = true
+        animation.repeatCount = .infinity
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        
+        dragWindow.contentView?.layer?.add(animation, forKey: "dragPulse")
     }
     
     private func updateTaskDrag(location: NSPoint) {
@@ -3431,70 +3696,33 @@ class TaskCardView: NSView {
     
     // MARK: - Scroll Functionality
     
-    func calculateMaxScrollOffset() {
-        // Very simple approach: enable scrolling if we have more than 5 tasks
-        if tasks.count <= 5 {
-            maxScrollOffset = 0  // No scrolling needed
-            if taskScrollOffset > 0 {
-                taskScrollOffset = 0
-            }
+    func calculateMaxScrollOffset(forListHeight listHeight: CGFloat? = nil) {
+        let resolvedHeight = listHeight ?? defaultListHeight()
+        guard resolvedHeight > 0 else {
+            maxScrollOffset = 0
+            taskScrollOffset = 0
             return
         }
         
-        // For 6+ tasks, set a reasonable scroll amount
-        // Each extra task beyond 5 needs about 47px of scroll space (35 height + 12 spacing)
-        let extraTasks = tasks.count - 5
-        maxScrollOffset = CGFloat(extraTasks) * 47.0
-        
-        // Ensure current scroll is within bounds
-        if taskScrollOffset > maxScrollOffset {
-            taskScrollOffset = maxScrollOffset
-        }
-        if taskScrollOffset < 0 {
+        let taskCount = CGFloat(tasks.count)
+        if taskCount <= 0 {
+            maxScrollOffset = 0
             taskScrollOffset = 0
+            return
         }
+        
+        let contentHeight = taskCount * TaskRowMetrics.rowHeight + max(0, taskCount - 1) * TaskRowMetrics.rowSpacing
+        maxScrollOffset = max(0, contentHeight - resolvedHeight)
+        taskScrollOffset = max(0, min(taskScrollOffset, maxScrollOffset))
     }
     
-    private func startHoverDetection() {
-        // Start a timer that checks if mouse is over the task card
-        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.checkMouseHover()
-        }
-    }
-    
-    private func checkMouseHover() {
-        guard let window = self.window else { return }
-        
-        // Get mouse location in screen coordinates
-        let mouseLocation = NSEvent.mouseLocation
-        
-        // Convert to window coordinates
-        let windowFrame = window.frame
-        let mouseInWindow = NSPoint(
-            x: mouseLocation.x - windowFrame.origin.x,
-            y: mouseLocation.y - windowFrame.origin.y
-        )
-        
-        // Check if mouse is within the task card bounds
-        let isOver = bounds.contains(mouseInWindow)
-        
-        if isOver && !isMouseOver {
-            // Mouse just entered
-            isMouseOver = true
-            if !isPinned {
-                controller?.resetFadeTimer()
-            }
-        } else if !isOver && isMouseOver {
-            // Mouse just exited
-            isMouseOver = false
-        } else if isOver && !isPinned {
-            // Mouse is still over, keep resetting fade timer (only if not pinned)
-            controller?.resetFadeTimer()
-        }
+    private func defaultListHeight() -> CGFloat {
+        let cardRect = bounds.insetBy(dx: TaskRowMetrics.cardInset, dy: TaskRowMetrics.cardInset)
+        let headerBottom = cardRect.maxY - TaskRowMetrics.headerHeight
+        return max(0, headerBottom - (cardRect.minY + TaskRowMetrics.listInset) - TaskRowMetrics.headerDividerSpacing)
     }
     
     deinit {
-        hoverTimer?.invalidate()
         celebrationTimer?.invalidate()
         animationTimer?.invalidate()
     }
@@ -3508,6 +3736,18 @@ class TaskCardView: NSView {
         }
     }
     
+    private func configureGlassEffect() {
+        glassEffectView.material = .hudWindow
+        glassEffectView.state = .active
+        glassEffectView.blendingMode = .withinWindow
+        glassEffectView.isEmphasized = true
+        glassEffectView.wantsLayer = true
+        glassEffectView.layer?.cornerRadius = 28
+        glassEffectView.layer?.masksToBounds = true
+        glassEffectView.alphaValue = 0.65
+        glassEffectView.layer?.zPosition = -100
+        addSubview(glassEffectView, positioned: .below, relativeTo: nil)
+    }
     private func setupDragTracking() {
         // Set up tracking area for mouse events
         let trackingArea = NSTrackingArea(
@@ -3539,6 +3779,15 @@ class TaskCardView: NSView {
     
     override func mouseDown(with event: NSEvent) {
         let locationInView = convert(event.locationInWindow, from: nil)
+        
+        // Check if click is on the resize handle
+        if resizeHandleRect.contains(locationInView) {
+            guard let window = window else { return }
+            isResizing = true
+            resizeStartLocation = NSEvent.mouseLocation
+            resizeStartSize = window.frame.size
+            return
+        }
         
         // Check if click is on the close button
         if closeButtonRect.contains(locationInView) {
@@ -3577,86 +3826,122 @@ class TaskCardView: NSView {
             controller?.resetFadeTimer()
         }
         
-        // Check if click is in the drag handle area (top 60 pixels of the card)
-        let dragHandleRect = NSRect(x: 0, y: bounds.height - 60, width: bounds.width, height: 60)
-        
-        if dragHandleRect.contains(locationInView) {
-            isDragging = true
-            // Use screen coordinates for smooth dragging
-            dragStartLocation = NSEvent.mouseLocation
-            initialWindowOrigin = window?.frame.origin ?? NSPoint.zero
-            
-            // Change cursor to indicate dragging
+        // Check if click is in the drag grip area (top border strip of the card)
+        if dragGripRect.contains(locationInView) {
+            guard let window = window else { return }
+            isDraggingCard = true
+            dragStartScreenLocation = NSEvent.mouseLocation
+            initialWindowOrigin = window.frame.origin
             NSCursor.closedHand.set()
+            return
         }
     }
     
     override func mouseDragged(with event: NSEvent) {
+        // Handle resize dragging
+        if isResizing {
+            guard let window = window else { return }
+            
+            let currentLocation = NSEvent.mouseLocation
+            let deltaX = currentLocation.x - resizeStartLocation.x
+            let deltaY = currentLocation.y - resizeStartLocation.y
+            
+            // Calculate new size with constraints
+            let minWidth: CGFloat = 250
+            let maxWidth: CGFloat = 500
+            let minHeight: CGFloat = 200
+            let maxHeight: CGFloat = 800
+            
+            var newWidth = resizeStartSize.width + deltaX
+            var newHeight = resizeStartSize.height - deltaY
+            
+            newWidth = max(minWidth, min(maxWidth, newWidth))
+            newHeight = max(minHeight, min(maxHeight, newHeight))
+            
+            let newSize = NSSize(width: newWidth, height: newHeight)
+            var newFrame = window.frame
+            newFrame.size = newSize
+            newFrame.origin.y = window.frame.origin.y + (window.frame.height - newHeight)
+            
+            window.setFrame(newFrame, display: true, animate: false)
+            
+            calculateMaxScrollOffset()
+            needsDisplay = true
+            
+            if !isPinned {
+                controller?.resetFadeTimer()
+            }
+            return
+        }
+        
         // Handle task dragging
         if isDraggingTask {
             updateTaskDrag(location: convert(event.locationInWindow, from: nil))
             return
         }
         
-        // Handle card dragging
-        guard isDragging, let window = window else { return }
+        if isDraggingCard {
+            guard let window = window, let screen = window.screen else { return }
+            
+            let currentLocation = NSEvent.mouseLocation
+            let deltaX = currentLocation.x - dragStartScreenLocation.x
+            let deltaY = currentLocation.y - dragStartScreenLocation.y
+            
+            var newOrigin = NSPoint(
+                x: initialWindowOrigin.x + deltaX,
+                y: initialWindowOrigin.y + deltaY
+            )
+            
+            let screenFrame = screen.visibleFrame
+            let windowSize = window.frame.size
+            newOrigin.x = max(screenFrame.minX, min(newOrigin.x, screenFrame.maxX - windowSize.width))
+            newOrigin.y = max(screenFrame.minY, min(newOrigin.y, screenFrame.maxY - windowSize.height))
+            
+            window.setFrameOrigin(newOrigin)
+            
+            if !isPinned {
+                controller?.resetFadeTimer()
+            }
+            return
+        }
         
-        // Reset fade timer during dragging (only if not pinned)
         if !isPinned {
             controller?.resetFadeTimer()
         }
         
-        // Throttle updates to 60 FPS for smoother dragging
-        let currentTime = CACurrentMediaTime()
-        if currentTime - lastDragUpdateTime < dragUpdateInterval {
-            return
-        }
-        lastDragUpdateTime = currentTime
-        
-        // Use screen coordinates for smooth dragging
-        let currentMouseLocation = NSEvent.mouseLocation
-        let deltaX = currentMouseLocation.x - dragStartLocation.x
-        let deltaY = currentMouseLocation.y - dragStartLocation.y
-        
-        let newOrigin = NSPoint(
-            x: initialWindowOrigin.x + deltaX,
-            y: initialWindowOrigin.y + deltaY
-        )
-        
-        // Keep the window on screen
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.frame
-        let windowFrame = window.frame
-        
-        let constrainedX = max(0, min(newOrigin.x, screenFrame.width - windowFrame.width))
-        let constrainedY = max(0, min(newOrigin.y, screenFrame.height - windowFrame.height))
-        
-        let constrainedOrigin = NSPoint(x: constrainedX, y: constrainedY)
-        
-        // Use NSAnimationContext to smooth the movement
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.0
-            context.allowsImplicitAnimation = false
-            window.animator().setFrameOrigin(constrainedOrigin)
-        }
+        super.mouseDragged(with: event)
     }
     
     override func mouseUp(with event: NSEvent) {
+        // Handle resize completion
+        if isResizing {
+            isResizing = false
+            if let window = window {
+                // Save custom size to controller for this orb
+                if let orbId = controller?.currentOpenOrb?.id {
+                    controller?.customCardSizes[orbId] = window.frame.size
+                }
+            }
+            NSCursor.arrow.set()
+            return
+        }
+        
         // Handle task drop
         if isDraggingTask {
             endTaskDrag()
             return
         }
         
+        if isDraggingCard {
+            isDraggingCard = false
+            NSCursor.arrow.set()
+        }
+        
         // Reset fade timer on mouse up (only if not pinned)
         if !isPinned {
             controller?.resetFadeTimer()
         }
-        
-        if isDragging {
-            isDragging = false
-            NSCursor.arrow.set()
-        }
+        NSCursor.arrow.set()
     }
     
     override func mouseEntered(with event: NSEvent) {
@@ -3665,19 +3950,23 @@ class TaskCardView: NSView {
             controller?.resetFadeTimer()
         }
         
-        // Change cursor when hovering over drag area
-        let locationInView = convert(event.locationInWindow, from: nil)
-        let dragHandleRect = NSRect(x: 0, y: bounds.height - 60, width: bounds.width, height: 60)
+        // Set card hover state
+        isHoveringCard = true
+        needsDisplay = true
         
-        if dragHandleRect.contains(locationInView) {
+        // Change cursor when hovering over drag grip
+        let locationInView = convert(event.locationInWindow, from: nil)
+        if dragGripRect.contains(locationInView) && !closeButtonRect.contains(locationInView) && !pinButtonRect.contains(locationInView) {
             NSCursor.openHand.set()
         }
     }
     
     override func mouseExited(with event: NSEvent) {
-        if !isDragging {
-            NSCursor.arrow.set()
-        }
+        isHoveringCard = false
+        isHoveringClose = false
+        isHoveringPin = false
+        needsDisplay = true
+        NSCursor.arrow.set()
     }
     
     override func mouseMoved(with event: NSEvent) {
@@ -3688,7 +3977,30 @@ class TaskCardView: NSView {
         
         // Update cursor based on mouse position
         let locationInView = convert(event.locationInWindow, from: nil)
-        let dragHandleRect = NSRect(x: 0, y: bounds.height - 60, width: bounds.width, height: 60)
+        
+        // Check button hover states
+        let wasHoveringClose = isHoveringClose
+        let wasHoveringPin = isHoveringPin
+        isHoveringClose = closeButtonRect.contains(locationInView)
+        isHoveringPin = pinButtonRect.contains(locationInView)
+        if wasHoveringClose != isHoveringClose || wasHoveringPin != isHoveringPin {
+            needsDisplay = true
+        }
+        
+        // Check resize handle hover
+        if resizeHandleRect.contains(locationInView) {
+            if !isHoveringResizeHandle {
+                isHoveringResizeHandle = true
+                needsDisplay = true
+            }
+            NSCursor.arrow.set() // Could use a resize cursor if desired
+            return
+        } else {
+            if isHoveringResizeHandle {
+                isHoveringResizeHandle = false
+                needsDisplay = true
+            }
+        }
         
         // Check scroll bar hover
         if scrollBarRect.contains(locationInView) && maxScrollOffset > 0 {
@@ -3703,14 +4015,10 @@ class TaskCardView: NSView {
                 needsDisplay = true
             }
             
-            if dragHandleRect.contains(locationInView) {
-                if !isDragging {
-                    NSCursor.openHand.set()
-                }
+            if dragGripRect.contains(locationInView) && !closeButtonRect.contains(locationInView) && !pinButtonRect.contains(locationInView) {
+                NSCursor.openHand.set()
             } else {
-                if !isDragging {
-                    NSCursor.arrow.set()
-                }
+                NSCursor.arrow.set()
             }
         }
     }
@@ -3737,153 +4045,152 @@ class TaskCardView: NSView {
         if clampedOffset != taskScrollOffset {
             taskScrollOffset = clampedOffset
             needsDisplay = true
-            print("🎯 Scrolled tasks: offset=\(taskScrollOffset)/\(maxScrollOffset), delta=\(scrollDelta)")
         }
     }
     
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        let cardRect = bounds.insetBy(dx: 8, dy: 8)
+        // Clear to transparent
+        context.clear(dirtyRect)
         
-        // Debug: Print bounds and cardRect occasionally
-        if Int.random(in: 0...59) == 0 { // Print every 60th frame
-            print("🎯 TaskCardView bounds: \(bounds)")
-            print("🎯 TaskCardView cardRect: \(cardRect)")
+        let cardRect = bounds.insetBy(dx: TaskRowMetrics.cardInset, dy: TaskRowMetrics.cardInset)
+        
+        drawGlassBackground(in: context, cardRect: cardRect)
+        drawDragGrip(in: context, cardRect: cardRect)
+        
+        if isShowingDropIndicator {
+            drawDropTargetHalo(in: context, cardRect: cardRect)
         }
         
-        // 1. Subtle outer glow for normal state only
-        if !isCelebrating {
-        context.saveGState()
-            let glowSize = 15.0
-            let glowRect = cardRect.insetBy(dx: -glowSize, dy: -glowSize)
-            
-            let glowGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                        colors: [
-                                            NSColor.white.withAlphaComponent(0.1).cgColor,
-                                            NSColor.white.withAlphaComponent(0.05).cgColor,
-                                            NSColor.clear.cgColor
-                                        ] as CFArray,
-                                        locations: [0.0, 0.6, 1.0])!
-            
-            context.drawRadialGradient(glowGradient,
-                                     startCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
-                                     startRadius: 0,
-                                     endCenter: CGPoint(x: cardRect.midX, y: cardRect.midY),
-                                     endRadius: glowRect.width/2,
-                                     options: [])
-        context.restoreGState()
-    }
-    
-        // 2. Backdrop filter blur effect (emulating CSS backdrop-filter: blur(10px))
-        context.saveGState()
-        let roundedRect = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
-        roundedRect.addClip()
-        
-        // Create a backdrop blur effect using Core Image
-        if let blurFilter = CIFilter(name: "CIGaussianBlur") {
-            // Set blur radius to 20px for more intense blur effect
-            blurFilter.setValue(20.0, forKey: kCIInputRadiusKey)
-            
-            // Create a more opaque white overlay for stronger frosted effect
-            let overlayColor = NSColor.white.withAlphaComponent(0.6)
-            context.setFillColor(overlayColor.cgColor)
-            roundedRect.fill()
-            
-            // Apply the blur filter to the entire card area
-            let blurRect = CGRect(x: cardRect.minX, y: cardRect.minY, width: cardRect.width, height: cardRect.height)
-            
-            // Create a CIImage from the current context
-            if let cgImage = context.makeImage() {
-                let ciImage = CIImage(cgImage: cgImage)
-                blurFilter.setValue(ciImage, forKey: kCIInputImageKey)
-                
-                if let outputImage = blurFilter.outputImage {
-                    let ciContext = CIContext(options: nil)
-                    if let blurredCGImage = ciContext.createCGImage(outputImage, from: blurRect) {
-                        // Draw the blurred background
-                        context.draw(blurredCGImage, in: blurRect)
-                    }
-                }
-            }
-        } else {
-            // Fallback to more opaque frosted background if blur filter fails
-            context.setFillColor(NSColor.white.withAlphaComponent(0.9).cgColor)
-            roundedRect.fill()
-        }
-        
-        context.restoreGState()
-        
-        // Add the border on top of the blurred background
-        context.saveGState()
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
-        context.setLineWidth(1.0)
-        roundedRect.stroke()
-        context.restoreGState()
-        
-        // Multicolored rim glow during celebration
         if isCelebrating {
             drawCelebrationRimGlow(in: context, cardRect: cardRect)
         }
         
-        // Soft shadow like CSS box-shadow: 0 1px 12px rgba(0,0,0,0.25)
+        drawProjectHeader(in: context, cardRect: cardRect)
+        drawTaskList(in: context, cardRect: cardRect)
+        drawResizeHandle(in: context, cardRect: cardRect)
+    }
+    
+    private func drawGlassBackground(in context: CGContext, cardRect: CGRect) {
+        let fillColor = glassBaseFill(for: orbColor)
+        let gradientStops = glassGradientStops(for: orbColor)
+        let clipPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
+        
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 12, color: NSColor.black.withAlphaComponent(0.25).cgColor)
-        context.setFillColor(NSColor.clear.cgColor)
-        roundedRect.fill()
+        clipPath.addClip()
+        
+        // Base fill keeps the palette pale with a subtle orb tint, matching row glass styling
+        context.setFillColor(fillColor.cgColor)
+        clipPath.fill()
+        
+        // Apply a linear gradient to tease out the liquid depth (mirrors task row treatment)
+        if let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: gradientStops as CFArray,
+            locations: [0.0, 0.55, 1.0]
+        ) {
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
+                end: CGPoint(x: cardRect.midX, y: cardRect.minY),
+                options: []
+            )
+        }
         context.restoreGState()
         
-        // Drop indicator overlay
-        if isShowingDropIndicator {
-            context.saveGState()
-            context.setFillColor(NSColor.systemGreen.withAlphaComponent(0.3).cgColor)
-            let dropIndicatorPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
-            dropIndicatorPath.fill()
-            
-            // Add pulsing border effect
-            context.setStrokeColor(NSColor.systemGreen.withAlphaComponent(0.8).cgColor)
-        context.setLineWidth(3.0)
-            dropIndicatorPath.stroke()
-            context.restoreGState()
+        // Subtle interior shadow keeps the same pillowy depth used on individual rows
+        context.saveGState()
+        let shadowPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
+        context.setFillColor(fillColor.withAlphaComponent(0.4).cgColor)
+        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 4.5, color: NSColor.black.withAlphaComponent(0.04).cgColor)
+        shadowPath.fill()
+        context.restoreGState()
+    }
+    
+    private func drawDragGrip(in context: CGContext, cardRect: CGRect) {
+        let gripHeight = min(TaskRowMetrics.dragGripHeight, cardRect.height)
+        guard gripHeight > 0 else { return }
+        
+        let horizontalInset: CGFloat = 12
+        let topY = cardRect.maxY - 1
+        let bottomY = topY - gripHeight
+        let gripRect = CGRect(
+            x: cardRect.minX + horizontalInset,
+            y: bottomY,
+            width: cardRect.width - horizontalInset * 2,
+            height: gripHeight
+        )
+        let gripRadius = min(18, gripRect.height / 2)
+        
+        context.saveGState()
+        let clipPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
+        clipPath.addClip()
+        context.clip(to: gripRect)
+
+        if let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                NSColor.white.withAlphaComponent(0.32).cgColor,
+                orbColor.withAlphaComponent(0.18).cgColor,
+                NSColor.white.withAlphaComponent(0.1).cgColor
+            ] as CFArray,
+            locations: [0.0, 0.55, 1.0]
+        ) {
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: gripRect.midX, y: gripRect.maxY),
+                end: CGPoint(x: gripRect.midX, y: gripRect.minY),
+                options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+            )
+        }
+        context.restoreGState()
+
+        context.saveGState()
+        let insetGrip = NSBezierPath(roundedRect: gripRect.insetBy(dx: 0.5, dy: 0), xRadius: gripRadius, yRadius: gripRadius)
+        NSColor.white.withAlphaComponent(0.28).setStroke()
+        insetGrip.lineWidth = 1.0
+        insetGrip.stroke()
+        context.restoreGState()
+    }
+    
+    private func createNoiseTexture() -> CGImage? {
+        let size = 128
+        var pixels = [UInt8](repeating: 0, count: size * size * 4)
+        
+        for i in 0..<(size * size) {
+            let noise = UInt8.random(in: 0...255)
+            pixels[i * 4] = noise
+            pixels[i * 4 + 1] = noise
+            pixels[i * 4 + 2] = noise
+            pixels[i * 4 + 3] = 255
         }
         
-        // 3. Flowing liquid glass highlight
+        guard let dataProvider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+        
+        return CGImage(
+            width: size,
+            height: size,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: size * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: dataProvider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
+    }
+    
+    private func drawDropTargetHalo(in context: CGContext, cardRect: CGRect) {
         context.saveGState()
-        let highlightRect = cardRect.insetBy(dx: 4, dy: 4)
-        let highlightPath = NSBezierPath(roundedRect: highlightRect, xRadius: 24, yRadius: 24)
-        highlightPath.addClip()
-        
-        // Flowing highlight position
-        let flowX = cos(animationPhase * 0.3) * cardRect.width * 0.1
-        let flowY = sin(animationPhase * 0.2) * cardRect.height * 0.1
-        
-        let highlightGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                         colors: [
-                                            NSColor.white.withAlphaComponent(0.3).cgColor,
-                                            NSColor.white.withAlphaComponent(0.1).cgColor,
-                                            NSColor.white.withAlphaComponent(0.05).cgColor,
-                                            NSColor.clear.cgColor
-                                         ] as CFArray,
-                                         locations: [0.0, 0.3, 0.7, 1.0])!
-        
-        context.drawRadialGradient(highlightGradient,
-                                 startCenter: CGPoint(x: highlightRect.midX - cardRect.width * 0.2 + flowX, y: highlightRect.midY - cardRect.height * 0.2 + flowY),
-                                 startRadius: 0,
-                                 endCenter: CGPoint(x: highlightRect.midX + flowX, y: highlightRect.midY + flowY),
-                                 endRadius: highlightRect.width/2,
-                                 options: [])
+        let haloRect = cardRect.insetBy(dx: 6, dy: 6)
+        let haloPath = NSBezierPath(roundedRect: haloRect, xRadius: 24, yRadius: 24)
+        context.setStrokeColor(orbColor.withAlphaComponent(0.35).cgColor)
+        context.setLineWidth(1.5)
+        haloPath.stroke()
         context.restoreGState()
-        
-        // 4. Project header with glass styling
-        drawProjectHeader(in: context, cardRect: cardRect)
-        
-        // 5. Task list with modern glass styling
-        drawTaskList(in: context, cardRect: cardRect)
-        
-        // 6. Subtle internal liquid particles
-        drawLiquidParticles(in: context, cardRect: cardRect)
     }
     
     private func calculateAdaptiveFontSize(for text: String, in rect: NSRect) -> CGFloat {
@@ -3908,90 +4215,134 @@ class TaskCardView: NSView {
     }
     
     private func drawProjectHeader(in context: CGContext, cardRect: NSRect) {
-        let headerRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 70, width: cardRect.width - 40, height: 50)
+        // Simplified header - just title and stats without background box
+        let headerTop = cardRect.maxY - 24
+        let titleRect = CGRect(x: cardRect.minX + 24, y: headerTop - 20, width: cardRect.width - 48, height: 20)
         
-        // Add subtle drag handle indicator in the top area
-        let dragHandleRect = CGRect(x: cardRect.minX + 20, y: cardRect.maxY - 15, width: cardRect.width - 40, height: 8)
-        context.saveGState()
-        context.setFillColor(NSColor.white.withAlphaComponent(0.2).cgColor)
-        context.addEllipse(in: dragHandleRect)
-        context.fillPath()
-        context.restoreGState()
-        
-        // Modern opaque header background with orb color
-        context.saveGState()
-        let headerPath = NSBezierPath(roundedRect: headerRect, xRadius: 18, yRadius: 18)
-        headerPath.addClip()
-        
-        // Modern opaque gradient with subtle variation
-        let headerGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                       colors: [
-                                        orbColor.withAlphaComponent(0.85).cgColor,
-                                        orbColor.withAlphaComponent(0.75).cgColor,
-                                        orbColor.withAlphaComponent(0.65).cgColor
-                                       ] as CFArray,
-                                      locations: [0.0, 0.5, 1.0])!
-        
-        context.drawLinearGradient(headerGradient,
-                                  start: CGPoint(x: headerRect.minX, y: headerRect.maxY),
-                                  end: CGPoint(x: headerRect.minX, y: headerRect.minY),
-                                  options: [])
-        context.restoreGState()
-        
-        // Project name with glass text effect - centered both horizontally and vertically
-        let titleRect = CGRect(x: headerRect.minX, y: headerRect.minY + (50 - 24) / 2, width: headerRect.width, height: 24)
-        
-        // Calculate adaptive font size based on text length and available space
-        let adaptiveFontSize = calculateAdaptiveFontSize(for: projectName, in: titleRect)
-        let titleFont = NSFont(name: "SF Pro Display", size: adaptiveFontSize) ?? NSFont.systemFont(ofSize: adaptiveFontSize, weight: .bold)
-        
+        // Project title
+        let titleFont = NSFont.systemFont(ofSize: 18, weight: .semibold)
         let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: titleFont,
-            .foregroundColor: NSColor.white,
-            .strokeColor: NSColor.black.withAlphaComponent(0.3),
-            .strokeWidth: -0.5,
-            .paragraphStyle: {
-                let style = NSMutableParagraphStyle()
-                style.alignment = .center
-                return style
-            }()
+            .foregroundColor: NSColor.white.withAlphaComponent(0.92)
         ]
         projectName.draw(in: titleRect, withAttributes: titleAttributes)
+
+        // Stats below title with orb color accent
+        let completedCount = tasks.filter { $0.isCompleted }.count
+        let detailString = "\(tasks.count) task" + (tasks.count == 1 ? "" : "s") + " · \(completedCount) done"
+        let detailAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.82)
+        ]
+        let detailRect = CGRect(x: cardRect.minX + 24, y: headerTop - 46, width: cardRect.width - 48, height: 16)
+        detailString.draw(in: detailRect, withAttributes: detailAttributes)
         
-        // Draw close button in top-left corner
-        drawCloseButton(in: context, headerRect: headerRect)
+        // Subtle separator line
+        context.saveGState()
+        let separatorY = headerTop - 56
+        context.move(to: CGPoint(x: cardRect.minX + 24, y: separatorY))
+        context.addLine(to: CGPoint(x: cardRect.maxX - 24, y: separatorY))
+        context.setStrokeColor(orbColor.withAlphaComponent(0.25).cgColor)
+        context.setLineWidth(1.0)
+        context.strokePath()
+        context.restoreGState()
+
+        drawCloseButton(in: context, headerRect: cardRect)
+        drawPinButton(in: context, headerRect: cardRect)
+    }
+    
+    private func drawHeaderStats(in context: CGContext, headerRect: CGRect) {
+        let totalTasks = tasks.count
+        let completedTasks = tasks.filter { $0.isCompleted }.count
+        let openTasks = totalTasks - completedTasks
         
-        // Draw pin button in top-right corner
-        drawPinButton(in: context, headerRect: headerRect)
+        let stats = [
+            ("Open", openTasks, NSColor.white.withAlphaComponent(0.85)),
+            ("Done", completedTasks, NSColor.white.withAlphaComponent(0.65))
+        ]
+        
+        let chipHeight: CGFloat = 20
+        let chipPadding: CGFloat = 10
+        var nextX = headerRect.midX - CGFloat(stats.count) * 65.0 / 2.0
+        let chipY = headerRect.minY + 8
+        
+        for (label, value, textColor) in stats {
+            let chipRect = CGRect(x: nextX, y: chipY, width: 65, height: chipHeight)
+            let chipPath = NSBezierPath(roundedRect: chipRect, xRadius: chipHeight / 2, yRadius: chipHeight / 2)
+            
+            context.saveGState()
+            context.setFillColor(NSColor.white.withAlphaComponent(0.18).cgColor)
+            chipPath.fill()
+            context.restoreGState()
+            
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            
+            let attributed = NSMutableAttributedString(
+                string: "\(label) \(value)",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                    .foregroundColor: textColor,
+                    .paragraphStyle: paragraph
+                ]
+            )
+            attributed.draw(in: chipRect.insetBy(dx: chipPadding/2, dy: 2))
+            
+            nextX += chipRect.width + 10
+        }
     }
     
     private func drawCloseButton(in context: CGContext, headerRect: CGRect) {
-        // Close button size and position
+        // Only draw when hovering over card
+        guard isHoveringCard else {
+            // Still set the rect for hit testing
+            let buttonSize: CGFloat = 24
+            let buttonMargin: CGFloat = 8
+            closeButtonRect = CGRect(
+                x: headerRect.maxX - buttonSize - buttonMargin,
+                y: headerRect.minY + (headerRect.height - buttonSize) / 2,
+                width: buttonSize,
+                height: buttonSize
+            )
+            return
+        }
+        
+        // Close button size and position (right side now)
         let buttonSize: CGFloat = 24
         let buttonMargin: CGFloat = 8
         closeButtonRect = CGRect(
-            x: headerRect.minX + buttonMargin,
+            x: headerRect.maxX - buttonSize - buttonMargin,
             y: headerRect.minY + (headerRect.height - buttonSize) / 2,
             width: buttonSize,
             height: buttonSize
         )
         
-        // Draw button background
+        // Apply hover scale
+        let scale: CGFloat = isHoveringClose ? 1.1 : 1.0
+        let opacity: CGFloat = isHoveringClose ? 0.3 : 0.18
+        
         context.saveGState()
+        if scale != 1.0 {
+            context.translateBy(x: closeButtonRect.midX, y: closeButtonRect.midY)
+            context.scaleBy(x: scale, y: scale)
+            context.translateBy(x: -closeButtonRect.midX, y: -closeButtonRect.midY)
+        }
+        
+        // Circular background
         let buttonPath = NSBezierPath(ovalIn: closeButtonRect)
-        
-        // Close button - subtle outline with hover effect
-        context.setFillColor(NSColor.white.withAlphaComponent(0.1).cgColor)
+        context.setFillColor(NSColor.white.withAlphaComponent(opacity).cgColor)
         buttonPath.fill()
-        
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
-        context.setLineWidth(1.0)
-        buttonPath.stroke()
-        
         context.restoreGState()
         
         // Draw X icon
+        context.saveGState()
+        if scale != 1.0 {
+            context.translateBy(x: closeButtonRect.midX, y: closeButtonRect.midY)
+            context.scaleBy(x: scale, y: scale)
+            context.translateBy(x: -closeButtonRect.midX, y: -closeButtonRect.midY)
+        }
         drawCloseIcon(in: context, rect: closeButtonRect)
+        context.restoreGState()
     }
     
     private func drawCloseIcon(in context: CGContext, rect: CGRect) {
@@ -4004,8 +4355,8 @@ class TaskCardView: NSView {
         )
         
             context.saveGState()
-        context.setLineWidth(1.5)
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.8).cgColor)
+        context.setLineWidth(1.4)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.75).cgColor)
         
         // Draw X
         context.move(to: CGPoint(x: iconRect.minX + 2, y: iconRect.minY + 2))
@@ -4018,41 +4369,51 @@ class TaskCardView: NSView {
     }
     
     private func drawPinButton(in context: CGContext, headerRect: CGRect) {
-        // Pin button size and position
+        // Pin button on left side
         let buttonSize: CGFloat = 24
         let buttonMargin: CGFloat = 8
         pinButtonRect = CGRect(
-            x: headerRect.maxX - buttonSize - buttonMargin,
+            x: headerRect.minX + buttonMargin,
             y: headerRect.minY + (headerRect.height - buttonSize) / 2,
             width: buttonSize,
             height: buttonSize
         )
         
-        // Draw button background
-        context.saveGState()
-        let buttonPath = NSBezierPath(ovalIn: pinButtonRect)
-        
-        if isPinned {
-            // Pinned state - filled with orb color
-            context.setFillColor(orbColor.withAlphaComponent(0.9).cgColor)
-            buttonPath.fill()
-            
-            // Add subtle glow
-            context.setShadow(offset: CGSize(width: 0, height: 1), blur: 3, color: orbColor.withAlphaComponent(0.5).cgColor)
-            buttonPath.fill()
-            } else {
-            // Unpinned state - subtle outline
-            context.setFillColor(NSColor.white.withAlphaComponent(0.2).cgColor)
-            buttonPath.fill()
-            
-            context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
-            context.setLineWidth(1.0)
-            buttonPath.stroke()
+        // Only draw when hovering over card or when pinned
+        guard isHoveringCard || isPinned else {
+            return
         }
+        
+        // Apply hover scale
+        let scale: CGFloat = isHoveringPin ? 1.1 : 1.0
+        var opacity: CGFloat = isHoveringPin ? 0.3 : 0.18
+        if isPinned {
+            opacity = isHoveringPin ? 0.75 : 0.65
+        }
+        
+        context.saveGState()
+        if scale != 1.0 {
+            context.translateBy(x: pinButtonRect.midX, y: pinButtonRect.midY)
+            context.scaleBy(x: scale, y: scale)
+            context.translateBy(x: -pinButtonRect.midX, y: -pinButtonRect.midY)
+        }
+        
+        // Circular background
+        let buttonPath = NSBezierPath(ovalIn: pinButtonRect)
+        let fillColor = isPinned ? orbColor.withAlphaComponent(opacity) : NSColor.white.withAlphaComponent(opacity)
+        context.setFillColor(fillColor.cgColor)
+        buttonPath.fill()
         context.restoreGState()
         
         // Draw pin icon
+        context.saveGState()
+        if scale != 1.0 {
+            context.translateBy(x: pinButtonRect.midX, y: pinButtonRect.midY)
+            context.scaleBy(x: scale, y: scale)
+            context.translateBy(x: -pinButtonRect.midX, y: -pinButtonRect.midY)
+        }
         drawPinIcon(in: context, rect: pinButtonRect, isPinned: isPinned)
+        context.restoreGState()
     }
     
     private func drawPinIcon(in context: CGContext, rect: CGRect, isPinned: Bool) {
@@ -4065,319 +4426,400 @@ class TaskCardView: NSView {
         )
         
         context.saveGState()
-        context.setLineWidth(1.5)
+        context.setLineWidth(1.4)
         
         if isPinned {
-            // Pinned icon - filled pin
-            context.setFillColor(NSColor.white.cgColor)
-            context.setStrokeColor(NSColor.white.cgColor)
-            
-            // Draw pin head (circle)
+            context.setFillColor(NSColor.white.withAlphaComponent(0.95).cgColor)
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.95).cgColor)
+
             let pinHeadRect = CGRect(x: iconRect.midX - 3, y: iconRect.maxY - 6, width: 6, height: 6)
             context.addEllipse(in: pinHeadRect)
             context.fillPath()
-            
-            // Draw pin shaft
+
             context.move(to: CGPoint(x: iconRect.midX, y: iconRect.minY + 2))
             context.addLine(to: CGPoint(x: iconRect.midX, y: iconRect.maxY - 3))
             context.strokePath()
         } else {
-            // Unpinned icon - outline pin
-            context.setStrokeColor(NSColor.white.withAlphaComponent(0.8).cgColor)
-            
-            // Draw pin head (circle outline)
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.75).cgColor)
+
             let pinHeadRect = CGRect(x: iconRect.midX - 3, y: iconRect.maxY - 6, width: 6, height: 6)
             context.addEllipse(in: pinHeadRect)
             context.strokePath()
-            
-            // Draw pin shaft
+
             context.move(to: CGPoint(x: iconRect.midX, y: iconRect.minY + 2))
             context.addLine(to: CGPoint(x: iconRect.midX, y: iconRect.maxY - 3))
             context.strokePath()
         }
-        
-            context.restoreGState()
+
+        context.restoreGState()
     }
     
     private func drawTaskList(in context: CGContext, cardRect: NSRect) {
-        let taskStartY = cardRect.maxY - 150  // Start much lower to prevent any clipping
-        let taskHeight: CGFloat = 35        // Slightly taller tasks
-        let taskSpacing: CGFloat = 12       // More spacing between tasks
-        let visibleHeight: CGFloat = 200    // Visible task area height
+        let headerBottom = cardRect.maxY - TaskRowMetrics.headerHeight
+        let listRect = NSRect(
+            x: cardRect.minX + TaskRowMetrics.listInset,
+            y: cardRect.minY + TaskRowMetrics.listInset,
+            width: cardRect.width - TaskRowMetrics.listInset * 2,
+            height: headerBottom - (cardRect.minY + TaskRowMetrics.listInset) - TaskRowMetrics.headerDividerSpacing
+        )
         
-        // Calculate scroll parameters
-        calculateMaxScrollOffset()
+        calculateMaxScrollOffset(forListHeight: listRect.height)
+        rowGeometries.removeAll()
+
+        if tasks.isEmpty {
+            drawEmptyTaskState(in: context, rect: listRect)
+            return
+        }
         
-        // Clear and reset task rectangles
-        taskRects.removeAll()
-        
-        // Draw scroll bar if needed
         if maxScrollOffset > 0 {
-            drawScrollBar(in: context, cardRect: cardRect, visibleHeight: visibleHeight)
+            drawScrollBar(in: context, trackRect: listRect)
         }
         
-        // Clip to visible task area - span from card bottom to below header
-        let taskAreaRect = NSRect(x: cardRect.minX + 20, y: cardRect.minY + 20, width: cardRect.width - 40, height: (cardRect.maxY - 70) - (cardRect.minY + 20))
         context.saveGState()
-        context.clip(to: taskAreaRect)
+        context.clip(to: listRect)
         
-            for (index, task) in tasks.enumerated() {
-                // Skip drawing the dragged task (it's shown in the floating window)
-                if isDraggingTask && draggedTaskIndex == index {
-                    continue
-                }
-                
-                let taskY = taskStartY - CGFloat(index) * (taskHeight + taskSpacing) - taskScrollOffset
-                let taskRect = CGRect(x: cardRect.minX + 20, y: taskY, width: cardRect.width - 40, height: taskHeight)
-                
-                
-                
-                // Store task rectangle for hit testing (only if visible in clipping area)
-                if taskY >= cardRect.minY + 20 && taskY <= cardRect.maxY - 70 {
-                    taskRects.append(taskRect)
-                }
-                
-                // Skip tasks that would go below the clipping area
-                if taskY < cardRect.minY + 20 {
-                    break
-                }
-                
-                // Glass morphism task background
-        context.saveGState()
-                let taskPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
-                taskPath.addClip()
+        let rowStride = TaskRowMetrics.rowHeight + TaskRowMetrics.rowSpacing
+        for (index, task) in tasks.enumerated() {
+            if isDraggingTask && draggedTaskIndex == index { continue }
             
-            let taskGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                        colors: [
-                                            NSColor.white.withAlphaComponent(0.8).cgColor,
-                                            NSColor.white.withAlphaComponent(0.6).cgColor,
-                                            NSColor.white.withAlphaComponent(0.4).cgColor
-                                        ] as CFArray,
-                                        locations: [0.0, 0.5, 1.0])!
+            let offset = CGFloat(index) * rowStride + taskScrollOffset
+            let rowY = listRect.maxY - offset - TaskRowMetrics.rowHeight
+            let rowRect = CGRect(
+                x: listRect.minX,
+                y: rowY,
+                width: listRect.width,
+                height: TaskRowMetrics.rowHeight
+            )
             
-            context.drawLinearGradient(taskGradient,
-                                     start: CGPoint(x: taskRect.minX, y: taskRect.minY),
-                                     end: CGPoint(x: taskRect.maxX, y: taskRect.maxY),
-                                     options: [])
-        context.restoreGState()
-        
-            // Task border
-            context.saveGState()
-            context.setStrokeColor(NSColor.black.withAlphaComponent(0.2).cgColor)
-            context.setLineWidth(0.5)
-            let taskBorderPath = NSBezierPath(roundedRect: taskRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 11, yRadius: 11)
-            taskBorderPath.stroke()
-            context.restoreGState()
+            guard rowRect.maxY > listRect.minY - TaskRowMetrics.rowHeight else { continue }
+            guard rowRect.minY < listRect.maxY + TaskRowMetrics.rowHeight else { continue }
             
-            // Visual feedback for dragged task
-            if isDraggingTask && draggedTaskIndex == index {
-            context.saveGState()
-                context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.2).cgColor)
-                let dragHighlightPath = NSBezierPath(roundedRect: taskRect, xRadius: 12, yRadius: 12)
-                dragHighlightPath.fill()
+            if rowRect.intersects(listRect) {
+                let checkboxRect = CGRect(
+                    x: rowRect.maxX - TaskRowMetrics.checkboxSize - TaskRowMetrics.checkboxTrailingInset,
+                    y: rowRect.midY - TaskRowMetrics.checkboxSize / 2,
+                    width: TaskRowMetrics.checkboxSize,
+                    height: TaskRowMetrics.checkboxSize
+                )
+                let dragRect = CGRect(
+                    x: rowRect.minX,
+                    y: rowRect.minY,
+                    width: TaskRowMetrics.dragHitWidth,
+                    height: rowRect.height
+                )
                 
-                // Add a subtle glow effect
-                context.setShadow(offset: CGSize(width: 0, height: 2), blur: 8, color: NSColor.systemBlue.withAlphaComponent(0.3).cgColor)
-                dragHighlightPath.fill()
-                context.restoreGState()
+                rowGeometries.append(TaskRowGeometry(
+                    index: index,
+                    rowRect: rowRect,
+                    checkboxRect: checkboxRect,
+                    dragRect: dragRect
+                ))
+                
+                drawTaskRow(in: context, rect: rowRect, task: task, index: index, checkboxRect: checkboxRect)
             }
-            
-                // Draw grab handle on the left
-                drawGrabHandle(in: context, taskRect: taskRect)
-                
-                // Modern rounded checkbox on the right
-                drawRoundedCheckbox(in: context, taskRect: taskRect, isCompleted: task.isCompleted, index: index)
-                
-                // Task title with glass text effect - centered between grab handle and checkbox
-                let taskTitleRect = CGRect(x: taskRect.minX + 35, y: taskRect.minY + (taskHeight - 22) / 2, width: taskRect.width - 80, height: 22)
-            let taskFont = NSFont(name: "SF Pro Text", size: 14) ?? NSFont.systemFont(ofSize: 14, weight: .medium)
-            let taskAttributes: [NSAttributedString.Key: Any] = [
-                .font: taskFont,
-                .foregroundColor: task.isCompleted ? NSColor.black.withAlphaComponent(0.4) : NSColor.black,
-                .strokeColor: NSColor.white.withAlphaComponent(0.3),
-                .strokeWidth: -0.5
-            ]
-            task.title.draw(in: taskTitleRect, withAttributes: taskAttributes)
         }
         
-        // Restore clipping context
-            context.restoreGState()
-        }
-    
-    private func drawScrollBar(in context: CGContext, cardRect: NSRect, visibleHeight: CGFloat) {
-        let scrollBarWidth: CGFloat = 8
-        let scrollBarMargin: CGFloat = 4
-        let scrollBarX = cardRect.maxX - scrollBarWidth - scrollBarMargin
-        let taskStartY = cardRect.maxY - 150 // Keep taskStartY as is, as requested
-        let scrollBarY = cardRect.minY + 20
-        let scrollBarHeight = (cardRect.maxY - 70) - (cardRect.minY + 20)
-        
-        // Calculate scroll thumb size and position
-        let thumbHeight = max(20, scrollBarHeight * (visibleHeight / (visibleHeight + maxScrollOffset)))
-        let thumbY = scrollBarY + (scrollBarHeight - thumbHeight) * (taskScrollOffset / maxScrollOffset)
-        
-        // Store scroll bar rectangle for hit testing
+        context.restoreGState()
+    }
+
+    private func drawScrollBar(in context: CGContext, trackRect: NSRect) {
+        let scrollBarWidth: CGFloat = 7
+        let scrollBarX = trackRect.maxX - scrollBarWidth - 4
+        let scrollBarY = trackRect.minY
+        let scrollBarHeight = trackRect.height
+        let thumbHeight = max(24, scrollBarHeight * (trackRect.height / (trackRect.height + maxScrollOffset)))
+        let thumbOffset = (scrollBarHeight - thumbHeight) * (maxScrollOffset == 0 ? 0 : taskScrollOffset / maxScrollOffset)
+        let thumbRect = NSRect(x: scrollBarX, y: scrollBarY + thumbOffset, width: scrollBarWidth, height: thumbHeight)
+
         scrollBarRect = NSRect(x: scrollBarX, y: scrollBarY, width: scrollBarWidth, height: scrollBarHeight)
-        
-        // Draw scroll bar track
+
         context.saveGState()
-        let trackRect = NSRect(x: scrollBarX, y: scrollBarY, width: scrollBarWidth, height: scrollBarHeight)
-        let trackPath = NSBezierPath(roundedRect: trackRect, xRadius: 4, yRadius: 4)
-        
-        context.setFillColor(NSColor.black.withAlphaComponent(0.1).cgColor)
+        let trackPath = NSBezierPath(roundedRect: scrollBarRect.insetBy(dx: 2, dy: 8), xRadius: scrollBarWidth/2, yRadius: scrollBarWidth/2)
+        NSColor.white.withAlphaComponent(0.12).setFill()
         trackPath.fill()
         context.restoreGState()
-        
-        // Draw scroll thumb
+
         context.saveGState()
-        let thumbRect = NSRect(x: scrollBarX, y: thumbY, width: scrollBarWidth, height: thumbHeight)
-        let thumbPath = NSBezierPath(roundedRect: thumbRect, xRadius: 4, yRadius: 4)
-        
-        if isHoveringScrollBar {
-            context.setFillColor(NSColor.white.withAlphaComponent(0.6).cgColor)
-        } else {
-            context.setFillColor(NSColor.white.withAlphaComponent(0.3).cgColor)
+        let thumbPath = NSBezierPath(roundedRect: thumbRect.insetBy(dx: 0.5, dy: 2), xRadius: scrollBarWidth/2, yRadius: scrollBarWidth/2)
+        if let thumbGradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                orbColor.withAlphaComponent(isHoveringScrollBar ? 0.75 : 0.55).cgColor,
+                orbColor.highlighted().withAlphaComponent(isHoveringScrollBar ? 0.65 : 0.45).cgColor
+            ] as CFArray,
+            locations: [0.0, 1.0]
+        ) {
+            context.saveGState()
+            thumbPath.addClip()
+            context.drawLinearGradient(
+                thumbGradient,
+                start: CGPoint(x: thumbRect.minX, y: thumbRect.maxY),
+                end: CGPoint(x: thumbRect.minX, y: thumbRect.minY),
+                options: []
+            )
+            context.restoreGState()
         }
-        thumbPath.fill()
-        
-        // Add subtle border
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.5).cgColor)
-        context.setLineWidth(0.5)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(isHoveringScrollBar ? 0.6 : 0.35).cgColor)
+        context.setLineWidth(1.0)
         thumbPath.stroke()
         context.restoreGState()
     }
     
-    private func drawGrabHandle(in context: CGContext, taskRect: CGRect) {
-        let grabHandleSize: CGFloat = 20
-        let grabHandleX = taskRect.minX + 8
-        let grabHandleY = taskRect.minY + (taskRect.height - grabHandleSize) / 2
-        let grabHandleRect = CGRect(x: grabHandleX, y: grabHandleY, width: grabHandleSize, height: grabHandleSize)
+    private func drawResizeHandle(in context: CGContext, cardRect: CGRect) {
+        let handleSize: CGFloat = 12
+        resizeHandleRect = CGRect(
+            x: cardRect.maxX - handleSize - 4,
+            y: cardRect.minY + 4,
+            width: handleSize,
+            height: handleSize
+        )
         
-        // Draw subtle grab handle background
+        // Draw grip lines
         context.saveGState()
-        let grabHandlePath = NSBezierPath(roundedRect: grabHandleRect, xRadius: 4, yRadius: 4)
+        let opacity: CGFloat = isHoveringResizeHandle ? 0.6 : 0.3
+        context.setStrokeColor(NSColor.white.withAlphaComponent(opacity).cgColor)
+        context.setLineWidth(1.5)
+        context.setLineCap(.round)
         
-        // Glass morphism effect for grab handle
-        let grabHandleGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                        colors: [
-                                              NSColor.white.withAlphaComponent(0.3).cgColor,
-                                            NSColor.white.withAlphaComponent(0.1).cgColor,
-                                              NSColor.white.withAlphaComponent(0.05).cgColor
-                                        ] as CFArray,
-                                        locations: [0.0, 0.5, 1.0])!
-        
-        grabHandlePath.addClip()
-        context.drawLinearGradient(grabHandleGradient,
-                                 start: CGPoint(x: grabHandleRect.minX, y: grabHandleRect.minY),
-                                 end: CGPoint(x: grabHandleRect.maxX, y: grabHandleRect.maxY),
-                                 options: [])
-        context.restoreGState()
-        
-        // Draw three horizontal grip lines
-        context.saveGState()
-        context.setStrokeColor(NSColor.black.withAlphaComponent(0.3).cgColor)
-        context.setLineWidth(1.0)
-        
-        let lineSpacing: CGFloat = 3
-        let lineY = grabHandleRect.midY
-        let lineStartX = grabHandleRect.minX + 4
-        let lineEndX = grabHandleRect.maxX - 4
-        
-        // Draw three grip lines
+        // Draw three diagonal lines for grip pattern
         for i in 0..<3 {
-            let y = lineY - lineSpacing + CGFloat(i) * lineSpacing
-            context.move(to: CGPoint(x: lineStartX, y: y))
-            context.addLine(to: CGPoint(x: lineEndX, y: y))
+            let offset = CGFloat(i) * 3.5
+            context.move(to: CGPoint(
+                x: resizeHandleRect.maxX - offset - 2,
+                y: resizeHandleRect.minY + 2
+            ))
+            context.addLine(to: CGPoint(
+                x: resizeHandleRect.maxX - 2,
+                y: resizeHandleRect.minY + offset + 2
+            ))
         }
         context.strokePath()
         context.restoreGState()
     }
-    
-    private func drawRoundedCheckbox(in context: CGContext, taskRect: CGRect, isCompleted: Bool, index: Int) {
-        let checkboxSize: CGFloat = 22
-        let checkboxX = taskRect.maxX - checkboxSize - 8
-        let checkboxY = taskRect.minY + (taskRect.height - checkboxSize) / 2
-        let checkboxRect = CGRect(x: checkboxX, y: checkboxY, width: checkboxSize, height: checkboxSize)
-        
-        // More rounded and interesting checkbox design
+
+    private func drawAmbientBokeh(in context: CGContext, cardRect: CGRect) {
         context.saveGState()
-        
-        // Create a more rounded checkbox (closer to a circle)
-        let checkboxPath = NSBezierPath(roundedRect: checkboxRect, xRadius: checkboxSize/2, yRadius: checkboxSize/2)
-        
-        if isCompleted {
-            // Completed state - green with gradient
-            let completedGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                             colors: [
-                                                 NSColor.systemGreen.withAlphaComponent(0.9).cgColor,
-                                                 NSColor.systemGreen.withAlphaComponent(0.7).cgColor,
-                                                 NSColor.systemGreen.withAlphaComponent(0.5).cgColor
-                                             ] as CFArray,
-                                             locations: [0.0, 0.5, 1.0])!
-            
-            checkboxPath.addClip()
-            context.drawRadialGradient(completedGradient,
-                                     startCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
-                                     startRadius: 0,
-                                     endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
-                                     endRadius: checkboxSize/2,
-                                  options: [])
-            
-            // Add subtle glow effect for completed state
+        let bokehColors: [NSColor] = [
+            orbColor.withAlphaComponent(0.3),
+            NSColor.white.withAlphaComponent(0.25),
+            NSColor.white.withAlphaComponent(0.15)
+        ]
+        for i in 0..<5 {
+            let size = CGFloat(60 + i * 20)
+            let alpha = CGFloat(0.12 - Double(i) * 0.015)
+            let circleRect = CGRect(
+                x: cardRect.midX + CGFloat.random(in: -80...80) - size/2,
+                y: cardRect.midY + CGFloat.random(in: -60...60) - size/2,
+                width: size,
+                height: size
+            )
+            let color = bokehColors[i % bokehColors.count].withAlphaComponent(alpha)
+            context.setFillColor(color.cgColor)
+            context.fillEllipse(in: circleRect)
+        }
         context.restoreGState()
-            context.saveGState()
-            context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4, color: NSColor.systemGreen.withAlphaComponent(0.4).cgColor)
-            context.setFillColor(NSColor.clear.cgColor)
-            checkboxPath.fill()
-            context.restoreGState()
-            
-        } else {
-            // Uncompleted state - subtle glass morphism
-            let uncompletedGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                               colors: [
-                                                   NSColor.white.withAlphaComponent(0.6).cgColor,
-                                                   NSColor.white.withAlphaComponent(0.3).cgColor,
-                                                   NSColor.white.withAlphaComponent(0.1).cgColor
-                                               ] as CFArray,
-                                               locations: [0.0, 0.5, 1.0])!
-            
-            checkboxPath.addClip()
-            context.drawRadialGradient(uncompletedGradient,
-                                     startCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
-                                     startRadius: 0,
-                                     endCenter: CGPoint(x: checkboxRect.midX, y: checkboxRect.midY),
-                                     endRadius: checkboxSize/2,
-                                     options: [])
+    }
+
+    private func drawEmptyTaskState(in context: CGContext, rect: CGRect) {
+        let quietBackground = NSBezierPath(roundedRect: rect, xRadius: 18, yRadius: 18)
+        context.saveGState()
+        context.setFillColor(NSColor.white.withAlphaComponent(0.12).cgColor)
+        quietBackground.fill()
+        context.restoreGState()
+
+        let heading = "No tasks yet"
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let headingAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.7),
+            .paragraphStyle: style
+        ]
+        let headingSize = heading.size(withAttributes: headingAttributes)
+        let headingRect = CGRect(
+            x: rect.midX - headingSize.width / 2,
+            y: rect.midY - headingSize.height / 2 + 14,
+            width: headingSize.width,
+            height: headingSize.height
+        )
+        heading.draw(in: headingRect, withAttributes: headingAttributes)
+
+        let detail = "Add a task or drop items here to begin."
+        let detailAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12.5, weight: .regular),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.5),
+            .paragraphStyle: style
+        ]
+        let detailSize = detail.size(withAttributes: detailAttributes)
+        let detailRect = CGRect(
+            x: rect.midX - detailSize.width / 2,
+            y: headingRect.minY - detailSize.height - 6,
+            width: detailSize.width,
+            height: detailSize.height
+        )
+        detail.draw(in: detailRect, withAttributes: detailAttributes)
+    }
+
+    private func drawTaskRow(in context: CGContext, rect: CGRect, task: Task, index: Int, checkboxRect: CGRect) {
+        // Apply completion animation if active
+        var animatedOpacity: CGFloat = 1.0
+        var animatedScale: CGFloat = 1.0
+        if let animation = completionAnimations[task.id] {
+            animatedOpacity = animation.opacity
+            animatedScale = animation.scale
+        } else if task.isCompleted {
+            animatedOpacity = 0.5 // Final completed state
         }
         
+        // Apply scale transformation
+        context.saveGState()
+        if animatedScale != 1.0 {
+            let centerX = rect.midX
+            let centerY = rect.midY
+            context.translateBy(x: centerX, y: centerY)
+            context.scaleBy(x: animatedScale, y: animatedScale)
+            context.translateBy(x: -centerX, y: -centerY)
+        }
+        
+        let rowPath = NSBezierPath(roundedRect: rect, xRadius: 16, yRadius: 16)
+        context.saveGState()
+        
+        // Frosted glass background for task rows
+        let glassAlpha = (task.isCompleted ? 0.22 : 0.52) * animatedOpacity
+        let glassColor = NSColor(calibratedWhite: 0.96, alpha: glassAlpha).blended(withFraction: 0.12, of: orbColor)
+        context.setFillColor((glassColor ?? NSColor(calibratedWhite: 0.98, alpha: glassAlpha)).cgColor)
+        rowPath.fill()
+        
+        // Add subtle inner shadow for depth
+        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 2, color: NSColor.black.withAlphaComponent(0.08).cgColor)
+        rowPath.fill()
+        
         context.restoreGState()
         
-        // Subtle border
+        context.saveGState()
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.18 * animatedOpacity).cgColor)
+        context.setLineWidth(1.0)
+        rowPath.stroke()
+        context.restoreGState()
+
+        // Minimal drag indicator dot
+        let indicatorSize: CGFloat = 6
+        let indicatorRect = CGRect(
+            x: rect.minX + TaskRowMetrics.accentInset,
+            y: rect.midY - indicatorSize / 2,
+            width: indicatorSize,
+            height: indicatorSize
+        )
+        context.saveGState()
+        context.setFillColor(orbColor.withAlphaComponent(task.isCompleted ? 0.35 : 0.6).cgColor)
+        context.fillEllipse(in: indicatorRect)
+        context.restoreGState()
+
+        drawRoundedCheckbox(in: context, rect: checkboxRect, isCompleted: task.isCompleted)
+
+        let contentX = indicatorRect.maxX + TaskRowMetrics.contentSpacing
+        let contentWidth = max(0, checkboxRect.minX - contentX - TaskRowMetrics.contentSpacing)
+        let contentTop = rect.maxY - TaskRowMetrics.rowVerticalPadding
+
+        let titleRect = CGRect(x: contentX, y: contentTop - 24, width: contentWidth, height: 24)
+        let titleFont = NSFont.systemFont(ofSize: 15, weight: task.isCompleted ? .regular : .semibold)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let titleColor = task.isCompleted ? NSColor(calibratedWhite: 0.45, alpha: 0.90 * animatedOpacity) : NSColor(calibratedWhite: 0.12, alpha: 0.98 * animatedOpacity)
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: titleColor,
+            .paragraphStyle: paragraph
+        ]
+        task.title.draw(in: titleRect, withAttributes: titleAttributes)
+        
+        // Draw animated strikethrough if task is completed or completing
+        if task.isCompleted, let animation = completionAnimations[task.id] {
+            // Animated strikethrough
+            let strikethroughY = titleRect.midY
+            let strikethroughWidth = titleRect.width * animation.progress
             context.saveGState()
-        let borderColor = isCompleted ? NSColor.systemGreen.withAlphaComponent(0.6) : NSColor.black.withAlphaComponent(0.15)
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.28 * animatedOpacity).cgColor)
+            context.setLineWidth(1.5)
+            context.move(to: CGPoint(x: titleRect.minX, y: strikethroughY))
+            context.addLine(to: CGPoint(x: titleRect.minX + strikethroughWidth, y: strikethroughY))
+            context.strokePath()
+            context.restoreGState()
+        } else if task.isCompleted {
+            // Static strikethrough for fully completed tasks
+            let strikethroughY = titleRect.midY
+            context.saveGState()
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.28 * animatedOpacity).cgColor)
+            context.setLineWidth(1.5)
+            context.move(to: CGPoint(x: titleRect.minX, y: strikethroughY))
+            context.addLine(to: CGPoint(x: titleRect.maxX, y: strikethroughY))
+            context.strokePath()
+            context.restoreGState()
+        }
+
+        let snippet = task.details
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+
+        var snippetBottom = rect.minY + TaskRowMetrics.rowVerticalPadding
+        if !snippet.isEmpty {
+            let snippetRect = CGRect(
+                x: contentX,
+                y: max(rect.minY + TaskRowMetrics.rowVerticalPadding, titleRect.minY - 18),
+                width: contentWidth,
+                height: 16
+            )
+            let snippetAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13, weight: .regular),
+                .foregroundColor: NSColor(calibratedWhite: 0.32, alpha: 0.9),
+                .paragraphStyle: paragraph
+            ]
+            snippet.draw(in: snippetRect, withAttributes: snippetAttributes)
+            snippetBottom = snippetRect.maxY
+        }
+
+        var chipsBaselineY = max(rect.minY + TaskRowMetrics.rowVerticalPadding, snippetBottom + 4)
+        let maxBaseline = titleRect.minY - TaskRowMetrics.chipHeight - 2
+        chipsBaselineY = min(chipsBaselineY, maxBaseline)
+        let chips = makeTaskRowChips(for: task, orbColor: orbColor)
+        _ = drawTaskChips(chips, startingAt: contentX, baselineY: chipsBaselineY, context: context)
+        
+        // Restore graphics state (for scale transformation)
+        context.restoreGState()
+    }
+    
+    private func drawRoundedCheckbox(in context: CGContext, rect: CGRect, isCompleted: Bool) {
+        let checkboxPath = NSBezierPath(roundedRect: rect, xRadius: rect.width / 2, yRadius: rect.height / 2)
+
+        context.saveGState()
+        // Use orb color when completed
+        let fillColor = isCompleted ? orbColor.withAlphaComponent(0.75) : NSColor.white.withAlphaComponent(0.15)
+        context.setFillColor(fillColor.cgColor)
+        checkboxPath.fill()
+        context.restoreGState()
+
+        context.saveGState()
+        let borderColor = isCompleted ? orbColor.withAlphaComponent(0.85) : NSColor.white.withAlphaComponent(0.35)
         context.setStrokeColor(borderColor.cgColor)
-        context.setLineWidth(1.5)
+        context.setLineWidth(1.3)
         checkboxPath.stroke()
         context.restoreGState()
-        
-        // Checkmark for completed state
+
         if isCompleted {
             context.saveGState()
             context.setStrokeColor(NSColor.white.cgColor)
-            context.setLineWidth(2.5)
+            context.setLineWidth(2.2)
             context.setLineCap(.round)
             context.setLineJoin(.round)
-            
-            // Draw a more elegant checkmark
             let checkmarkPath = NSBezierPath()
-            let checkmarkSize = checkboxSize * 0.6
-            let startX = checkboxRect.midX - checkmarkSize * 0.3
-            let startY = checkboxRect.midY
-            let midX = checkboxRect.midX
-            let midY = checkboxRect.midY + checkmarkSize * 0.2
-            let endX = checkboxRect.midX + checkmarkSize * 0.3
-            let endY = checkboxRect.midY - checkmarkSize * 0.2
-            
+            let checkmarkSize = rect.width * 0.56
+            let startX = rect.midX - checkmarkSize * 0.35
+            let startY = rect.midY - checkmarkSize * 0.1
+            let midX = rect.midX - checkmarkSize * 0.05
+            let midY = rect.midY + checkmarkSize * 0.34
+            let endX = rect.midX + checkmarkSize * 0.4
+            let endY = rect.midY - checkmarkSize * 0.3
             checkmarkPath.move(to: CGPoint(x: startX, y: startY))
             checkmarkPath.line(to: CGPoint(x: midX, y: midY))
             checkmarkPath.line(to: CGPoint(x: endX, y: endY))
@@ -4414,31 +4856,69 @@ class TaskDetailView: NSView {
     private var orbColor: NSColor
     private weak var delegate: TaskDetailViewDelegate?
     
-    // UI Components - Simple and clean
-    private var titleField: NSTextField!
-    private var detailsTextView: NSTextView!
-    private var deadlinePicker: NSDatePicker!
-    private var prioritySlider: NSSlider!
-    private var priorityLabel: NSTextField!
-    private var deadlineObserver: NSObjectProtocol?
+    private let backdropView = NSVisualEffectView()
+    private let contentStack = NSStackView()
+    private let chromeLayer = CAGradientLayer()
+    private let headerGradientLayer = CAGradientLayer()
+    private let dragStripView = TaskDetailDragStripView()
     
-    // Simple state - no complex cleanup needed
-    private var isEditMode = false
-    private var closeButtonRect = NSRect.zero
-    private var editButtonRect = NSRect.zero
+    private let headerBar = NSView()
+    private let orbBadge = NSView()
+    private let titleField = NSTextField()
+    private let headerSubtitleLabel = NSTextField(labelWithString: "")
+    private let closeButton = NSButton()
     
-    // Simple drag state
-    private var isDragging = false
-    private var dragStartLocation = NSPoint.zero
-    private var originalWindowOrigin = NSPoint.zero
+    private let metaRow = NSStackView()
+    private let statusButton = NSButton()
+    private let dueButton = NSButton()
+    private let clearDueButton = NSButton()
+    private let priorityControl = NSSegmentedControl(labels: ["Low", "Med", "High"], trackingMode: .selectOne, target: nil, action: nil)
+    
+    private let notesLabel = NSTextField(labelWithString: "Notes")
+    private let notesScrollView = NSScrollView()
+    private let notesTextView = NotesTextView()
+    private let notesPlaceholder = NSTextField(labelWithString: "Add any details, decisions, or next steps…")
+    
+    private let actionRow = NSStackView()
+    private let copyTitleButton = NSButton()
+    private let copyNotesButton = NSButton()
+    
+    private let metadataLabel = NSTextField(labelWithString: "")
+    
+    private lazy var datePopover: NSPopover = createDatePopover()
+    private let datePicker = NSDatePicker()
+    
+    private lazy var dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    
+    private lazy var dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE d MMM"
+        return formatter
+    }()
+    
+    private let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+    
+    private let priorityValues = [1, 3, 5]
+    private let priorityLabels = ["Low", "Medium", "High"]
+    
     private var isClosing = false
     
     init(task: Task, orbColor: NSColor) {
         self.task = task
         self.orbColor = orbColor
-        super.init(frame: NSRect(x: 0, y: 0, width: 400, height: 500))
-        
-        setupSimpleView()
+        super.init(frame: NSRect(x: 0, y: 0, width: 440, height: 560))
+        translatesAutoresizingMaskIntoConstraints = false
+        setupView()
+        updateUI()
     }
     
     func setDelegate(_ delegate: TaskDetailViewDelegate?) {
@@ -4450,395 +4930,794 @@ class TaskDetailView: NSView {
     }
     
     deinit {
-        print("🧹 Simple TaskDetailView deinit")
-        delegate = nil
-        if let observer = deadlineObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
+        datePopover.close()
     }
     
-    private func setupSimpleView() {
-        self.wantsLayer = true
-        self.layer?.cornerRadius = 24
-        self.layer?.masksToBounds = false
+    private func setupView() {
+        wantsLayer = true
+        layer?.cornerRadius = 24
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.2).cgColor
+        layer?.shadowOpacity = 1.0
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
+        layer?.shadowRadius = 12
         
-        // Simple UI setup without complex callbacks
-        setupTitleField()
-        setupDetailsTextView()
-        setupDeadlinePicker()
-        setupPrioritySlider()
-        setupLabels()
+        configureBackdrop()
+        configureDragStrip()
+        configureContentStack()
+        configureHeader()
+        configureMetaRow()
+        configureNotesSection()
+        configureActionRow()
+        configureMetadataLabel()
+        chromeLayer.type = .axial
+        chromeLayer.opacity = 0.45
+        chromeLayer.cornerRadius = 24
+        chromeLayer.masksToBounds = true
+        backdropView.layer?.insertSublayer(chromeLayer, at: 0)
         
-        // Set up button rects
-        closeButtonRect = NSRect(x: bounds.width - 50, y: bounds.height - 50, width: 40, height: 40)
-        editButtonRect = NSRect(x: bounds.width - 100, y: bounds.height - 50, width: 40, height: 40)
-        
-        print("🎯 Simple TaskDetailView setup complete")
+        updateChromePalette()
+        updateDragStripAppearance()
     }
     
-    private func setupTitleField() {
-        titleField = NSTextField(frame: NSRect(x: 40, y: 400, width: 320, height: 30))
+    override func layout() {
+        super.layout()
+        chromeLayer.frame = backdropView.bounds
+        headerGradientLayer.frame = headerBar.bounds
+    }
+    
+    private func configureBackdrop() {
+        backdropView.translatesAutoresizingMaskIntoConstraints = false
+        backdropView.state = .active
+        backdropView.blendingMode = .withinWindow
+        backdropView.material = .hudWindow
+        backdropView.wantsLayer = true
+        backdropView.layer?.cornerRadius = 24
+        backdropView.layer?.masksToBounds = true
+        addSubview(backdropView)
+        
+        NSLayoutConstraint.activate([
+            backdropView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            backdropView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            backdropView.topAnchor.constraint(equalTo: topAnchor),
+            backdropView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+    
+    private func configureDragStrip() {
+        dragStripView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(dragStripView)
+        
+        NSLayoutConstraint.activate([
+            dragStripView.topAnchor.constraint(equalTo: topAnchor),
+            dragStripView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            dragStripView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            dragStripView.heightAnchor.constraint(equalToConstant: TaskRowMetrics.dragGripHeight)
+        ])
+    }
+    
+    private func configureContentStack() {
+        contentStack.orientation = .vertical
+        contentStack.spacing = 32
+        contentStack.alignment = .leading
+        contentStack.edgeInsets = NSEdgeInsets(top: 44, left: 44, bottom: 40, right: 44)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        backdropView.addSubview(contentStack)
+        
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: backdropView.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: backdropView.trailingAnchor),
+            contentStack.topAnchor.constraint(equalTo: backdropView.topAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: backdropView.bottomAnchor)
+        ])
+    }
+    
+    private func configureHeader() {
+        headerBar.translatesAutoresizingMaskIntoConstraints = false
+        headerBar.wantsLayer = true
+        headerBar.layer?.cornerRadius = 22
+        headerBar.layer?.masksToBounds = true
+        headerGradientLayer.cornerRadius = 22
+        headerGradientLayer.masksToBounds = true
+        headerGradientLayer.opacity = 0.6
+        headerGradientLayer.startPoint = CGPoint(x: 0.0, y: 1.0)
+        headerGradientLayer.endPoint = CGPoint(x: 1.0, y: 0.0)
+        headerGradientLayer.colors = [
+            NSColor.white.withAlphaComponent(0.36).cgColor,
+            orbColor.withAlphaComponent(0.18).cgColor
+        ]
+        headerGradientLayer.locations = [0.0, 1.0]
+        headerBar.layer?.insertSublayer(headerGradientLayer, at: 0)
+        headerBar.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
+        headerBar.layer?.borderWidth = 0.8
+        
+        orbBadge.wantsLayer = true
+        orbBadge.layer?.cornerRadius = 7
+        orbBadge.layer?.backgroundColor = orbColor.cgColor
+        orbBadge.layer?.shadowColor = orbColor.withAlphaComponent(0.6).cgColor
+        orbBadge.layer?.shadowOpacity = 0.8
+        orbBadge.layer?.shadowOffset = .zero
+        orbBadge.layer?.shadowRadius = 6
+        orbBadge.translatesAutoresizingMaskIntoConstraints = false
+        orbBadge.widthAnchor.constraint(equalToConstant: 14).isActive = true
+        orbBadge.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        
+        titleField.translatesAutoresizingMaskIntoConstraints = false
+        titleField.isEditable = true
+        titleField.isBordered = false
+        titleField.drawsBackground = false
+        titleField.focusRingType = .none
+        titleField.font = NSFont.systemFont(ofSize: 27, weight: .semibold)
+        titleField.textColor = NSColor(calibratedWhite: 0.08, alpha: 0.95)
+        titleField.alignment = .left
+        titleField.lineBreakMode = .byTruncatingTail
         titleField.stringValue = task.title
-        titleField.isEditable = false
-        titleField.isSelectable = false
-        titleField.isBezeled = false
-        titleField.backgroundColor = .clear
-        titleField.textColor = .white
-        titleField.font = NSFont.systemFont(ofSize: 20, weight: .semibold)
-        titleField.alignment = .center
+        titleField.delegate = self
+        titleField.target = self
+        titleField.action = #selector(handleTitleEditingEnd)
         
-        // Modern rounded corners for text field
-        titleField.wantsLayer = true
-        titleField.layer?.cornerRadius = 8
+        headerSubtitleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        headerSubtitleLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 0.9)
+        headerSubtitleLabel.alignment = .left
+        headerSubtitleLabel.lineBreakMode = .byTruncatingTail
+        headerSubtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         
-        addSubview(titleField)
+        closeButton.bezelStyle = .inline
+        closeButton.isBordered = false
+        closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")
+        closeButton.imagePosition = .imageOnly
+        closeButton.contentTintColor = NSColor.white.withAlphaComponent(0.85)
+        closeButton.target = self
+        closeButton.action = #selector(handleCloseTapped)
+        closeButton.wantsLayer = true
+        closeButton.layer?.cornerRadius = 16
+        closeButton.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor
+        closeButton.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
+        closeButton.layer?.borderWidth = 1.0
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        closeButton.heightAnchor.constraint(equalTo: closeButton.widthAnchor).isActive = true
+        
+        let textColumn = NSStackView()
+        textColumn.orientation = .vertical
+        textColumn.alignment = .leading
+        textColumn.spacing = 2
+        textColumn.translatesAutoresizingMaskIntoConstraints = false
+        textColumn.addArrangedSubview(titleField)
+        textColumn.addArrangedSubview(headerSubtitleLabel)
+        
+        let headerStack = NSStackView()
+        headerStack.orientation = .horizontal
+        headerStack.alignment = .centerY
+        headerStack.spacing = 16
+        headerStack.translatesAutoresizingMaskIntoConstraints = false
+        headerStack.addArrangedSubview(orbBadge)
+        headerStack.addArrangedSubview(textColumn)
+        headerStack.addArrangedSubview(closeButton)
+        textColumn.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        closeButton.setContentHuggingPriority(.required, for: .horizontal)
+        
+        headerBar.addSubview(headerStack)
+        NSLayoutConstraint.activate([
+            headerStack.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor, constant: 20),
+            headerStack.trailingAnchor.constraint(equalTo: headerBar.trailingAnchor, constant: -20),
+            headerStack.topAnchor.constraint(equalTo: headerBar.topAnchor, constant: 14),
+            headerStack.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor, constant: -14)
+        ])
+        
+        contentStack.addArrangedSubview(headerBar)
+        headerBar.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
+        headerBar.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor).isActive = true
     }
     
-    private func setupDetailsTextView() {
-        detailsTextView = NSTextView(frame: NSRect(x: 40, y: 250, width: 320, height: 120))
-        detailsTextView.string = task.details
-        detailsTextView.isEditable = false
-        detailsTextView.isSelectable = false
-        detailsTextView.backgroundColor = .clear
-        detailsTextView.textColor = NSColor.white.withAlphaComponent(0.9)
-        detailsTextView.font = NSFont.systemFont(ofSize: 15)
+    private func configureMetaRow() {
+        metaRow.orientation = .horizontal
+        metaRow.alignment = .top
+        metaRow.spacing = 24
+        metaRow.distribution = .fillEqually
+        metaRow.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.addArrangedSubview(metaRow)
+        metaRow.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
+        metaRow.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor).isActive = true
         
-        // Modern rounded corners for text view
-        detailsTextView.wantsLayer = true
-        detailsTextView.layer?.cornerRadius = 12
+        statusButton.title = ""
+        statusButton.isBordered = false
+        statusButton.wantsLayer = true
+        statusButton.layer?.cornerRadius = 14
+        statusButton.target = self
+        statusButton.action = #selector(handleStatusToggle)
+        statusButton.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        statusButton.contentTintColor = .white
+        statusButton.imagePosition = .imageLeading
+        statusButton.translatesAutoresizingMaskIntoConstraints = false
+        statusButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        statusButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 150).isActive = true
+        statusButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
         
-        addSubview(detailsTextView)
+        dueButton.title = "Set due date"
+        dueButton.isBordered = false
+        dueButton.wantsLayer = true
+        dueButton.layer?.cornerRadius = 14
+        dueButton.target = self
+        dueButton.action = #selector(handleDueTapped)
+        dueButton.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        dueButton.contentTintColor = .white
+        dueButton.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Set due date")
+        dueButton.imagePosition = .imageLeading
+        dueButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        dueButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        dueButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        
+        clearDueButton.isBordered = false
+        clearDueButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear due date")
+        clearDueButton.contentTintColor = NSColor.white.withAlphaComponent(0.6)
+        clearDueButton.target = self
+        clearDueButton.action = #selector(handleClearDue)
+        clearDueButton.toolTip = "Clear due date"
+        clearDueButton.translatesAutoresizingMaskIntoConstraints = false
+        clearDueButton.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        clearDueButton.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        clearDueButton.setContentHuggingPriority(.required, for: .horizontal)
+        
+        priorityControl.segmentStyle = .automatic
+        priorityControl.target = self
+        priorityControl.action = #selector(handlePriorityChanged)
+        priorityControl.translatesAutoresizingMaskIntoConstraints = false
+        priorityControl.widthAnchor.constraint(equalToConstant: 210).isActive = true
+        
+        let statusColumn = makeMetaColumn(title: "STATUS", "checkmark.seal.fill", NSColor.systemGreen, content: statusButton)
+        let dueHorizontal = NSStackView(views: [dueButton, clearDueButton])
+        dueHorizontal.spacing = 6
+        dueHorizontal.alignment = .centerY
+        let dueColumn = makeMetaColumn(title: "DUE", "calendar.circle.fill", orbColor, content: dueHorizontal)
+        let priorityColumn = makeMetaColumn(title: "PRIORITY", "flag.fill", NSColor.systemOrange, content: priorityControl)
+        
+        metaRow.addArrangedSubview(statusColumn)
+        metaRow.addArrangedSubview(dueColumn)
+        metaRow.addArrangedSubview(priorityColumn)
     }
     
-    private func setupDeadlinePicker() {
-        deadlinePicker = NSDatePicker(frame: NSRect(x: 40, y: 200, width: 320, height: 30))
-        deadlinePicker.dateValue = task.deadline ?? Date()
-        deadlinePicker.isEnabled = false
-        deadlinePicker.datePickerStyle = .textFieldAndStepper
-        deadlinePicker.datePickerElements = [.yearMonthDay]
+    private func configureNotesSection() {
+        notesLabel.stringValue = "NOTES & CONTEXT"
+        notesLabel.font = NSFont.systemFont(ofSize: 12, weight: .heavy)
+        notesLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 0.9)
+        notesLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.addArrangedSubview(notesLabel)
         
-        // Modern styling for date picker
-        deadlinePicker.wantsLayer = true
-        deadlinePicker.layer?.cornerRadius = 8
-        deadlinePicker.textColor = .white
-        deadlinePicker.backgroundColor = .clear
-        deadlineObserver = NotificationCenter.default.addObserver(
-            forName: NSControl.textDidEndEditingNotification,
-            object: deadlinePicker,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            self.task.deadline = self.deadlinePicker.dateValue
+        notesScrollView.translatesAutoresizingMaskIntoConstraints = false
+        notesScrollView.borderType = .noBorder
+        notesScrollView.drawsBackground = false
+        notesScrollView.hasVerticalScroller = true
+        notesScrollView.wantsLayer = true
+        notesScrollView.layer?.cornerRadius = 18
+        notesScrollView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        notesScrollView.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        notesScrollView.layer?.borderWidth = 1.0
+        notesScrollView.layer?.masksToBounds = true
+        notesScrollView.heightAnchor.constraint(equalToConstant: 240).isActive = true
+        
+        notesTextView.backgroundColor = .clear
+        notesTextView.font = NSFont.systemFont(ofSize: 15, weight: .regular)
+        notesTextView.textColor = NSColor(calibratedWhite: 0.12, alpha: 1.0)
+        notesTextView.insertionPointColor = NSColor(calibratedWhite: 0.2, alpha: 1.0)
+        notesTextView.isRichText = false
+        notesTextView.isAutomaticQuoteSubstitutionEnabled = false
+        notesTextView.isAutomaticSpellingCorrectionEnabled = false
+        notesTextView.isAutomaticDataDetectionEnabled = true
+        notesTextView.isHorizontallyResizable = false
+        notesTextView.isVerticallyResizable = true
+        notesTextView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        notesTextView.delegate = self
+        notesTextView.string = task.details
+        notesTextView.textContainerInset = NSSize(width: 14, height: 14)
+        notesTextView.textContainer?.widthTracksTextView = true
+        
+        notesScrollView.documentView = notesTextView
+        notesPlaceholder.font = NSFont.systemFont(ofSize: 14)
+        notesPlaceholder.textColor = NSColor(calibratedWhite: 0.45, alpha: 0.9)
+        notesPlaceholder.isBezeled = false
+        notesPlaceholder.drawsBackground = false
+        notesPlaceholder.isEditable = false
+        notesPlaceholder.isSelectable = false
+        notesPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        notesPlaceholder.lineBreakMode = .byWordWrapping
+        notesPlaceholder.maximumNumberOfLines = 2
+        notesTextView.addSubview(notesPlaceholder)
+        NSLayoutConstraint.activate([
+            notesPlaceholder.leadingAnchor.constraint(equalTo: notesTextView.leadingAnchor, constant: 18),
+            notesPlaceholder.topAnchor.constraint(equalTo: notesTextView.topAnchor, constant: 16),
+            notesPlaceholder.trailingAnchor.constraint(lessThanOrEqualTo: notesTextView.trailingAnchor, constant: -18)
+        ])
+        
+        contentStack.addArrangedSubview(notesScrollView)
+        notesScrollView.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
+        notesScrollView.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor).isActive = true
+    }
+    
+    private func configureActionRow() {
+        actionRow.orientation = .horizontal
+        actionRow.alignment = .centerY
+        actionRow.spacing = 14
+        actionRow.translatesAutoresizingMaskIntoConstraints = false
+        
+        copyTitleButton.title = "Copy Title"
+        copyTitleButton.bezelStyle = .inline
+        copyTitleButton.isBordered = false
+        copyTitleButton.target = self
+        copyTitleButton.action = #selector(handleCopyTitle)
+        copyTitleButton.contentTintColor = .white
+        copyTitleButton.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy title")
+        copyTitleButton.imagePosition = .imageLeading
+        copyTitleButton.wantsLayer = true
+        copyTitleButton.layer?.cornerRadius = 14
+        copyTitleButton.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor
+        copyTitleButton.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
+        copyTitleButton.layer?.borderWidth = 1.0
+        copyTitleButton.translatesAutoresizingMaskIntoConstraints = false
+        copyTitleButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        
+        copyNotesButton.title = "Copy Notes"
+        copyNotesButton.bezelStyle = .inline
+        copyNotesButton.isBordered = false
+        copyNotesButton.target = self
+        copyNotesButton.action = #selector(handleCopyNotes)
+        copyNotesButton.contentTintColor = .white
+        copyNotesButton.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Copy notes")
+        copyNotesButton.imagePosition = .imageLeading
+        copyNotesButton.wantsLayer = true
+        copyNotesButton.layer?.cornerRadius = 14
+        copyNotesButton.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor
+        copyNotesButton.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
+        copyNotesButton.layer?.borderWidth = 1.0
+        copyNotesButton.translatesAutoresizingMaskIntoConstraints = false
+        copyNotesButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        
+        for button in [copyTitleButton, copyNotesButton] {
+            button.layer?.backgroundColor = NSColor.clear.cgColor
+            button.layer?.borderWidth = 0
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         }
         
-        addSubview(deadlinePicker)
+        actionRow.addArrangedSubview(copyTitleButton)
+        actionRow.addArrangedSubview(copyNotesButton)
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        actionRow.addArrangedSubview(spacer)
+        contentStack.addArrangedSubview(actionRow)
+        actionRow.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
+        actionRow.trailingAnchor.constraint(lessThanOrEqualTo: contentStack.trailingAnchor).isActive = true
     }
     
-    private func setupPrioritySlider() {
-        prioritySlider = NSSlider(frame: NSRect(x: 40, y: 140, width: 320, height: 20))
-        prioritySlider.minValue = 1
-        prioritySlider.maxValue = 10
-        prioritySlider.intValue = Int32(task.priority)
-        prioritySlider.isEnabled = false
-        
-        // Modern styling for slider
-        prioritySlider.wantsLayer = true
-        prioritySlider.layer?.cornerRadius = 10
-        
-        addSubview(prioritySlider)
+    private func configureMetadataLabel() {
+        metadataLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        metadataLabel.textColor = NSColor(calibratedWhite: 0.4, alpha: 0.9)
+        metadataLabel.lineBreakMode = .byWordWrapping
+        metadataLabel.maximumNumberOfLines = 2
+        metadataLabel.alignment = .left
+        metadataLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.addArrangedSubview(metadataLabel)
+        metadataLabel.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
+        metadataLabel.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor).isActive = true
     }
     
-    private func setupLabels() {
-        priorityLabel = NSTextField(frame: NSRect(x: 40, y: 100, width: 320, height: 20))
-        priorityLabel.stringValue = "Priority: \(task.priority)"
-        priorityLabel.isEditable = false
-        priorityLabel.isSelectable = false
-        priorityLabel.isBezeled = false
-        priorityLabel.backgroundColor = .clear
-        priorityLabel.textColor = NSColor.white.withAlphaComponent(0.8)
-        priorityLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
-        priorityLabel.alignment = .center
-        addSubview(priorityLabel)
+    private func makeMetaColumn(title: String, _ symbolName: String, _ tint: NSColor, content: NSView) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = NSColor.white.withAlphaComponent(0.55)
+        label.alignment = .left
+
+        content.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(label)
+        stack.addArrangedSubview(content)
+        return stack
     }
     
-    // MARK: - Simple Event Handling
-    
-    override func mouseDown(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
+    private func createDatePopover() -> NSPopover {
+        let popover = NSPopover()
+        popover.behavior = .semitransient
         
-        if closeButtonRect.contains(location) {
-            guard !isClosing else { return }
-            isClosing = true
-            window?.makeFirstResponder(nil)
-            delegate?.closeTaskDetail(for: task.id)
+        let controller = NSViewController()
+        let container = NSStackView()
+        container.orientation = .vertical
+        container.spacing = 16
+        container.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
+        container.translatesAutoresizingMaskIntoConstraints = false
+        
+        let quickRow = NSStackView()
+        quickRow.orientation = .horizontal
+        quickRow.spacing = 12
+        quickRow.alignment = .centerY
+        quickRow.distribution = .fillEqually
+        
+        let todayButton = quickDueButton(title: "Today")
+        todayButton.target = self
+        todayButton.action = #selector(handleSetDueToday)
+        
+        let tomorrowButton = quickDueButton(title: "Tomorrow")
+        tomorrowButton.target = self
+        tomorrowButton.action = #selector(handleSetDueTomorrow)
+        
+        let nextWeekButton = quickDueButton(title: "Next Week")
+        nextWeekButton.target = self
+        nextWeekButton.action = #selector(handleSetDueNextWeek)
+        
+        quickRow.addArrangedSubview(todayButton)
+        quickRow.addArrangedSubview(tomorrowButton)
+        quickRow.addArrangedSubview(nextWeekButton)
+        
+        datePicker.translatesAutoresizingMaskIntoConstraints = false
+        datePicker.datePickerElements = [.yearMonthDay, .hourMinute]
+        datePicker.datePickerStyle = .clockAndCalendar
+        datePicker.target = self
+        datePicker.action = #selector(handleDatePicked)
+        datePicker.font = NSFont.systemFont(ofSize: 13)
+        
+        let pickerContainer = NSView()
+        pickerContainer.translatesAutoresizingMaskIntoConstraints = false
+        pickerContainer.addSubview(datePicker)
+        NSLayoutConstraint.activate([
+            datePicker.leadingAnchor.constraint(equalTo: pickerContainer.leadingAnchor),
+            datePicker.trailingAnchor.constraint(equalTo: pickerContainer.trailingAnchor),
+            datePicker.topAnchor.constraint(equalTo: pickerContainer.topAnchor),
+            datePicker.bottomAnchor.constraint(equalTo: pickerContainer.bottomAnchor)
+        ])
+        
+        container.addArrangedSubview(quickRow)
+        container.addArrangedSubview(pickerContainer)
+        
+        controller.view = NSView()
+        controller.view.translatesAutoresizingMaskIntoConstraints = false
+        controller.view.addSubview(container)
+        
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor),
+            container.topAnchor.constraint(equalTo: controller.view.topAnchor),
+            container.bottomAnchor.constraint(equalTo: controller.view.bottomAnchor)
+        ])
+        
+        controller.view.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        controller.view.heightAnchor.constraint(equalToConstant: 240).isActive = true
+        
+        popover.contentViewController = controller
+        return popover
+    }
+    
+    private func quickDueButton(title: String) -> NSButton {
+        let button = NSButton(title: title, target: nil, action: nil)
+        button.bezelStyle = .inline
+        button.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        button.isBordered = false
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 12
+        button.layer?.backgroundColor = orbColor.withAlphaComponent(0.22).cgColor
+        button.layer?.borderColor = orbColor.highlighted().withAlphaComponent(0.4).cgColor
+        button.layer?.borderWidth = 1.0
+        button.contentTintColor = .white
+        return button
+    }
+    
+    private func updateUI() {
+        updateStatusButton()
+        updateDueButton()
+        updatePriorityControl()
+        updateNotesPlaceholder()
+        updateMetadataLabel()
+        updateHeaderSubtitle()
+        updateChromePalette()
+        updateDragStripAppearance()
+    }
+    
+    private func updateHeaderSubtitle() {
+        var parts: [String] = []
+        parts.append(task.isCompleted ? "Completed" : "Active")
+        if let due = task.deadline {
+            let relative = relativeFormatter.localizedString(for: due, relativeTo: Date())
+            let absolute = dayFormatter.string(from: due)
+            parts.append("\(relative.capitalized) • \(absolute)")
+        } else {
+            parts.append("No due date")
+        }
+        let priorityIndex = priorityIndex(for: task.priority)
+        if priorityIndex >= 0 && priorityIndex < priorityLabels.count {
+            parts.append("Priority \(priorityLabels[priorityIndex])")
+        }
+        headerSubtitleLabel.stringValue = parts.joined(separator: " · ")
+    }
+    
+    private func updateStatusButton() {
+        let isDone = task.isCompleted
+        statusButton.title = isDone ? "Reopen Task" : "Mark Complete"
+        statusButton.image = NSImage(systemSymbolName: isDone ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill", accessibilityDescription: nil)
+        let background = isDone ? NSColor.systemGreen.withAlphaComponent(0.35) : NSColor.white.withAlphaComponent(0.18)
+        statusButton.layer?.backgroundColor = background.cgColor
+        statusButton.layer?.borderColor = NSColor.clear.cgColor
+        statusButton.layer?.borderWidth = 0
+        statusButton.contentTintColor = isDone ? NSColor.white : NSColor(calibratedWhite: 0.1, alpha: 0.95)
+        updateHeaderSubtitle()
+    }
+    
+    private func updateDueButton() {
+        if let deadline = task.deadline {
+            let relative = relativeFormatter.localizedString(for: deadline, relativeTo: Date())
+            let absolute = dayFormatter.string(from: deadline)
+            dueButton.title = "Due \(relative) • \(absolute)"
+            dueButton.layer?.backgroundColor = orbColor.withAlphaComponent(0.22).cgColor
+            dueButton.layer?.borderColor = NSColor.clear.cgColor
+            dueButton.layer?.borderWidth = 0
+            clearDueButton.isHidden = false
+            clearDueButton.contentTintColor = NSColor.white.withAlphaComponent(0.7)
+            dueButton.contentTintColor = NSColor.white
+        } else {
+            dueButton.title = "Set due date"
+            dueButton.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
+            dueButton.layer?.borderColor = NSColor.clear.cgColor
+            dueButton.layer?.borderWidth = 0
+            clearDueButton.isHidden = true
+            dueButton.contentTintColor = NSColor(calibratedWhite: 0.1, alpha: 0.95)
+        }
+        updateHeaderSubtitle()
+    }
+    
+    private func updatePriorityControl() {
+        let index = priorityIndex(for: task.priority)
+        applyPrioritySelection(index)
+        updateHeaderSubtitle()
+    }
+    
+    private func updateNotesPlaceholder() {
+        let text = notesTextView.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        notesPlaceholder.isHidden = !text.isEmpty
+    }
+    
+    private func updateMetadataLabel() {
+        var parts: [String] = []
+        parts.append(task.isCompleted ? "Completed" : "In progress")
+        if let due = task.deadline {
+            parts.append("Due \(dateFormatter.string(from: due))")
+        } else {
+            parts.append("No due date")
+        }
+        let index = priorityControl.selectedSegment
+        if index >= 0 && index < priorityLabels.count {
+            parts.append("Priority \(priorityLabels[index])")
+        }
+        metadataLabel.stringValue = parts.joined(separator: "   •   ")
+    }
+
+    private func updateChromePalette() {
+        let fill = glassBaseFill(for: orbColor)
+        chromeLayer.colors = glassGradientStops(for: orbColor)
+        chromeLayer.locations = [0.0, 0.55, 1.0]
+        chromeLayer.startPoint = CGPoint(x: 0.5, y: 1.0)
+        chromeLayer.endPoint = CGPoint(x: 0.5, y: 0.0)
+        chromeLayer.backgroundColor = fill.cgColor
+        backdropView.layer?.backgroundColor = fill.withAlphaComponent(0.03).cgColor
+    }
+    
+    private func updateDragStripAppearance() {
+        dragStripView.updatePrimaryColor(orbColor)
+    }
+    
+    @objc private func handleCloseTapped() {
+        guard !isClosing else { return }
+        isClosing = true
+        delegate?.closeTaskDetail(for: task.id)
+    }
+    
+    @objc private func handleStatusToggle() {
+        task.isCompleted.toggle()
+        updateStatusButton()
+        updateMetadataLabel()
+    }
+    
+    @objc private func handleDueTapped() {
+        guard let window = window else { return }
+        if datePopover.isShown {
+            datePopover.performClose(nil)
             return
         }
-        
-        if editButtonRect.contains(location) {
-            toggleEditMode()
-            return
+        datePicker.dateValue = task.deadline ?? Date()
+        datePopover.show(relativeTo: dueButton.bounds, of: dueButton, preferredEdge: .maxY)
+        window.makeFirstResponder(datePicker)
+    }
+    
+    @objc private func handleClearDue() {
+        task.deadline = nil
+        datePopover.performClose(nil)
+        updateDueButton()
+        updateMetadataLabel()
+    }
+    
+    @objc private func handlePriorityChanged() {
+        let index = priorityControl.selectedSegment
+        guard index >= 0 && index < priorityValues.count else { return }
+        task.priority = priorityValues[index]
+        updateMetadataLabel()
+        updateHeaderSubtitle()
+    }
+    
+    @objc private func handleDatePicked() {
+        task.deadline = datePicker.dateValue
+        updateDueButton()
+        updateMetadataLabel()
+    }
+    
+    @objc private func handleSetDueToday() {
+        setDue(daysFromNow: 0)
+    }
+    
+    @objc private func handleSetDueTomorrow() {
+        setDue(daysFromNow: 1)
+    }
+    
+    @objc private func handleSetDueNextWeek() {
+        setDue(daysFromNow: 7)
+    }
+    
+    private func setDue(daysFromNow: Int) {
+        let calendar = Calendar.current
+        let now = Date()
+        if let date = calendar.date(byAdding: .day, value: daysFromNow, to: calendar.startOfDay(for: now)) {
+            task.deadline = calendar.date(byAdding: .hour, value: 9, to: date)
+            datePicker.dateValue = task.deadline ?? now
+            updateDueButton()
+            updateMetadataLabel()
+            datePopover.performClose(nil)
         }
-        
-        // Start dragging
-        isDragging = true
-        dragStartLocation = event.locationInWindow
-        originalWindowOrigin = window?.frame.origin ?? NSPoint.zero
     }
     
-    override func mouseDragged(with event: NSEvent) {
-        guard isDragging else { return }
-        
-        let deltaX = event.locationInWindow.x - dragStartLocation.x
-        let deltaY = event.locationInWindow.y - dragStartLocation.y
-        
-        let newOrigin = NSPoint(
-            x: originalWindowOrigin.x + deltaX,
-            y: originalWindowOrigin.y + deltaY
-        )
-        
-        window?.setFrameOrigin(newOrigin)
+    @objc private func handleCopyTitle() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(task.title, forType: .string)
     }
     
-    override func mouseUp(with event: NSEvent) {
-        isDragging = false
+    @objc private func handleCopyNotes() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(task.details, forType: .string)
     }
     
-    private func toggleEditMode() {
-        isEditMode.toggle()
-        
-                if isEditMode {
-                    // Enter edit mode with modern styling
-                    titleField.isEditable = true
-                    titleField.isSelectable = true
-                    detailsTextView.isEditable = true
-                    detailsTextView.isSelectable = true
-                    prioritySlider.isEnabled = true
-                    deadlinePicker.isEnabled = true
-                    
-                    // Modern edit mode colors
-                    titleField.backgroundColor = NSColor.white.withAlphaComponent(0.95)
-                    titleField.textColor = .black
-                    detailsTextView.backgroundColor = NSColor.white.withAlphaComponent(0.95)
-                    detailsTextView.textColor = .black
-                } else {
-                    // Exit edit mode and save
-                    saveChanges()
-                    
-                    titleField.isEditable = false
-                    titleField.isSelectable = false
-                    detailsTextView.isEditable = false
-                    detailsTextView.isSelectable = false
-                    prioritySlider.isEnabled = false
-                    deadlinePicker.isEnabled = false
-                    
-                    // Restore view mode colors
-                    titleField.backgroundColor = .clear
-                    titleField.textColor = .white
-                    detailsTextView.backgroundColor = .clear
-                    detailsTextView.textColor = NSColor.white.withAlphaComponent(0.9)
-                }
-        
-        needsDisplay = true
+    @objc private func handleTitleEditingEnd() {
+        task.title = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if task.title.isEmpty {
+            task.title = "Untitled Task"
+            titleField.stringValue = task.title
+        }
+        updateMetadataLabel()
     }
     
-    private func saveChanges() {
-        // Simple, direct saving
-        task.title = titleField.stringValue
-        task.details = detailsTextView.string
-        task.priority = Int(prioritySlider.intValue)
-        task.deadline = deadlinePicker.dateValue
-        priorityLabel.stringValue = "Priority: \(task.priority)"
-        
-        print("🎯 Saved changes: '\(task.title)'")
+    private func priorityIndex(for value: Int) -> Int {
+        var bestIndex = 0
+        var smallestDelta = Int.max
+        for (index, candidate) in priorityValues.enumerated() {
+            let delta = abs(candidate - value)
+            if delta < smallestDelta {
+                smallestDelta = delta
+                bestIndex = index
+            }
+        }
+        return bestIndex
     }
     
-    
-    // MARK: - Simple Drawing
-    
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
-        // Modern glassmorphism background
-        drawModernBackground(in: context)
-        
-        // Draw header section
-        drawHeaderSection(in: context)
-        
-        // Draw close and edit buttons
-        drawCloseButton(in: context)
-        drawEditButton(in: context)
+    private func applyPrioritySelection(_ index: Int) {
+        for segment in 0..<priorityControl.segmentCount {
+            priorityControl.setSelected(segment == index, forSegment: segment)
+        }
     }
-    
-    private func drawModernBackground(in context: CGContext) {
-        let cornerRadius: CGFloat = 24
-        
-        // Create rounded rect path
-        let rect = bounds
-        let path = CGPath(roundedRect: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
-        
-        // Background gradient (dark with subtle color)
-        context.addPath(path)
-        context.clip()
-        
-        let colors = [
-            NSColor(red: 0.15, green: 0.15, blue: 0.20, alpha: 0.95).cgColor,
-            NSColor(red: 0.10, green: 0.10, blue: 0.15, alpha: 0.95).cgColor
-        ]
-        
-        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
-        context.drawLinearGradient(gradient, start: CGPoint(x: rect.minX, y: rect.maxY), end: CGPoint(x: rect.minX, y: rect.minY), options: [])
-        
-        // Subtle border
-        context.resetClip()
-        context.addPath(path)
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.15).cgColor)
-        context.setLineWidth(1.5)
-        context.strokePath()
-        
-        // Inner highlight
-        context.addPath(path)
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.08).cgColor)
-        context.setLineWidth(0.5)
-        let insetRect = rect.insetBy(dx: 1, dy: 1)
-        let insetPath = CGPath(roundedRect: insetRect, cornerWidth: cornerRadius - 1, cornerHeight: cornerRadius - 1, transform: nil)
-        context.addPath(insetPath)
-        context.strokePath()
-    }
-    
-    private func drawHeaderSection(in context: CGContext) {
-        let headerHeight: CGFloat = 80
-        let headerRect = NSRect(x: bounds.minX, y: bounds.maxY - headerHeight, width: bounds.width, height: headerHeight)
-        
-        // Header background with subtle gradient
-        let headerColors = [
-            NSColor.white.withAlphaComponent(0.08).cgColor,
-            NSColor.white.withAlphaComponent(0.03).cgColor
-        ]
-        
-        let headerGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: headerColors as CFArray, locations: [0.0, 1.0])!
-        context.drawLinearGradient(headerGradient, start: CGPoint(x: headerRect.minX, y: headerRect.maxY), end: CGPoint(x: headerRect.minX, y: headerRect.minY), options: [])
-        
-        // Header separator line
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.12).cgColor)
-        context.setLineWidth(0.5)
-        context.move(to: CGPoint(x: headerRect.minX + 20, y: headerRect.minY))
-        context.addLine(to: CGPoint(x: headerRect.maxX - 20, y: headerRect.minY))
-        context.strokePath()
-    }
-    
-    private func drawCloseButton(in context: CGContext) {
-        // Modern close button with rounded corners and shadow
-        let buttonRect = closeButtonRect.insetBy(dx: 2, dy: 2)
-        let cornerRadius: CGFloat = 8
-        
-        // Shadow
-        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 4, color: NSColor.black.withAlphaComponent(0.3).cgColor)
-        
-        // Button background with gradient
-        let path = CGPath(roundedRect: buttonRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
-        context.addPath(path)
-        
-        let colors = [
-            NSColor(red: 0.9, green: 0.3, blue: 0.3, alpha: 0.9).cgColor,
-            NSColor(red: 0.8, green: 0.2, blue: 0.2, alpha: 0.9).cgColor
-        ]
-        
-        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
-        context.drawLinearGradient(gradient, start: CGPoint(x: buttonRect.minX, y: buttonRect.maxY), end: CGPoint(x: buttonRect.minX, y: buttonRect.minY), options: [])
-        
-        // Reset shadow
-        context.setShadow(offset: CGSize.zero, blur: 0, color: nil)
-        
-        // Draw X icon
-        context.setStrokeColor(NSColor.white.cgColor)
-        context.setLineWidth(2)
-        context.setLineCap(.round)
-        
-        let center = CGPoint(x: buttonRect.midX, y: buttonRect.midY)
-        let size: CGFloat = 10
-        
-        context.move(to: CGPoint(x: center.x - size/2, y: center.y - size/2))
-        context.addLine(to: CGPoint(x: center.x + size/2, y: center.y + size/2))
-        context.move(to: CGPoint(x: center.x + size/2, y: center.y - size/2))
-        context.addLine(to: CGPoint(x: center.x - size/2, y: center.y + size/2))
-        context.strokePath()
-    }
-    
-    private func drawEditButton(in context: CGContext) {
-        // Modern edit button with rounded corners and shadow
-        let buttonRect = editButtonRect.insetBy(dx: 2, dy: 2)
-        let cornerRadius: CGFloat = 8
-        
-        // Shadow
-        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 4, color: NSColor.black.withAlphaComponent(0.3).cgColor)
-        
-        // Button background with gradient
-        let path = CGPath(roundedRect: buttonRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
-        context.addPath(path)
-        
-        let baseColor = isEditMode ? NSColor.systemOrange : NSColor.systemBlue
-        let colors = [
-            baseColor.withAlphaComponent(0.9).cgColor,
-            baseColor.withAlphaComponent(0.7).cgColor
-        ]
-        
-        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
-        context.drawLinearGradient(gradient, start: CGPoint(x: buttonRect.minX, y: buttonRect.maxY), end: CGPoint(x: buttonRect.minX, y: buttonRect.minY), options: [])
-        
-        // Reset shadow
-        context.setShadow(offset: CGSize.zero, blur: 0, color: nil)
-        
-        // Draw pencil icon
-        context.setStrokeColor(NSColor.white.cgColor)
-        context.setLineWidth(2)
-        context.setLineCap(.round)
-        
-        let center = CGPoint(x: buttonRect.midX, y: buttonRect.midY)
-        
-        // Draw pencil icon (more detailed)
-        context.move(to: CGPoint(x: center.x - 4, y: center.y + 4))
-        context.addLine(to: CGPoint(x: center.x + 4, y: center.y - 4))
-        context.move(to: CGPoint(x: center.x - 4, y: center.y + 4))
-        context.addLine(to: CGPoint(x: center.x - 2, y: center.y + 2))
-        context.strokePath()
-    }
-    
 }
 
 extension TaskDetailView {
     fileprivate func prepareForClose() {
-        // Ensure any edit state is reset to avoid callbacks after deinit.
-        if isEditMode {
-            saveChanges()
-            isEditMode = false
-        }
-        window?.makeFirstResponder(nil)
-        detailsTextView?.delegate = nil
-        prioritySlider?.target = nil
-        titleField?.target = nil
-        if let observer = deadlineObserver {
-            NotificationCenter.default.removeObserver(observer)
-            deadlineObserver = nil
-        }
-        titleField = nil
-        detailsTextView = nil
-        deadlinePicker = nil
-        prioritySlider = nil
-        priorityLabel = nil
         isClosing = true
+        datePopover.performClose(nil)
+        window?.makeFirstResponder(nil)
+        notesTextView.delegate = nil
+        titleField.delegate = nil
+        titleField.target = nil
+        statusButton.target = nil
+        dueButton.target = nil
+        clearDueButton.target = nil
+        priorityControl.target = nil
+        copyTitleButton.target = nil
+        copyNotesButton.target = nil
         delegate = nil
     }
 }
 
 // MARK: - NSTextViewDelegate
 extension TaskDetailView: NSTextViewDelegate {
-    @objc func textDidChange(_ notification: Notification) {
-        // Simple delegate - no complex logic needed
-        guard let textView = notification.object as? NSTextView,
-              textView == detailsTextView else {
+    func textDidChange(_ notification: Notification) {
+        guard notification.object as? NSTextView === notesTextView else {
             return
         }
-        task.details = detailsTextView.string
+        task.details = notesTextView.string
+        updateNotesPlaceholder()
+    }
+}
+
+// MARK: - NSTextFieldDelegate
+extension TaskDetailView: NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard obj.object as? NSTextField === titleField else { return }
+        updateMetadataLabel()
+    }
+}
+
+private final class NotesTextView: NSTextView {}
+
+private final class PassthroughVisualEffectView: NSVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private final class TaskDetailDragStripView: NSView {
+    private let gradientLayer = CAGradientLayer()
+    private let topBorder = CALayer()
+    private let bottomBorder = CALayer()
+    private var primaryColor: NSColor = .systemBlue
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupLayers()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupLayers()
+    }
+    
+    private func setupLayers() {
+        wantsLayer = true
+        layer?.masksToBounds = false
+        
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 1.0)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0.0)
+        gradientLayer.locations = [0.0, 0.55, 1.0] as [NSNumber]
+        layer?.addSublayer(gradientLayer)
+        
+        topBorder.backgroundColor = NSColor.white.withAlphaComponent(0.35).cgColor
+        bottomBorder.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        layer?.addSublayer(topBorder)
+        layer?.addSublayer(bottomBorder)
+        
+        updateAppearance()
+    }
+    
+    override func layout() {
+        super.layout()
+        gradientLayer.frame = bounds
+        topBorder.frame = CGRect(x: bounds.minX, y: bounds.maxY - 1, width: bounds.width, height: 1)
+        bottomBorder.frame = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: 1)
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        NSCursor.closedHand.push()
+        window?.performDrag(with: event)
+        NSCursor.pop()
+    }
+    
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .openHand)
+    }
+    
+    func updatePrimaryColor(_ color: NSColor) {
+        primaryColor = color
+        updateAppearance()
+    }
+    
+    private func updateAppearance() {
+        gradientLayer.colors = glassGradientStops(for: primaryColor)
+        gradientLayer.backgroundColor = glassBaseFill(for: primaryColor).cgColor
     }
 }
 
