@@ -1,12 +1,24 @@
 import Cocoa
 import SwiftUI
 
+private struct ClarificationPending {
+    let pendingTitle: String
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var overlayController: NotchOverlayController?
     private var wakeWordEngine: MockWakeWordEngine?
     private var speechRecognizer: MockSpeechRecognizer?
     private var intentRouter: IntentRouter?
+    private var pendingClarification: ClarificationPending?
+    private var logMenuItems: [DebugCategory: NSMenuItem] = [:]
+    private lazy var debugMenu: NSMenu = {
+        let menu = NSMenu()
+        menu.delegate = self
+        rebuildDebugMenu(menu)
+        return menu
+    }()
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
@@ -22,17 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "NotchTo-Do")
             button.action = #selector(statusBarButtonClicked)
             button.target = self
-            
-            // Add test menu
-            let menu = NSMenu()
-            menu.addItem(NSMenuItem(title: "Simulate Wake Word", action: #selector(simulateWakeWord), keyEquivalent: ""))
-            menu.addItem(NSMenuItem(title: "Simulate Transcript", action: #selector(simulateTranscript), keyEquivalent: ""))
-            menu.addItem(NSMenuItem(title: "Test Semi-Circle", action: #selector(testSemiCircle), keyEquivalent: ""))
-            menu.addItem(NSMenuItem(title: "Hide Semi-Circle", action: #selector(hideSemiCircle), keyEquivalent: ""))
-            menu.addItem(NSMenuItem(title: "Simulate New Project Request", action: #selector(simulateNewProjectRequest), keyEquivalent: ""))
-            menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Kill App", action: #selector(killApp), keyEquivalent: ""))
-            statusItem?.menu = menu
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
     }
     
@@ -59,39 +61,167 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupNLU() {
         intentRouter = IntentRouter()
     }
+
+    private func rebuildDebugMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        menu.addItem(makeMenuItem(title: "Simulate Wake Word", action: #selector(simulateWakeWord)))
+        menu.addItem(makeMenuItem(title: "Simulate Transcript", action: #selector(simulateTranscript)))
+        let customItem = makeMenuItem(title: "Simulate Custom Transcript…", action: #selector(simulateCustomTranscriptPrompt))
+        menu.addItem(customItem)
+        let selfTestItem = makeMenuItem(title: "Run Intent Parser Self-Test", action: #selector(runIntentRouterSelfTest))
+        menu.addItem(selfTestItem)
+        menu.addItem(makeMenuItem(title: "Test Semi-Circle", action: #selector(testSemiCircle)))
+        menu.addItem(makeMenuItem(title: "Hide Semi-Circle", action: #selector(hideSemiCircle)))
+        menu.addItem(makeMenuItem(title: "Simulate New Project Request", action: #selector(simulateNewProjectRequest)))
+        menu.addItem(NSMenuItem.separator())
+        addLoggingSubmenu(to: menu)
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(makeMenuItem(title: "Reset UI State", action: #selector(resetUIState)))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(makeMenuItem(title: "Kill App", action: #selector(killApp)))
+    }
+
+    private func makeMenuItem(title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    private func addLoggingSubmenu(to menu: NSMenu) {
+        let loggingItem = NSMenuItem(title: "Logging Categories", action: nil, keyEquivalent: "")
+        let loggingMenu = NSMenu()
+        logMenuItems.removeAll()
+        let categories = DebugLogger.shared.allCategories().sorted { $0.displayName < $1.displayName }
+        for category in categories {
+            let item = NSMenuItem(title: category.displayName, action: #selector(toggleDebugCategory(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = category
+            item.state = DebugLogger.shared.isEnabled(category) ? .on : .off
+            loggingMenu.addItem(item)
+            logMenuItems[category] = item
+        }
+        loggingItem.submenu = loggingMenu
+        menu.addItem(loggingItem)
+    }
+
+    private func refreshLogMenuStates() {
+        for (category, item) in logMenuItems {
+            item.state = DebugLogger.shared.isEnabled(category) ? .on : .off
+        }
+    }
     
     
     @objc private func statusBarButtonClicked() {
+        guard let event = NSApp.currentEvent else {
+            overlayController?.toggleOverlay()
+            return
+        }
+        
+        let isRightClick = event.type == .rightMouseUp
+        let isControlClick = event.modifierFlags.contains(.control) && event.type == .leftMouseUp
+        
+        if isRightClick || isControlClick {
+            if let statusItem {
+                statusItem.popUpMenu(debugMenu)
+            }
+            return
+        }
+        
         overlayController?.toggleOverlay()
     }
     
     private func handleWakeWordTriggered() {
         // Trigger notch trace activation first
-        overlayController?.activateNotchTrace()
-        
-        // Then set listening state
-        overlayController?.setState(.listening)
-        try? speechRecognizer?.start()
-    }
-    
-    private func handlePartialTranscript(_ partial: String) {
-        overlayController?.setState(.transcribing)
-    }
-    
-    private func handleFinalTranscript(_ final: String) {
-        overlayController?.setState(.idle)
-        speechRecognizer?.stop()
-        
-        let context = RoutingContext()
-        let effect = intentRouter?.handle(transcript: final, context: context)
-        print("Intent routed: \(effect?.description ?? "none")")
-        
-        // Add task to overlay if it's a create task action
-        if case .some(.createTask(let title, _)) = effect {
-            overlayController?.addTask(title)
+        overlayController?.setState(.wake)
+        overlayController?.activateNotchTrace { [weak self] in
+            guard let self else { return }
+            self.overlayController?.beginSpeechCaptureSession()
+            try? self.speechRecognizer?.start()
         }
     }
     
+    private func handlePartialTranscript(_ partial: String) {
+        overlayController?.updateSpeechCapture(partialTranscript: partial)
+    }
+    
+    private func handleFinalTranscript(_ final: String) {
+        speechRecognizer?.stop()
+        let trimmed = final.trimmingCharacters(in: .whitespacesAndNewlines)
+        if handlePendingClarificationIfNeeded(with: trimmed) { return }
+        
+        let context = RoutingContext()
+        let effect = intentRouter?.handle(transcript: final, context: context)
+        DebugLog.log("Intent routed: \(effect?.description ?? "none")", category: .intent)
+        
+        guard let effect else {
+            overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: nil, completion: nil)
+            return
+        }
+        
+        switch effect {
+        case .createTask(let title, _):
+            overlayController?.finalizeSpeechCapture(with: final, resolvedTaskTitle: title)
+        case .showOverlay:
+            overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: "Opening Notch…") { [weak self] in
+                self?.overlayController?.revealOverlayForVoice()
+            }
+        case .createOrb(let name):
+            overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: "Creating \(name)…") { [weak self] in
+                self?.overlayController?.createNewProject(name: name)
+            }
+        case .clarifyTaskOrOrb(let title, _):
+            pendingClarification = ClarificationPending(pendingTitle: title)
+            overlayController?.showClarificationPrompt(for: title)
+        default:
+            overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: nil, completion: nil)
+        }
+    }
+    
+
+    private func handlePendingClarificationIfNeeded(with transcript: String) -> Bool {
+        guard let pending = pendingClarification else { return false }
+        let normalized = stripWakeWord(transcript).lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        if normalized.isEmpty {
+            overlayController?.remindClarification(for: pending.pendingTitle)
+            return true
+        }
+        if normalized.contains("cancel") {
+            pendingClarification = nil
+            overlayController?.dismissClarificationPrompt()
+            return true
+        }
+        if normalized.contains("confirm task") || normalized == "task" {
+            pendingClarification = nil
+            overlayController?.dismissClarificationPrompt()
+            overlayController?.finalizeSpeechCapture(with: pending.pendingTitle, resolvedTaskTitle: pending.pendingTitle)
+            return true
+        }
+        if normalized.contains("confirm project") || normalized.contains("confirm orb") || normalized == "project" || normalized == "orb" {
+            pendingClarification = nil
+            overlayController?.dismissClarificationPrompt()
+            overlayController?.finalizeSpeechCaptureForCommand(transcript: transcript, status: "Creating \(pending.pendingTitle)…") { [weak self] in
+                self?.overlayController?.createNewProject(name: pending.pendingTitle)
+            }
+            return true
+        }
+        overlayController?.remindClarification(for: pending.pendingTitle)
+        return true
+    }
+
+    private func stripWakeWord(_ text: String) -> String {
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        let prefixes = ["hey notch", "ok notch", "okay notch", "notch"]
+        for prefix in prefixes {
+            if lower.hasPrefix(prefix) {
+                let index = trimmed.index(trimmed.startIndex, offsetBy: prefix.count)
+                trimmed = String(trimmed[index...])
+                break
+            }
+        }
+        return trimmed
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         wakeWordEngine?.stop()
         speechRecognizer?.stop()
@@ -106,6 +236,41 @@ extension AppDelegate {
     
     @objc func simulateTranscript() {
         handleFinalTranscript("add buy milk")
+    }
+
+    @objc private func toggleDebugCategory(_ sender: NSMenuItem) {
+        guard let category = sender.representedObject as? DebugCategory else { return }
+        let newState = sender.state != .on
+        DebugLogger.shared.setCategory(category, enabled: newState)
+        sender.state = newState ? .on : .off
+        DebugLog.log("Logging category \(category.displayName) \(newState ? "enabled" : "disabled")", category: .app)
+    }
+
+    @objc private func resetUIState() {
+        pendingClarification = nil
+        overlayController?.debugResetUIState()
+        speechRecognizer?.stop()
+        DebugLog.log("UI state reset via debug menu", category: .app)
+    }
+    
+    @objc func simulateCustomTranscriptPrompt() {
+        let alert = NSAlert()
+        alert.messageText = "Simulate Transcript"
+        alert.informativeText = "Enter the phrase you want Notch to process."
+        alert.alertStyle = .informational
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        inputField.placeholderString = "e.g. Notch, open"
+        inputField.stringValue = "Notch, "
+        alert.accessoryView = inputField
+        alert.addButton(withTitle: "Send")
+        alert.addButton(withTitle: "Cancel")
+        
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        
+        let phrase = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !phrase.isEmpty else { return }
+        handleFinalTranscript(phrase)
     }
     
     @objc func testSemiCircle() {
@@ -135,5 +300,24 @@ extension AppDelegate {
     @objc func killApp() {
         print("💀 Killing app...")
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc func runIntentRouterSelfTest() {
+        let results = IntentRouter.runSelfTest()
+        let message = results.joined(separator: "\n")
+        DebugLog.log("Intent Router Self-Test:\n\(message)", category: .intent)
+        let alert = NSAlert()
+        alert.messageText = "Intent Parser Self-Test"
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === debugMenu else { return }
+        refreshLogMenuStates()
     }
 }

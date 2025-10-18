@@ -113,22 +113,22 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         let y = y1
         
         DebugLog.log("🔍 Centering Options:", category: .app)
-        DebugLog.log("Approach 1 (center): X=\(x1), Y=\(y1)", category: .app)
-        DebugLog.log("Approach 2 (+10px): X=\(x2), Y=\(y2)", category: .app)
-        DebugLog.log("Approach 3 (-10px): X=\(x3), Y=\(y3)", category: .app)
+        DebugLog.log("   Approach 1 (center, category: .app): X=\(x1), Y=\(y1)")
+        DebugLog.log("   Approach 2 (+10px, category: .app): X=\(x2), Y=\(y2)")
+        DebugLog.log("   Approach 3 (-10px, category: .app): X=\(x3), Y=\(y3)")
         
         DebugLog.log("🔍 Window Positioning:", category: .app)
-        DebugLog.log("Calculated X: \(x)", category: .app)
-        DebugLog.log("Calculated Y: \(y)", category: .app)
-        DebugLog.log("Notch center X: \(notchInfo.centerX)", category: .app)
-        DebugLog.log("Notch width: \(notchInfo.width)", category: .app)
-        DebugLog.log("Screen max Y: \(screenFrame.maxY)", category: .app)
+        DebugLog.log("   Calculated X: \(x, category: .app)")
+        DebugLog.log("   Calculated Y: \(y, category: .app)")
+        DebugLog.log("   Notch center X: \(notchInfo.centerX, category: .app)")
+        DebugLog.log("   Notch width: \(notchInfo.width, category: .app)")
+        DebugLog.log("   Screen max Y: \(screenFrame.maxY, category: .app)")
         
         // Set the window to match notch dimensions
         let windowRect = NSRect(x: x, y: y, width: notchInfo.width + 20, height: notchInfo.height + 20)
         window.setFrame(windowRect, display: true)
         
-        DebugLog.log("Final window rect: \(windowRect)", category: .app)
+        DebugLog.log("   Final window rect: \(windowRect, category: .app)")
     }
     
     func toggleOverlay() {
@@ -835,17 +835,17 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     func showTaskCard(for orb: ProjectOrb) {
-        DebugLog.log("🎯 showTaskCard() called for orb: \(orb.name)", category: .app)
+        DebugLog.log("🎯 showTaskCard(, category: .app) called for orb: \(orb.name)")
         
         // Check if this orb already has a task card open
         if taskCardWindows[orb.id] != nil {
-            DebugLog.log("🎯 Toggling off existing task card for orb: \(orb.name)", category: .tasks)
+            DebugLog.log("🎯 Toggling off existing task card for orb: \(orb.name, category: .tasks)")
             hideTaskCard(for: orb)
             return
         }
         
-        DebugLog.log("🎯 Creating new task card for orb: \(orb.name)", category: .tasks)
-        DebugLog.log("🎯 Orb has \(orb.tasks.count) tasks", category: .tasks)
+        DebugLog.log("🎯 Creating new task card for orb: \(orb.name, category: .tasks)")
+        DebugLog.log("🎯 Orb has \(orb.tasks.count, category: .tasks) tasks")
         
         // Calculate dynamic height, or use custom size if set
         let defaultWidth: CGFloat = 360
@@ -881,8 +881,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         taskCardView.frame = NSRect(x: 0, y: 0, width: cardWidth, height: cardHeight)
         window.contentView = taskCardView
         
-        DebugLog.log("🎯 Task card view frame: \(taskCardView.frame)", category: .tasks)
-        DebugLog.log("🎯 Window frame: \(window.frame)", category: .app)
+        DebugLog.log("🎯 Task card view frame: \(taskCardView.frame, category: .tasks)")
+        DebugLog.log("🎯 Window frame: \(window.frame, category: .app)")
         
         // Position the card below the semi-circle
         guard let screen = NSScreen.main,
@@ -954,8 +954,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             })
         })
         
-        DebugLog.log("🎯 Task card animating in at position: \(finalFrame)", category: .tasks)
-        DebugLog.log("🎯 Total open task cards: \(taskCardWindows.count)", category: .tasks)
+        DebugLog.log("🎯 Task card animating in at position: \(finalFrame, category: .tasks)")
+        DebugLog.log("🎯 Total open task cards: \(taskCardWindows.count, category: .tasks)")
     }
     
     func hideTaskCard() {
@@ -1014,14 +1014,14 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
                     self.currentOpenOrb = self.taskCardWindows.isEmpty ? nil : self.orbManager.orbs.first { self.taskCardWindows[$0.id] != nil }
                 }
                 
-                DebugLog.log("🎯 Task card animated out for orb: \(orb.name)", category: .tasks)
-                DebugLog.log("🎯 Remaining open task cards: \(self.taskCardWindows.count)", category: .tasks)
+                DebugLog.log("🎯 Task card animated out for orb: \(orb.name, category: .tasks)")
+                DebugLog.log("🎯 Remaining open task cards: \(self.taskCardWindows.count, category: .tasks)")
             })
         }
     }
     
     func taskCardPinStateChanged(isPinned: Bool) {
-        DebugLog.log("📌 Task card pin state changed: \(isPinned ? "pinned" : "unpinned")", category: .tasks)
+        DebugLog.log("📌 Task card pin state changed: \(isPinned ? "pinned" : "unpinned", category: .tasks)")
         
         if isPinned {
             // If task card is pinned, don't fade it
@@ -1037,7 +1037,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         // Find the orb ID for this task card view
         for (orbId, window) in taskCardWindows {
             if window.contentView === taskCardView {
-                DebugLog.log("❌ Closing task card for orb ID: \(orbId)", category: .tasks)
+                DebugLog.log("❌ Closing task card for orb ID: \(orbId, category: .tasks)")
                 hideTaskCard(for: orbManager.orbs.first { $0.id == orbId } ?? orbManager.orbs[0])
                 return
             }
@@ -1046,11 +1046,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     func showTaskDetail(for task: Task, orbColor: NSColor) {
-        DebugLog.log("🎯 Opening task detail for task: '\(task.title)' (ID: \(task.id))", category: .tasks)
+        DebugLog.log("🎯 Opening task detail for task: '\(task.title, category: .tasks)' (ID: \(task.id))")
         
         // Close existing task detail window for this task if open
         if taskDetailWindows[task.id] != nil {
-            DebugLog.log("🎯 Closing existing window for task ID: \(task.id)", category: .tasks)
+            DebugLog.log("🎯 Closing existing window for task ID: \(task.id, category: .tasks)")
             closeTaskDetail(for: task.id)
         }
         
@@ -1062,7 +1062,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             defer: false
         )
         
-        DebugLog.log("🎯 Created TaskDetailWindow: \(window)", category: .app)
+        DebugLog.log("🎯 Created TaskDetailWindow: \(window, category: .app)")
         
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -1084,7 +1084,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         // Create the task detail view
         let taskDetailView = TaskDetailView(task: task, orbColor: orbColor)
         taskDetailView.setDelegate(self)
-        DebugLog.log("🎯 Created TaskDetailView: \(taskDetailView)", category: .app)
+        DebugLog.log("🎯 Created TaskDetailView: \(taskDetailView, category: .app)")
         
         window.contentView = taskDetailView
         window.contentView?.wantsLayer = true
@@ -1109,14 +1109,14 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         window.makeKeyAndOrderFront(nil)
         taskDetailWindows[task.id] = window
         
-        DebugLog.log("🎯 Task detail window opened and stored for task: '\(task.title)'", category: .tasks)
+        DebugLog.log("🎯 Task detail window opened and stored for task: '\(task.title, category: .tasks)'")
     }
 
     func closeTaskDetail(for taskId: UUID) {
-        DebugLog.log("🎯 Close requested for task ID: \(taskId)", category: .tasks)
+        DebugLog.log("🎯 Close requested for task ID: \(taskId, category: .tasks)")
         
         guard let window = taskDetailWindows.removeValue(forKey: taskId) else {
-            DebugLog.log("⚠️ Close requested but no window found for task ID: \(taskId)", category: .tasks)
+            DebugLog.log("⚠️ Close requested but no window found for task ID: \(taskId, category: .tasks)")
             return
         }
         
@@ -1129,14 +1129,14 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         window.contentView = nil
         window.delegate = nil
         
-        DebugLog.log("🎯 Task detail window closed for task ID: \(taskId)", category: .tasks)
+        DebugLog.log("🎯 Task detail window closed for task ID: \(taskId, category: .tasks)")
     }
     
     func taskDetailView(_ view: TaskDetailView, didTogglePin isPinned: Bool) {
         if let window = view.window as? TaskDetailWindow {
             window.isPinned = isPinned
         }
-        DebugLog.log("📌 Task detail pin state changed: \(isPinned ? "pinned" : "unpinned")", category: .tasks)
+        DebugLog.log("📌 Task detail pin state changed: \(isPinned ? "pinned" : "unpinned", category: .tasks)")
     }
     
     // MARK: - Task Drag and Drop Between Cards
@@ -1241,8 +1241,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             // Trigger orb display update to refresh task counters
             semiCircleView?.needsDisplay = true
             
-            DebugLog.log("🎯 Transferred task '\(task.title)' from '\(source.name)' to '\(target.name)'", category: .tasks)
-            DebugLog.log("🎯 Updated task counts - \(source.name): \(source.taskCount), \(target.name): \(target.taskCount)", category: .tasks)
+            DebugLog.log("🎯 Transferred task '\(task.title, category: .tasks)' from '\(source.name)' to '\(target.name)'")
+            DebugLog.log("🎯 Updated task counts - \(source.name, category: .tasks): \(source.taskCount), \(target.name): \(target.taskCount)")
         }
     }
     
@@ -1312,11 +1312,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         fadeTimer?.invalidate()
         fadeTimer = nil
         
-        DebugLog.log("🔄 resetFadeTimer() called - isFaded: \(isFaded)", category: .app)
+        DebugLog.log("🔄 resetFadeTimer(, category: .app) called - isFaded: \(isFaded)")
         
         // If we were faded, show everything again
         if isFaded {
-            DebugLog.log("🔄 Elements were faded, calling showAllElements()", category: .app)
+            DebugLog.log("🔄 Elements were faded, calling showAllElements(, category: .app)")
             showAllElements()
         }
         
@@ -1325,7 +1325,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             self?.fadeAllElements()
         }
         
-        DebugLog.log("🎯 Fade timer reset - will fade in \(fadeDelay) seconds", category: .app)
+        DebugLog.log("🎯 Fade timer reset - will fade in \(fadeDelay, category: .app) seconds")
     }
     
     func resetFadeTimerWithoutShowing() {
@@ -1333,7 +1333,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         fadeTimer?.invalidate()
         fadeTimer = nil
         
-        DebugLog.log("🔄 resetFadeTimerWithoutShowing() called - isFaded: \(isFaded)", category: .app)
+        DebugLog.log("🔄 resetFadeTimerWithoutShowing(, category: .app) called - isFaded: \(isFaded)")
         
         // Reset faded state since elements are being shown normally
         isFaded = false
@@ -1347,14 +1347,14 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             self?.fadeAllElements()
         }
         
-        DebugLog.log("🎯 Fade timer reset (without showing) - will fade in \(fadeDelay) seconds", category: .app)
+        DebugLog.log("🎯 Fade timer reset (without showing, category: .app) - will fade in \(fadeDelay) seconds")
     }
     
     private func fadeAllElements() {
         guard !isFaded else { return }
         
         isFaded = true
-        DebugLog.log("🎯 Auto-fading all elements after \(fadeDelay) seconds of inactivity", category: .app)
+        DebugLog.log("🎯 Auto-fading all elements after \(fadeDelay, category: .app) seconds of inactivity")
         
         // Fade out semi-circle
         if let semiCircleWindow = semiCircleWindow {
@@ -1369,7 +1369,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         for (orbId, window) in taskCardWindows {
             if window.isVisible {
                 if let taskCardView = window.contentView as? TaskCardView, taskCardView.getPinnedState() {
-                    DebugLog.log("📌 Task card for orb \(orbId) is pinned - skipping fade", category: .tasks)
+                    DebugLog.log("📌 Task card for orb \(orbId, category: .tasks) is pinned - skipping fade")
                 } else {
                     if let taskCardView = window.contentView as? TaskCardView {
                         taskCardView.setAmbientAnimationActive(false)
@@ -1394,7 +1394,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             for (orbId, window) in self.taskCardWindows {
                 if window.isVisible {
                     if let taskCardView = window.contentView as? TaskCardView, taskCardView.getPinnedState() {
-                        DebugLog.log("📌 Task card for orb \(orbId) is pinned - keeping visible", category: .tasks)
+                        DebugLog.log("📌 Task card for orb \(orbId, category: .tasks) is pinned - keeping visible")
                         pinnedCards[orbId] = window
                     } else {
                         window.orderOut(nil)
@@ -1412,7 +1412,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     private func showAllElements() {
         guard isFaded else { 
-            DebugLog.log("🔄 showAllElements() called but isFaded is false, returning", category: .app)
+            DebugLog.log("🔄 showAllElements(, category: .app) called but isFaded is false, returning")
             return 
         }
         
@@ -1456,7 +1456,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         for (orbId, window) in taskCardWindows {
             if window.isVisible {
                 if let taskCardView = window.contentView as? TaskCardView, taskCardView.getPinnedState() {
-                    DebugLog.log("🔄 Showing pinned task card for orb \(orbId)", category: .tasks)
+                    DebugLog.log("🔄 Showing pinned task card for orb \(orbId, category: .tasks)")
                     window.alphaValue = 1.0
                     window.makeKeyAndOrderFront(nil)
                     
@@ -1489,11 +1489,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     func createNewProject(name: String) {
         let sanitizedName = sanitizeOrbName(name)
-        DebugLog.log("🎯 Creating new project: \(sanitizedName)", category: .app)
-        DebugLog.log("🎯 Current orb count before: \(orbManager.orbs.count)", category: .app)
+        DebugLog.log("🎯 Creating new project: \(sanitizedName, category: .app)")
+        DebugLog.log("🎯 Current orb count before: \(orbManager.orbs.count, category: .app)")
         
         if let existing = findSimilarOrb(to: sanitizedName) {
-            DebugLog.log("🎯 Found similar orb: \(existing.name) – pulsing instead of creating duplicate", category: .app)
+            DebugLog.log("🎯 Found similar orb: \(existing.name, category: .app) – pulsing instead of creating duplicate")
             existing.badgePulse = max(existing.badgePulse, 1.1)
             existing.badgePulseDirection = 1.0
             existing.badgeRipplePhase = 0.0
@@ -1504,7 +1504,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         }
         
         if orbManager.orbs.count >= 6 {
-            DebugLog.log("🎯 Maximum number of orbs (6) reached. Cannot create new project.", category: .app)
+            DebugLog.log("🎯 Maximum number of orbs (6, category: .app) reached. Cannot create new project.")
             showMaximumOrbsNotification()
             return
         }
@@ -1512,15 +1512,15 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         let newOrb = orbManager.createOrb(name: sanitizedName)
         primeEmbedding(for: newOrb)
         let initialTaskCount = Int.random(in: 1...4)
-        DebugLog.log("🎯 Creating orb '\(sanitizedName)' with \(initialTaskCount) initial tasks", category: .tasks)
+        DebugLog.log("🎯 Creating orb '\(sanitizedName, category: .tasks)' with \(initialTaskCount) initial tasks")
         for _ in 0..<initialTaskCount {
             newOrb.addTask()
         }
-        DebugLog.log("🎯 Final orb '\(sanitizedName)' has taskCount: \(newOrb.taskCount), tasks.count: \(newOrb.tasks.count)", category: .tasks)
+        DebugLog.log("🎯 Final orb '\(sanitizedName, category: .tasks)' has taskCount: \(newOrb.taskCount), tasks.count: \(newOrb.tasks.count)")
         
-        DebugLog.log("🎯 Current orb count after: \(orbManager.orbs.count)", category: .app)
-        DebugLog.log("🎯 Semi-circle visible: \(isSemiCircleVisible)", category: .app)
-        DebugLog.log("🎯 Semi-circle window visible: \(semiCircleWindow?.isVisible ?? false)", category: .app)
+        DebugLog.log("🎯 Current orb count after: \(orbManager.orbs.count, category: .app)")
+        DebugLog.log("🎯 Semi-circle visible: \(isSemiCircleVisible, category: .app)")
+        DebugLog.log("🎯 Semi-circle window visible: \(semiCircleWindow?.isVisible ?? false, category: .app)")
         
         if semiCircleWindow?.isVisible != true {
             DebugLog.log("🎯 Showing semi-circle for first time", category: .app)
@@ -1533,7 +1533,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             }
         }
         
-        DebugLog.log("🎯 Created project '\(sanitizedName)' with \(initialTaskCount) tasks", category: .tasks)
+        DebugLog.log("🎯 Created project '\(sanitizedName, category: .tasks)' with \(initialTaskCount) tasks")
     }
 
     private func sanitizeOrbName(_ name: String) -> String {
@@ -1628,7 +1628,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     private func setupSemiCircle() {
-        DebugLog.log("🎯 setupSemiCircle() called", category: .app)
+        DebugLog.log("🎯 setupSemiCircle(, category: .app) called")
         
         // Create semi-circle window - smaller size
         let window = NSWindow(
@@ -1650,10 +1650,10 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         // Ensure the window can become key
         window.hidesOnDeactivate = false
         
-        DebugLog.log("🎯 Semi-circle window created with frame: \(window.frame)", category: .app)
-        DebugLog.log("🎯 Window level: \(window.level.rawValue)", category: .app)
-        DebugLog.log("🎯 Window ignoresMouseEvents: \(window.ignoresMouseEvents)", category: .app)
-        DebugLog.log("🎯 Window acceptsMouseMovedEvents: \(window.acceptsMouseMovedEvents)", category: .app)
+        DebugLog.log("🎯 Semi-circle window created with frame: \(window.frame, category: .app)")
+        DebugLog.log("🎯 Window level: \(window.level.rawValue, category: .app)")
+        DebugLog.log("🎯 Window ignoresMouseEvents: \(window.ignoresMouseEvents, category: .app)")
+        DebugLog.log("🎯 Window acceptsMouseMovedEvents: \(window.acceptsMouseMovedEvents, category: .app)")
         
         // Ensure no black elements show through
         window.contentView?.wantsLayer = true
@@ -1675,7 +1675,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             DebugLog.log("🖱️ Mouse tracking setup attempted in setupSemiCircle", category: .app)
         }
         
-        DebugLog.log("🎯 Semi-circle setup complete - window stored: \(self.semiCircleWindow != nil)", category: .app)
+        DebugLog.log("🎯 Semi-circle setup complete - window stored: \(self.semiCircleWindow != nil, category: .app)")
     }
     
     
@@ -1740,12 +1740,12 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         }
         
         DebugLog.log("🔄 Testing view responsiveness...", category: .app)
-        DebugLog.log("🔄 View bounds: \(semiCircleView.bounds)", category: .app)
-        DebugLog.log("🔄 View window: \(semiCircleView.window != nil)", category: .app)
-        DebugLog.log("🔄 View acceptsFirstMouse: \(semiCircleView.acceptsFirstMouse(for: nil))", category: .app)
-        DebugLog.log("🔄 View acceptsFirstResponder: \(semiCircleView.acceptsFirstResponder)", category: .app)
-        DebugLog.log("🔄 View isHidden: \(semiCircleView.isHidden)", category: .app)
-        DebugLog.log("🔄 View alphaValue: \(semiCircleView.alphaValue)", category: .app)
+        DebugLog.log("🔄 View bounds: \(semiCircleView.bounds, category: .app)")
+        DebugLog.log("🔄 View window: \(semiCircleView.window != nil, category: .app)")
+        DebugLog.log("🔄 View acceptsFirstMouse: \(semiCircleView.acceptsFirstMouse(for: nil, category: .app))")
+        DebugLog.log("🔄 View acceptsFirstResponder: \(semiCircleView.acceptsFirstResponder, category: .app)")
+        DebugLog.log("🔄 View isHidden: \(semiCircleView.isHidden, category: .app)")
+        DebugLog.log("🔄 View alphaValue: \(semiCircleView.alphaValue, category: .app)")
         
         // Test if we can post a test notification
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -1756,24 +1756,24 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     @objc private func handleOrbClicked(_ notification: Notification) {
         DebugLog.log("🎯 handleOrbClicked called", category: .app)
-        DebugLog.log("🎯 Notification object: \(notification.object)", category: .app)
-        DebugLog.log("🎯 Notification name: \(notification.name)", category: .app)
+        DebugLog.log("🎯 Notification object: \(notification.object, category: .app)")
+        DebugLog.log("🎯 Notification name: \(notification.name, category: .app)")
         
         guard let orb = notification.object as? ProjectOrb else {
             DebugLog.log("🚨 ERROR: Invalid orb object in notification", category: .app)
             return
         }
         
-        DebugLog.log("🎯 Received orb click notification for: \(orb.name)", category: .app)
-        DebugLog.log("🎯 Current open orb: \(currentOpenOrb?.name ?? "none")", category: .app)
+        DebugLog.log("🎯 Received orb click notification for: \(orb.name, category: .app)")
+        DebugLog.log("🎯 Current open orb: \(currentOpenOrb?.name ?? "none", category: .app)")
         
         // Reset auto-fade timer on orb interaction
-        DebugLog.log("🎯 Calling resetFadeTimer()", category: .app)
+        DebugLog.log("🎯 Calling resetFadeTimer(, category: .app)")
         resetFadeTimer()
         
-        DebugLog.log("🎯 Calling showTaskCard()", category: .app)
+        DebugLog.log("🎯 Calling showTaskCard(, category: .app)")
         showTaskCard(for: orb)
-        DebugLog.log("🎯 showTaskCard() completed", category: .app)
+        DebugLog.log("🎯 showTaskCard(, category: .app) completed")
     }
     
     private func positionSemiCircle(_ window: NSWindow) {
@@ -1814,10 +1814,10 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             return 
         }
         
-        DebugLog.log("🎯 showSemiCircle() called - window exists: \(window != nil)", category: .app)
-        DebugLog.log("🎯 Window frame: \(window.frame)", category: .app)
-        DebugLog.log("🎯 Window level: \(window.level.rawValue)", category: .app)
-        DebugLog.log("🎯 Window isVisible: \(window.isVisible)", category: .app)
+        DebugLog.log("🎯 showSemiCircle(, category: .app) called - window exists: \(window != nil)")
+        DebugLog.log("🎯 Window frame: \(window.frame, category: .app)")
+        DebugLog.log("🎯 Window level: \(window.level.rawValue, category: .app)")
+        DebugLog.log("🎯 Window isVisible: \(window.isVisible, category: .app)")
         
         // Ensure window is positioned correctly before animation
         positionSemiCircle(window)
@@ -1848,7 +1848,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         }
         
         DebugLog.log("🎯 Window made key and ordered front", category: .app)
-        DebugLog.log("🎯 Window isVisible after makeKeyAndOrderFront: \(window.isVisible)", category: .app)
+        DebugLog.log("🎯 Window isVisible after makeKeyAndOrderFront: \(window.isVisible, category: .app)")
         
         // Mark as visible
         isSemiCircleVisible = true
@@ -1865,7 +1865,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         } completionHandler: {
             // Show orbs after semi-circle appears
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                DebugLog.log("🔄 About to show orbs - isFaded: \(self.isFaded)", category: .app)
+                DebugLog.log("🔄 About to show orbs - isFaded: \(self.isFaded, category: .app)")
                 self.orbManager.showOrbs {
                     DebugLog.log("🔄 Orbs shown", category: .app)
                     // Force redraw of the semi-circle view
@@ -1908,21 +1908,21 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         // Let's also try the screen's actual center point
         let screenCenter = CGPoint(x: screenFrame.midX, y: screenFrame.midY)
-        DebugLog.log("Screen center point: \(screenCenter)", category: .app)
+        DebugLog.log("   Screen center point: \(screenCenter, category: .app)")
         
         DebugLog.log("🔍 Screen Frame Info:", category: .app)
-        DebugLog.log("Screen frame: \(screenFrame)", category: .app)
-        DebugLog.log("Visible frame: \(screen.visibleFrame)", category: .app)
-        DebugLog.log("Screen midX: \(screenFrame.midX)", category: .app)
-        DebugLog.log("Visible midX: \(screen.visibleFrame.midX)", category: .app)
+        DebugLog.log("   Screen frame: \(screenFrame, category: .app)")
+        DebugLog.log("   Visible frame: \(screen.visibleFrame, category: .app)")
+        DebugLog.log("   Screen midX: \(screenFrame.midX, category: .app)")
+        DebugLog.log("   Visible midX: \(screen.visibleFrame.midX, category: .app)")
         
         DebugLog.log("🔍 Proper Notch Detection:", category: .app)
-        DebugLog.log("Screen frame: \(screenFrame)", category: .app)
-        DebugLog.log("Safe area insets: \(safeAreaInsets)", category: .app)
-        DebugLog.log("Has notch: \(screen.hasTopNotchDesign)", category: .app)
-        DebugLog.log("Notch width: \(notchWidth)px", category: .app)
-        DebugLog.log("Notch height: \(notchHeight)px", category: .app)
-        DebugLog.log("Notch center X: \(centerX)px", category: .app)
+        DebugLog.log("   Screen frame: \(screenFrame, category: .app)")
+        DebugLog.log("   Safe area insets: \(safeAreaInsets, category: .app)")
+        DebugLog.log("   Has notch: \(screen.hasTopNotchDesign, category: .app)")
+        DebugLog.log("   Notch width: \(notchWidth, category: .app)px")
+        DebugLog.log("   Notch height: \(notchHeight, category: .app)px")
+        DebugLog.log("   Notch center X: \(centerX, category: .app)px")
         
         return (
             width: notchWidth,
@@ -2135,18 +2135,18 @@ class SemiCircleView: NSView {
         
         override func mouseDown(with event: NSEvent) {
             let mouseLocation = convert(event.locationInWindow, from: nil)
-            DebugLog.log("🖱️ Mouse DOWN at: \(mouseLocation)", category: .app)
+            DebugLog.log("🖱️ Mouse DOWN at: \(mouseLocation, category: .app)")
             
             // Check if we clicked on an orb
             if let clickedOrb = findOrbAt(location: mouseLocation) {
-                DebugLog.log("🖱️ Clicked on orb: \(clickedOrb.name)", category: .app)
+                DebugLog.log("🖱️ Clicked on orb: \(clickedOrb.name, category: .app)")
                 startDragOperation(orb: clickedOrb, at: mouseLocation)
             }
         }
         
         override func mouseUp(with event: NSEvent) {
             let mouseLocation = convert(event.locationInWindow, from: nil)
-            DebugLog.log("🖱️ Mouse UP at: \(mouseLocation)", category: .app)
+            DebugLog.log("🖱️ Mouse UP at: \(mouseLocation, category: .app)")
             
             if isDragging {
                 endDragOperation(at: mouseLocation)
@@ -2167,16 +2167,16 @@ class SemiCircleView: NSView {
             let centerY = bounds.maxY - 10
             let radius = min(bounds.width, bounds.height) / 2 + 18.5
             
-            DebugLog.log("🖱️ Checking for clicked orb at location: \(location)", category: .app)
-            DebugLog.log("🖱️ Center: (\(centerX), \(centerY)), Radius: \(radius)", category: .app)
-            DebugLog.log("🖱️ Total orbs: \(orbManager.orbs.count)", category: .app)
+            DebugLog.log("🖱️ Checking for clicked orb at location: \(location, category: .app)")
+            DebugLog.log("🖱️ Center: (\(centerX, category: .app), \(centerY)), Radius: \(radius)")
+            DebugLog.log("🖱️ Total orbs: \(orbManager.orbs.count, category: .app)")
             
             for (index, orb) in orbManager.orbs.enumerated() {
-                DebugLog.log("🖱️ Orb \(index): \(orb.name), visible: \(orb.isVisible), animationScale: \(orb.animationScale)", category: .app)
+                DebugLog.log("🖱️ Orb \(index, category: .app): \(orb.name), visible: \(orb.isVisible), animationScale: \(orb.animationScale)")
                 
                 // Only check if orb is visible - remove animationScale check for now
                 guard orb.isVisible else { 
-                    DebugLog.log("🖱️ Orb \(index) not visible, skipping", category: .app)
+                    DebugLog.log("🖱️ Orb \(index, category: .app) not visible, skipping")
                     continue 
                 }
                 
@@ -2193,10 +2193,10 @@ class SemiCircleView: NSView {
                 
                 let distance = sqrt(pow(location.x - orbX, 2) + pow(location.y - orbY, 2))
                 
-                DebugLog.log("🖱️ Orb \(index) at (\(orbX), \(orbY)), radius: \(orbRadius), distance: \(distance)", category: .app)
+                DebugLog.log("🖱️ Orb \(index, category: .app) at (\(orbX), \(orbY)), radius: \(orbRadius), distance: \(distance)")
                 
                 if distance <= orbRadius {
-                    DebugLog.log("🖱️ Found clicked orb at index \(index): \(orb.name)", category: .app)
+                    DebugLog.log("🖱️ Found clicked orb at index \(index, category: .app): \(orb.name)")
                     return orb
                 }
             }
@@ -2211,7 +2211,7 @@ class SemiCircleView: NSView {
         // MARK: - Drag and Drop Operations
         
         private func startDragOperation(orb: ProjectOrb, at location: NSPoint) {
-            DebugLog.log("🚀 Starting drag operation for orb: \(orb.name)", category: .app)
+            DebugLog.log("🚀 Starting drag operation for orb: \(orb.name, category: .app)")
             isDragging = true
             draggedOrb = orb
             dragStartLocation = location
@@ -2229,7 +2229,7 @@ class SemiCircleView: NSView {
         }
         
         private func endDragOperation(at location: NSPoint) {
-            DebugLog.log("🚀 Ending drag operation at: \(location)", category: .app)
+            DebugLog.log("🚀 Ending drag operation at: \(location, category: .app)")
             
             // Check if orb was dragged far enough from original position
             let dragDistance = sqrt(pow(location.x - dragStartLocation.x, 2) + pow(location.y - dragStartLocation.y, 2))
