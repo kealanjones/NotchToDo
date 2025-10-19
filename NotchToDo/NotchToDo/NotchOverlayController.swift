@@ -14,6 +14,9 @@ extension NSScreen {
 }
 
 class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
+    private let persistenceController: PersistenceController
+    private let orbStore: OrbPersistenceStore
+    private let orbManager: OrbManager
     private var notchIndicatorWindow: NSWindow?
     private var semiCircleWindow: NSWindow?
     private var semiCircleView: SemiCircleWithOrbsView? // Added
@@ -22,7 +25,6 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private var taskDetailWindows: [UUID: NSWindow] = [:] // Track task detail windows by task ID
     private var currentListenState: ListenState = .idle
     var isSemiCircleVisible = false // Added
-    private var orbManager = OrbManager()
     private lazy var wordEmbedding: NLEmbedding? = NLEmbedding.wordEmbedding(for: .english)
     private var orbEmbeddingCache: [UUID: [Double]] = [:]
     private let embeddingStopWords: Set<String> = ["the", "a", "an", "to", "into", "my", "for", "and", "please", "could", "you", "me", "can", "would", "notch", "hey", "ok", "okay", "add", "create", "make", "start"]
@@ -48,11 +50,37 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     // Card size preferences (stores custom sizes per orb)
     internal var customCardSizes: [UUID: CGSize] = [:]
     
-    init() {
+    init(persistenceController: PersistenceController = .shared) {
+        self.persistenceController = persistenceController
+        self.orbStore = OrbPersistenceStore(persistenceController: persistenceController)
+        self.orbManager = OrbManager(includeSampleData: true)
+        loadOrbState()
+        orbManager.onChange = { [weak self] in
+            self?.scheduleOrbSave()
+        }
         setupNotchIndicator()
         setupSemiCircle()
         setupNotificationObservers()
         refreshOrbEmbeddingCache()
+    }
+
+    private func loadOrbState() {
+        do {
+            let snapshots = try orbStore.loadSnapshots()
+            orbManager.applySnapshots(snapshots)
+            if snapshots.isEmpty {
+                scheduleOrbSave()
+            }
+        } catch {
+            DebugLog.log("Failed to load persisted orb state: \(error)", category: .persistence)
+            orbManager.applySnapshots([])
+            scheduleOrbSave()
+        }
+    }
+
+    private func scheduleOrbSave() {
+        let snapshots = orbManager.makeSnapshots()
+        orbStore.scheduleSave(orbs: snapshots)
     }
     
         private func setupNotchIndicator() {
@@ -361,7 +389,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         } else if let screen = NSScreen.main {
             let top = screen.frame.maxY
             let middle = screen.frame.midY
-            let centerY = top - (top - middle) / 3.0
+            let blendFactor: CGFloat = 0.55 // place a bit lower than previous one-third positioning
+            let centerY = top - (top - middle) * blendFactor
             origin.y = centerY - window.frame.height / 2.0
             origin.x = screen.frame.midX - window.frame.width / 2.0
         } else {
@@ -1511,13 +1540,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         let newOrb = orbManager.createOrb(name: sanitizedName)
         primeEmbedding(for: newOrb)
-        let initialTaskCount = Int.random(in: 1...4)
-        DebugLog.log("🎯 Creating orb '\(sanitizedName)' with \(initialTaskCount) initial tasks", category: .tasks)
-        for _ in 0..<initialTaskCount {
-            newOrb.addTask()
-        }
-        DebugLog.log("🎯 Final orb '\(sanitizedName)' has taskCount: \(newOrb.taskCount), tasks.count: \(newOrb.tasks.count)", category: .tasks)
-        
+        DebugLog.log("🎯 Created orb '\(sanitizedName)' with taskCount: \(newOrb.taskCount)", category: .tasks)
+
         DebugLog.log("🎯 Current orb count after: \(orbManager.orbs.count)", category: .app)
         DebugLog.log("🎯 Semi-circle visible: \(isSemiCircleVisible)", category: .app)
         DebugLog.log("🎯 Semi-circle window visible: \(semiCircleWindow?.isVisible ?? false)", category: .app)
@@ -1533,7 +1557,6 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             }
         }
         
-        DebugLog.log("🎯 Created project '\(sanitizedName)' with \(initialTaskCount) tasks", category: .tasks)
     }
 
     private func sanitizeOrbName(_ name: String) -> String {
@@ -1756,7 +1779,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     @objc private func handleOrbClicked(_ notification: Notification) {
         DebugLog.log("🎯 handleOrbClicked called", category: .app)
-        DebugLog.log("🎯 Notification object: \(notification.object)", category: .app)
+        DebugLog.log("🎯 Notification object: \(String(describing: notification.object))", category: .app)
         DebugLog.log("🎯 Notification name: \(notification.name)", category: .app)
         
         guard let orb = notification.object as? ProjectOrb else {
@@ -1780,8 +1803,6 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         guard let screen = NSScreen.main else { return }
         
         let screenFrame = screen.frame
-        let notchInfo = getNotchInfo(for: screen)
-        
         // Position semi-circle to overlap the notch in the menu bar area
         let x = screenFrame.midX - window.frame.width / 2
         let y = screenFrame.maxY - window.frame.height + 10 // Position to overlap notch in menu bar
@@ -1814,7 +1835,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             return 
         }
         
-        DebugLog.log("🎯 showSemiCircle() called - window exists: \(window != nil)", category: .app)
+        DebugLog.log("🎯 showSemiCircle() called", category: .app)
         DebugLog.log("🎯 Window frame: \(window.frame)", category: .app)
         DebugLog.log("🎯 Window level: \(window.level.rawValue)", category: .app)
         DebugLog.log("🎯 Window isVisible: \(window.isVisible)", category: .app)
@@ -2372,8 +2393,8 @@ class SemiCircleView: NSView {
                 let normalizedX = dx * invDist
                 let normalizedY = dy * invDist
                 let proximity = max(0.0, 1.0 - (distance / influenceRadius))
-                let leanMagnitude = proximity * presence * (isTarget ? 20.0 : 12.0)
-                let verticalScale: CGFloat = isTarget ? 0.95 : 0.7
+                let leanMagnitude = proximity * presence * (isTarget ? 20.0 : 7.0)
+                let verticalScale: CGFloat = isTarget ? 0.95 : 0.6
                 let bubbleVector = CGPoint(
                     x: normalizedX * leanMagnitude,
                     y: normalizedY * leanMagnitude * verticalScale
@@ -2382,7 +2403,8 @@ class SemiCircleView: NSView {
                 combinedTarget.x += (bubbleVector.x - combinedTarget.x) * smoothing
                 combinedTarget.y += (bubbleVector.y - combinedTarget.y) * smoothing
                 orb.setSpringTarget(combinedTarget)
-                let targetInfluence = proximity * presence * (isTarget ? 1.0 : 0.55)
+                let baseInfluence = proximity * presence
+                let targetInfluence = isTarget ? baseInfluence : baseInfluence * 0.18
                 orb.bubbleInfluence += (targetInfluence - orb.bubbleInfluence) * smoothing
                 let normalizedSpeed = min(max(bubbleSpeed / 500.0, 0.0), 1.0)
                 if isTarget && normalizedSpeed > 0.1 && proximity > 0.45 {
@@ -2537,6 +2559,8 @@ class SemiCircleView: NSView {
             DebugLog.log("🎯 Orbs not visible, skipping draw", category: .app)
             return 
         }
+
+        let bubbleTargetId = controller?.bubbleTargetOrbId()
         
         for (index, orb) in orbManager.orbs.enumerated() {
             
@@ -2554,8 +2578,11 @@ class SemiCircleView: NSView {
 
             let displacementMagnitude = hypot(Double(orb.springTargetDisplacement.x), Double(orb.springTargetDisplacement.y))
             let normalizedDisplacement = min(1.0, displacementMagnitude / max(orb.maxDisplacement, 0.001))
-            let bubbleGlowScale = 1.0 + Double(orb.bubbleInfluence) * 0.8
-            let attractionScale = (1.0 + normalizedDisplacement * 0.3) * bubbleGlowScale
+            let isBubbleTarget = (bubbleTargetId == orb.id)
+            let displacementGain = isBubbleTarget ? 0.3 : 0.12
+            let glowIntensity = isBubbleTarget ? 0.85 : 0.25
+            let bubbleGlowScale = 1.0 + Double(orb.bubbleInfluence) * glowIntensity
+            let attractionScale = (1.0 + normalizedDisplacement * displacementGain) * bubbleGlowScale
             
             // Apply smooth hover effect only to the hovered orb
             let isHovered = (hoveredOrbId == orb.id)
@@ -2670,8 +2697,6 @@ class SemiCircleView: NSView {
         let hoverContribution = isHovered ? currentHoverScale : 1.0
         let combinedGlowMultiplier = max(1.0, hoverContribution * magneticStrength)
         let glowSize = size * 1.8 * combinedGlowMultiplier
-        let glowRect = CGRect(x: x - glowSize/2, y: y - glowSize/2, width: glowSize, height: glowSize)
-        
         // Enhanced glow intensity on hover
         let baseGlowIntensity = isHovered ? 0.3 + (hoverContribution - 1.0) * 0.2 : 0.25
         let glowIntensity = baseGlowIntensity * magneticStrength

@@ -7,6 +7,7 @@ enum DebugCategory: CaseIterable, Hashable {
     case overlay
     case tasks
     case physics
+    case persistence
     
     var displayName: String {
         switch self {
@@ -16,6 +17,7 @@ enum DebugCategory: CaseIterable, Hashable {
         case .overlay: return "Overlay & UI"
         case .tasks: return "Tasks & Cards"
         case .physics: return "Physics"
+        case .persistence: return "Persistence"
         }
     }
     
@@ -27,11 +29,12 @@ enum DebugCategory: CaseIterable, Hashable {
         case .overlay: return "OVERLAY"
         case .tasks: return "TASK"
         case .physics: return "PHYS"
+        case .persistence: return "DATA"
         }
     }
     
     static var defaultEnabled: Set<DebugCategory> {
-        return [.app, .intent, .speech, .overlay, .tasks]
+        return [.app, .intent, .speech, .overlay, .tasks, .persistence]
     }
 }
 

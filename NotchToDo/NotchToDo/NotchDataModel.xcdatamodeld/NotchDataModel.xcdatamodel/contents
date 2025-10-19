@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="21646" systemVersion="23G93" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="OrbEntity" representedClassName="OrbEntity" syncable="YES">
+        <attribute name="colorHex" attributeType="String" optional="NO" usesScalarValueType="NO"/>
+        <attribute name="createdAt" attributeType="Date" optional="NO" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" optional="NO" usesScalarValueType="NO"/>
+        <attribute name="name" attributeType="String" optional="NO" usesScalarValueType="NO"/>
+        <attribute name="sortOrder" attributeType="Double" optional="NO" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="updatedAt" attributeType="Date" optional="YES" usesScalarValueType="NO"/>
+        <relationship name="tasks" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="TaskEntity" inverseName="orb" inverseEntity="TaskEntity"/>
+    </entity>
+    <entity name="TaskEntity" representedClassName="TaskEntity" syncable="YES">
+        <attribute name="createdAt" attributeType="Date" optional="NO" usesScalarValueType="NO"/>
+        <attribute name="dueDate" attributeType="Date" optional="YES" usesScalarValueType="NO"/>
+        <attribute name="id" attributeType="UUID" optional="NO" usesScalarValueType="NO"/>
+        <attribute name="isCompleted" attributeType="Boolean" optional="NO" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="notes" attributeType="String" optional="YES" usesScalarValueType="NO"/>
+        <attribute name="priority" attributeType="Integer 16" optional="NO" defaultValueString="1" usesScalarValueType="YES"/>
+        <attribute name="sortOrder" attributeType="Double" optional="NO" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="title" attributeType="String" optional="NO" usesScalarValueType="NO"/>
+        <relationship name="orb" optional="NO" toMany="NO" deletionRule="Nullify" destinationEntity="OrbEntity" inverseName="tasks" inverseEntity="OrbEntity"/>
+    </entity>
+    <elements>
+        <element name="OrbEntity" positionX="-63" positionY="-45" width="128" height="150"/>
+        <element name="TaskEntity" positionX="183" positionY="-45" width="128" height="165"/>
+    </elements>
+</model>

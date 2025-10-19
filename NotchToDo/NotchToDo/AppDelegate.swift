@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var intentRouter: IntentRouter?
     private var pendingClarification: ClarificationPending?
     private var logMenuItems: [DebugCategory: NSMenuItem] = [:]
+    private let persistenceController = PersistenceController.shared
     private lazy var debugMenu: NSMenu = {
         let menu = NSMenu()
         menu.delegate = self
@@ -39,7 +40,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func setupOverlay() {
-        overlayController = NotchOverlayController()
+        overlayController = NotchOverlayController(persistenceController: persistenceController)
     }
     
     private func setupAudioEngines() {

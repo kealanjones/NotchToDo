@@ -2,27 +2,70 @@ import Cocoa
 
 // MARK: - Task Data Model
     class Task: ObservableObject, Identifiable {
-        let id = UUID()
-        @Published var title: String
-        @Published var isCompleted: Bool = false
-        @Published var details: String = ""
-        @Published var deadline: Date?
-        @Published var priority: Int = 1 // 1-5 scale (1 = low, 5 = high)
+        let id: UUID
+        @Published var title: String {
+            didSet { notifyChange() }
+        }
+        @Published var isCompleted: Bool {
+            didSet { notifyChange() }
+        }
+        @Published var details: String {
+            didSet { notifyChange() }
+        }
+        @Published var deadline: Date? {
+            didSet { notifyChange() }
+        }
+        @Published var priority: Int {
+            didSet { notifyChange() }
+        }
+        var createdAt: Date {
+            didSet { notifyChange() }
+        }
+        var sortOrder: Double {
+            didSet { notifyChange() }
+        }
+        var onChange: (() -> Void)?
         
-        init(title: String) {
+        init(
+            id: UUID = UUID(),
+            title: String,
+            isCompleted: Bool = false,
+            details: String = "",
+            deadline: Date? = nil,
+            priority: Int = 1,
+            createdAt: Date = Date(),
+            sortOrder: Double = 0.0
+        ) {
+            self.id = id
             self.title = title
+            self.isCompleted = isCompleted
+            self.details = details
+            self.deadline = deadline
+            self.priority = priority
+            self.createdAt = createdAt
+            self.sortOrder = sortOrder
+        }
+        
+        private func notifyChange() {
+            onChange?()
         }
     }
 
     // MARK: - Project Orb Data Model
     class ProjectOrb: ObservableObject, Identifiable {
-        let id = UUID()
-        let name: String
+        let id: UUID
         let color: NSColor
-        @Published var taskCount: Int = 0
+        @Published var name: String {
+            didSet { notifyChange() }
+        }
+        @Published var taskCount: Int = 0 {
+            didSet { notifyChange() }
+        }
         @Published var isVisible: Bool = false
         @Published var animationScale: Double = 0.0 // For growth animation
-        @Published var tasks: [Task] = []
+        @Published var tasks: [Task] = [] {
+            didSet { notifyChange() }
+        }
         
         // Position around semi-circle rim
         @Published var angle: Double = 0.0 // In radians
@@ -54,53 +97,113 @@ import Cocoa
         var badgeRipplePhase: Double = 0.0
         private var lastRecordedTaskCount: Int = 0
         var bubbleInfluence: CGFloat = 0.0
+        var sortOrder: Double = 0.0
+        var createdAt: Date
+        var updatedAt: Date?
+        var onChange: (() -> Void)?
     
-    init(name: String, color: NSColor) {
-        self.name = name
-        self.color = color
-        self.hoverPhaseOffset = Double.random(in: 0...(Double.pi * 2.0))
-        self.hoverSpeedMultiplier = Double.random(in: 0.32...0.55)
-        self.hoverAmplitude = CGFloat.random(in: 1.5...3.0)
-    }
+        init(
+            id: UUID = UUID(),
+            name: String,
+            color: NSColor,
+            createdAt: Date = Date(),
+            sortOrder: Double = 0.0
+        ) {
+            self.id = id
+            self.name = name
+            self.color = color
+            self.createdAt = createdAt
+            self.sortOrder = sortOrder
+            self.hoverPhaseOffset = Double.random(in: 0...(Double.pi * 2.0))
+            self.hoverSpeedMultiplier = Double.random(in: 0.32...0.55)
+            self.hoverAmplitude = CGFloat.random(in: 1.5...3.0)
+            self.taskCount = tasks.count
+        }
     
-    func addTask() {
-        addTask(title: "New Task \(tasks.count + 1)")
-    }
-    
-    func addTask(title: String) {
-        let task = Task(title: title)
-        tasks.append(task)
-        taskCount = tasks.count
-        registerTaskCountChange(newValue: taskCount)
-        DebugLog.log("Added task to \(name): taskCount now \(taskCount), tasks.count = \(tasks.count)", category: .tasks)
-        DebugLog.log("Tasks in \(name): \(tasks.map { $0.title })", category: .tasks)
-    }
-    
-    func removeTask() {
-        if !tasks.isEmpty {
-            tasks.removeLast()
+        func addTask() {
+            addTask(title: "New Task \(tasks.count + 1)")
+        }
+        
+        func addTask(title: String) {
+            let task = Task(title: title, sortOrder: Double(tasks.count))
+            addTask(task)
+        }
+        
+        func addTask(from snapshot: TaskSnapshot) {
+            let task = Task(
+                id: snapshot.id,
+                title: snapshot.title,
+                isCompleted: snapshot.isCompleted,
+                details: snapshot.notes,
+                deadline: snapshot.dueDate,
+                priority: snapshot.priority,
+                createdAt: snapshot.createdAt,
+                sortOrder: snapshot.sortOrder
+            )
+            addTask(task)
+        }
+        
+        private func addTask(_ task: Task) {
+            attachChangeHandler(to: task)
+            tasks.append(task)
+            reindexTasks()
             taskCount = tasks.count
             registerTaskCountChange(newValue: taskCount)
+            DebugLog.log("Added task to \(name): taskCount now \(taskCount), tasks.count = \(tasks.count)", category: .tasks)
+            DebugLog.log("Tasks in \(name): \(tasks.map { $0.title })", category: .tasks)
+            notifyChange()
         }
-    }
-    
-    func syncTaskCount() {
-        let oldCount = taskCount
-        taskCount = tasks.count
-        if oldCount != taskCount {
+        
+        func removeTask() {
+            guard !tasks.isEmpty else { return }
+            tasks.removeLast()
+            reindexTasks()
+            taskCount = tasks.count
             registerTaskCountChange(newValue: taskCount)
-            DebugLog.log("Synced task count for \(name): \(oldCount) -> \(taskCount) (tasks.count = \(tasks.count))", category: .tasks)
+            notifyChange()
+        }
+        
+        func syncTaskCount() {
+            let oldCount = taskCount
+            taskCount = tasks.count
+            if oldCount != taskCount {
+                registerTaskCountChange(newValue: taskCount)
+                DebugLog.log("Synced task count for \(name): \(oldCount) -> \(taskCount) (tasks.count = \(tasks.count))", category: .tasks)
+                notifyChange()
+            }
+        }
+        
+        private func registerTaskCountChange(newValue: Int) {
+            let delta = newValue - lastRecordedTaskCount
+            guard delta != 0 else { return }
+            badgePulse = min(1.2, badgePulse + 1.0)
+            badgePulseDirection = delta >= 0 ? 1.0 : -1.0
+            badgeRipplePhase = 0.0
+            lastRecordedTaskCount = newValue
+        }
+
+        private func reindexTasks() {
+            for (index, task) in tasks.enumerated() {
+                let order = Double(index)
+                if task.sortOrder != order {
+                    task.sortOrder = order
+                }
+            }
+        }
+        
+    private func attachChangeHandler(to task: Task) {
+        task.onChange = { [weak self] in
+            self?.notifyChange()
         }
     }
     
-    private func registerTaskCountChange(newValue: Int) {
-        let delta = newValue - lastRecordedTaskCount
-        guard delta != 0 else { return }
-        badgePulse = min(1.2, badgePulse + 1.0)
-        badgePulseDirection = delta >= 0 ? 1.0 : -1.0
-        badgeRipplePhase = 0.0
-        lastRecordedTaskCount = newValue
+    func rebindTaskHandlers() {
+        tasks.forEach { attachChangeHandler(to: $0) }
     }
+        
+        private func notifyChange() {
+            onChange?()
+        }
     
     // MARK: - Physics Methods
     
@@ -263,6 +366,30 @@ extension NSColor {
     func shadowed() -> NSColor {
         return blended(withFraction: 0.35, of: .black) ?? self
     }
+
+    func toHexString() -> String {
+        guard let rgb = usingColorSpace(.extendedSRGB) ?? usingColorSpace(.sRGB) else {
+            return "#4F5FFF"
+        }
+        let r = Int(round(rgb.redComponent * 255.0))
+        let g = Int(round(rgb.greenComponent * 255.0))
+        let b = Int(round(rgb.blueComponent * 255.0))
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
+
+    static func fromHexString(_ hex: String) -> NSColor? {
+        var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("#") {
+            cleaned.removeFirst()
+        }
+        guard cleaned.count == 6, let value = Int(cleaned, radix: 16) else {
+            return nil
+        }
+        let r = CGFloat((value >> 16) & 0xFF) / 255.0
+        let g = CGFloat((value >> 8) & 0xFF) / 255.0
+        let b = CGFloat(value & 0xFF) / 255.0
+        return NSColor(calibratedRed: r, green: g, blue: b, alpha: 1.0)
+    }
 }
 
     // MARK: - Orb Manager
@@ -280,16 +407,24 @@ extension NSColor {
     private let baseOrbSize: Double = 40.0
     private let minOrbSize: Double = 20.0
     private let maxOrbs: Int = 6
+    var onChange: (() -> Void)?
+    private let includeSampleData: Bool
     
-    init() {
-        // Add some test orbs for development
-        addTestOrbs()
+    init(includeSampleData: Bool = false) {
+        self.includeSampleData = includeSampleData
+        if includeSampleData {
+            seedSampleOrbsIfNeeded()
+        } else {
+            orbs = []
+        }
     }
     
         // MARK: - Orb Management
         func createOrb(name: String) -> ProjectOrb {
             let color = OrbColorPalette.getUniqueColor(for: orbs.count)
-            let orb = ProjectOrb(name: name, color: color)
+            let sortOrder = Double(orbs.count)
+            let orb = ProjectOrb(name: name, color: color, createdAt: Date(), sortOrder: sortOrder)
+            configureOrb(orb)
             
             // Give each orb a unique starting animation phase for independent movement
             orb.animationPhase = Double.random(in: 0...12.56) // Random phase between 0 and 4π for more spread
@@ -310,7 +445,94 @@ extension NSColor {
             
             DebugLog.log("Created orb \(name) - total orbs: \(orbs.count)", category: .overlay)
             DebugLog.log("Orb details: name=\(orb.name), color=\(orb.color), visible=\(orb.isVisible)", category: .overlay)
+            notifyChange()
             return orb
+        }
+
+        private func configureOrb(_ orb: ProjectOrb) {
+            orb.onChange = { [weak self] in
+                self?.notifyChange()
+            }
+            orb.rebindTaskHandlers()
+        }
+
+        private func notifyChange() {
+            onChange?()
+        }
+
+        func applySnapshots(_ snapshots: [OrbSnapshot]) {
+            guard !snapshots.isEmpty else {
+                if includeSampleData {
+                    seedSampleOrbsIfNeeded()
+                }
+                updateOrbPositions()
+                return
+            }
+
+            let ordered = snapshots.sorted { $0.sortOrder < $1.sortOrder }
+            var rebuilt: [ProjectOrb] = []
+            for (index, snapshot) in ordered.enumerated() {
+                let color = NSColor.fromHexString(snapshot.colorHex) ?? OrbColorPalette.getUniqueColor(for: index)
+                let orb = ProjectOrb(
+                    id: snapshot.id,
+                    name: snapshot.name,
+                    color: color,
+                    createdAt: snapshot.createdAt,
+                    sortOrder: snapshot.sortOrder
+                )
+                orb.updatedAt = snapshot.updatedAt
+                orb.animationPhase = Double.random(in: 0...12.56)
+                orb.animationSpeed = Double.random(in: 0.3...2.0)
+            let tasks = snapshot.tasks.sorted { $0.sortOrder < $1.sortOrder }.map { taskSnapshot in
+                Task(
+                    id: taskSnapshot.id,
+                    title: taskSnapshot.title,
+                    isCompleted: taskSnapshot.isCompleted,
+                    details: taskSnapshot.notes,
+                    deadline: taskSnapshot.dueDate,
+                    priority: taskSnapshot.priority,
+                    createdAt: taskSnapshot.createdAt,
+                    sortOrder: taskSnapshot.sortOrder
+                )
+            }
+            orb.tasks = tasks
+            orb.taskCount = tasks.count
+            configureOrb(orb)
+                rebuilt.append(orb)
+            }
+            orbs = rebuilt
+            reindexOrbs()
+            updateOrbPositions()
+        }
+
+        func makeSnapshots() -> [OrbSnapshot] {
+            return orbs.enumerated().map { index, orb -> OrbSnapshot in
+                let tasks: [TaskSnapshot] = orb.tasks.enumerated().map { taskIndex, task -> TaskSnapshot in
+                    let order = Double(taskIndex)
+                    if task.sortOrder != order {
+                        task.sortOrder = order
+                    }
+                    return TaskSnapshot(
+                        id: task.id,
+                        title: task.title,
+                        notes: task.details,
+                        isCompleted: task.isCompleted,
+                        priority: task.priority,
+                        createdAt: task.createdAt,
+                        dueDate: task.deadline,
+                        sortOrder: task.sortOrder
+                    )
+                }
+                return OrbSnapshot(
+                    id: orb.id,
+                    name: orb.name,
+                    colorHex: orb.color.toHexString(),
+                    sortOrder: orb.sortOrder != 0 ? orb.sortOrder : Double(index),
+                    createdAt: orb.createdAt,
+                    updatedAt: orb.updatedAt ?? Date(),
+                    tasks: tasks
+                )
+            }
         }
         
         private func animateOrbRepositioning(newOrb: ProjectOrb) {
@@ -377,9 +599,9 @@ extension NSColor {
             guard !orbs.isEmpty else { return [:] }
             
             let orbCount = orbs.count
-            // Position orbs only in the bottom 120 degrees of the circle
-            let startAngle = 3.67 // Start at 210 degrees (bottom-left)
-            let endAngle = 5.76 // End at 330 degrees (bottom-right)
+            let angleConfig = angleParameters(for: orbCount)
+            let startAngle = angleConfig.start
+            let endAngle = angleConfig.end
             let angleStep = (endAngle - startAngle) / Double(max(1, orbCount - 1))
             
             // Calculate scale based on number of orbs
@@ -389,7 +611,7 @@ extension NSColor {
             
             for (index, orb) in orbs.enumerated() {
                 let angle = startAngle + angleStep * Double(index)
-                positions[orb.id] = (angle: angle, radius: semiCircleRadius, scale: scale)
+                positions[orb.id] = (angle: angle, radius: angleConfig.radius, scale: scale)
             }
             
             return positions
@@ -397,15 +619,19 @@ extension NSColor {
     
     func removeOrb(_ orb: ProjectOrb) {
         orbs.removeAll { $0.id == orb.id }
+        reindexOrbs()
         updateOrbPositions()
+        notifyChange()
     }
     
     func addTaskToOrb(_ orb: ProjectOrb) {
         orb.addTask()
+        notifyChange()
     }
     
     func removeTaskFromOrb(_ orb: ProjectOrb) {
         orb.removeTask()
+        notifyChange()
     }
     
         // MARK: - Positioning and Scaling
@@ -413,11 +639,11 @@ extension NSColor {
             guard !orbs.isEmpty else { return }
             
             let orbCount = orbs.count
-            // Position orbs only in the bottom 120 degrees of the circle
-            // Bottom 120 degrees means from 210° to 330° (or 3.67 to 5.76 radians)
-            let startAngle = 3.67 // Start at 210 degrees (bottom-left)
-            let endAngle = 5.76 // End at 330 degrees (bottom-right)
-            let angleStep = (endAngle - startAngle) / Double(max(1, orbCount - 1)) // Distribute across bottom 120 degrees
+            let angleConfig = angleParameters(for: orbCount)
+            let startAngle = angleConfig.start
+            let endAngle = angleConfig.end
+            let currentRadius = angleConfig.radius
+            let angleStep = (endAngle - startAngle) / Double(max(1, orbCount - 1)) // Distribute across adjusted arc
         
         // Calculate scale based on number of orbs
         let scale = calculateOrbScale(for: orbCount)
@@ -425,10 +651,28 @@ extension NSColor {
         for (index, orb) in orbs.enumerated() {
             let angle = startAngle + angleStep * Double(index)
             orb.angle = angle
-            orb.radius = semiCircleRadius
+            orb.radius = currentRadius
             orb.scale = scale
             orb.isVisible = true
         }
+    }
+    
+    private func angleParameters(for count: Int) -> (start: Double, end: Double, radius: Double) {
+        let baseStart = 3.67 // 210 degrees
+        let baseEnd = 5.76   // 330 degrees
+        let clampedCount = max(1, count)
+        
+        // For 2–4 orbs, pull in from the notch by 5° per step (up to 15° when just one orb)
+        let insetSteps = max(0, min(3, 4 - min(clampedCount, 4)))
+        let inset = (.pi / 180.0) * 5.0 * Double(insetSteps)
+        
+        // Nudge the radius slightly smaller to keep inflated orbs below the notch when the arc is narrow
+        let radiusReductionPerStep: Double = 6.0
+        let adjustedRadius = semiCircleRadius - radiusReductionPerStep * Double(insetSteps)
+        
+        return (start: baseStart + inset,
+                end: baseEnd - inset,
+                radius: max(minOrbSize, adjustedRadius))
     }
     
     private func calculateOrbScale(for count: Int) -> Double {
@@ -448,6 +692,18 @@ extension NSColor {
         }
     }
     
+    private func reindexOrbs() {
+        for (index, orb) in orbs.enumerated() {
+            orb.sortOrder = Double(index)
+        }
+    }
+    
+    private func seedSampleOrbsIfNeeded() {
+        guard orbs.isEmpty else { return }
+        addTestOrbs()
+        notifyChange()
+    }
+    
     // MARK: - Test Data
     private func addTestOrbs() {
         let testOrbs = [
@@ -458,10 +714,11 @@ extension NSColor {
         
         for name in testOrbs {
             let orb = createOrb(name: name)
-            // Add some test tasks
-            for _ in 0..<Int.random(in: 1...5) {
-                orb.addTask()
+            let demoTaskCount = Int.random(in: 0...2)
+            for index in 0..<demoTaskCount {
+                orb.addTask(title: "Sample Task \(index + 1)")
             }
+            orb.rebindTaskHandlers()
         }
     }
     
