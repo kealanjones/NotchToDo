@@ -262,7 +262,9 @@ class RealWakeWordEngine: WakeWordEngine {
         isRunning = false
         
         // Stop audio engine
-        audioEngine.stop()
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
         audioEngine.inputNode.removeTap(onBus: 0)
         
         // End recognition

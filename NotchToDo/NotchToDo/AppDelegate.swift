@@ -124,6 +124,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         intentRouter = IntentRouter()
     }
 
+    // MARK: - Wake word lifecycle helpers
+    private func restartWakeWord(after delay: TimeInterval = 0.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            do { try self.wakeWordEngine?.start() } catch {
+                DebugLog.log("Failed to restart wake word engine: \(error)", category: .speech)
+            }
+        }
+    }
+
     private func rebuildDebugMenu(_ menu: NSMenu) {
         menu.removeAllItems()
         menu.addItem(makeMenuItem(title: "Simulate Wake Word", action: #selector(simulateWakeWord)))
@@ -239,14 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: nil, completion: nil)
         }
-
-        // Resume wake word listening after handling the command
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            guard let self else { return }
-            do { try self.wakeWordEngine?.start() } catch {
-                DebugLog.log("Failed to restart wake word engine: \(error)", category: .speech)
-            }
-        }
+        restartWakeWord(after: 0.6)
     }
     
 
