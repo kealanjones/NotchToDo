@@ -188,6 +188,23 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         }
     }
     
+    var notchView: NotchIndicatorView? {
+        return notchIndicatorWindow?.contentView as? NotchIndicatorView
+    }
+    
+    private func updateNotchContext(for orb: ProjectOrb?) {
+        guard let notchView = notchIndicatorWindow?.contentView as? NotchIndicatorView else { return }
+        
+        if let orb = orb {
+            // Calculate project progress
+            let progress = orb.tasks.isEmpty ? 0.0 : CGFloat(orb.tasks.filter { $0.isCompleted }.count) / CGFloat(orb.tasks.count)
+            notchView.updateContext(orbColor: orb.color, progress: progress)
+        } else {
+            // Clear context when no orb is active
+            notchView.updateContext(orbColor: nil, progress: 0.0)
+        }
+    }
+    
     func addTask(_ title: String) {
         let targetOrb = resolveTargetOrbForNewTask()
         addTask(title, to: targetOrb)
@@ -221,6 +238,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         if currentOpenOrb?.id == targetOrb.id, taskCardWindows[targetOrb.id] == nil {
             currentOpenOrb = nil
+        }
+        
+        // Update notch context if this is the current orb
+        if currentOpenOrb?.id == targetOrb.id {
+            updateNotchContext(for: targetOrb)
         }
         
         semiCircleView?.needsDisplay = true
@@ -971,6 +993,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         taskCardWindows[orb.id] = window
         currentOpenOrb = orb
         
+        // Update contextual notch animations
+        updateNotchContext(for: orb)
+        
         // Animate entry with bounce (scale to 1.1 then 1.0)
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
@@ -1051,6 +1076,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
                 
                 if self.currentOpenOrb?.id == orb.id {
                     self.currentOpenOrb = self.taskCardWindows.isEmpty ? nil : self.orbManager.orbs.first { self.taskCardWindows[$0.id] != nil }
+                    // Update notch context to the new current orb (or clear if none)
+                    self.updateNotchContext(for: self.currentOpenOrb)
                 }
                 
                 DebugLog.log("🎯 Task card animated out for orb: \(orb.name)", category: .tasks)

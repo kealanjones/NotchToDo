@@ -12,6 +12,15 @@ class NotchIndicatorView: NSView {
     private var isPerformingSweep = false
     private var listenState: ListenState = .idle
     
+    // Contextual animation properties
+    var activeOrbColor: NSColor?
+    var projectProgress: CGFloat = 0.0  // 0.0 to 1.0
+    
+    static var contextualAnimationsEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "ContextualNotchAnimationsEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "ContextualNotchAnimationsEnabled") }
+    }
+    
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
     }
@@ -50,6 +59,21 @@ class NotchIndicatorView: NSView {
         } else if !isPerformingSweep {
             animateProgress(to: targetProgress, duration: 0.35)
         }
+        needsDisplay = true
+    }
+    
+    func updateContext(orbColor: NSColor?, progress: CGFloat) {
+        guard NotchIndicatorView.contextualAnimationsEnabled else { return }
+        
+        let colorChanged = activeOrbColor != orbColor
+        activeOrbColor = orbColor
+        projectProgress = min(max(progress, 0.0), 1.0)
+        
+        // Smoothly update glow if context changed
+        if colorChanged {
+            glowIntensity = glow(for: listenState)
+        }
+        
         needsDisplay = true
     }
     
@@ -147,6 +171,14 @@ class NotchIndicatorView: NSView {
     }
     
     private func traceColor(for state: ListenState) -> NSColor {
+        // Use contextual color if enabled and available
+        if NotchIndicatorView.contextualAnimationsEnabled, state == .idle, let orbColor = activeOrbColor {
+            // Blend orb color with progress intensity
+            let progressIntensity = 0.3 + (projectProgress * 0.5)  // Range: 0.3 to 0.8
+            return orbColor.withAlphaComponent(progressIntensity)
+        }
+        
+        // Default state-based colors
         switch state {
         case .idle:
             return NSColor.systemTeal.withAlphaComponent(0.4)
@@ -177,18 +209,28 @@ class NotchIndicatorView: NSView {
     }
 
     private func glow(for state: ListenState) -> CGFloat {
+        let baseGlow: CGFloat
         switch state {
         case .idle:
-            return 0.35
+            baseGlow = 0.35
         case .wake:
-            return 0.6
+            baseGlow = 0.6
         case .listening:
-            return 0.8
+            baseGlow = 0.8
         case .transcribing:
-            return 0.9
+            baseGlow = 0.9
         case .error:
-            return 1.0
+            baseGlow = 1.0
         }
+        
+        // Enhance glow based on project progress when contextual animations are enabled
+        if NotchIndicatorView.contextualAnimationsEnabled, state == .idle, activeOrbColor != nil {
+            // Boost glow intensity as project nears completion
+            let progressBoost = projectProgress * 0.3  // Up to +0.3 intensity
+            return min(baseGlow + progressBoost, 1.0)
+        }
+        
+        return baseGlow
     }
     
     private func animateProgress(to value: CGFloat, duration: TimeInterval, completion: (() -> Void)? = nil) {

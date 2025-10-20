@@ -38,6 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set default preferences if not already set
         if !UserDefaults.standard.bool(forKey: "HasLaunchedBefore") {
             NotchCompactPreviewController.isEnabled = true
+            NotchIndicatorView.contextualAnimationsEnabled = true
             AudioFeedback.shared.isEnabled = true
             UserDefaults.standard.set(true, forKey: "HasLaunchedBefore")
         }
@@ -196,12 +197,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         loggingItem.submenu = loggingMenu
         menu.addItem(loggingItem)
         
-        // Add separator and compact preview toggle
+        // Add separator and feature toggles
         menu.addItem(NSMenuItem.separator())
+        
         let previewItem = NSMenuItem(title: "Show Compact Preview", action: #selector(toggleCompactPreview), keyEquivalent: "")
         previewItem.target = self
         previewItem.state = NotchCompactPreviewController.isEnabled ? .on : .off
         menu.addItem(previewItem)
+        
+        let animationsItem = NSMenuItem(title: "Contextual Notch Animations", action: #selector(toggleContextualAnimations), keyEquivalent: "")
+        animationsItem.target = self
+        animationsItem.state = NotchIndicatorView.contextualAnimationsEnabled ? .on : .off
+        menu.addItem(animationsItem)
     }
 
     private func refreshLogMenuStates() {
@@ -214,6 +221,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotchCompactPreviewController.isEnabled.toggle()
         sender.state = NotchCompactPreviewController.isEnabled ? .on : .off
         print("🔧 Compact preview \(NotchCompactPreviewController.isEnabled ? "enabled" : "disabled")")
+    }
+    
+    @objc private func toggleContextualAnimations(_ sender: NSMenuItem) {
+        NotchIndicatorView.contextualAnimationsEnabled.toggle()
+        sender.state = NotchIndicatorView.contextualAnimationsEnabled ? .on : .off
+        print("🔧 Contextual notch animations \(NotchIndicatorView.contextualAnimationsEnabled ? "enabled" : "disabled")")
+        // Refresh the notch display
+        overlayController?.notchView?.needsDisplay = true
     }
     
     
