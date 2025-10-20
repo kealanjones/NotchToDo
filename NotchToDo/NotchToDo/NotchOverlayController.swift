@@ -725,6 +725,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             orb.applyImpulse(CGPoint(x: 0, y: 3.5))
             self.pendingBubbleTargetOrbId = nil
             self.addTask(taskTitle, to: orb)
+            AudioFeedback.shared.play(.dropIntoOrb, volume: 0.55)
             self.pendingTranscript = nil
             self.pendingTaskTitle = nil
             self.setState(.idle)

@@ -9,6 +9,7 @@ final class AudioFeedback {
         case startListening
         case success
         case error
+        case dropIntoOrb
     }
 
     private let defaultsKey = "AudioFeedbackEnabled"
@@ -31,6 +32,8 @@ final class AudioFeedback {
             name = NSSound.Name("Pop")
         case .error:
             name = NSSound.Name("Basso")
+        case .dropIntoOrb:
+            name = NSSound.Name("Ping")
         }
 
         if let sound = NSSound(named: name) {
