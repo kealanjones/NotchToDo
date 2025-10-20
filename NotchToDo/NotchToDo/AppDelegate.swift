@@ -61,6 +61,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let realWakeWordEngine = RealWakeWordEngine()
         realWakeWordEngine.onTriggered = { [weak self] in
             DebugLog.log("🎤 Real wake word detected!", category: .speech)
+            // Provide immediate UI feedback even before bubble
+            self?.overlayController?.setState(.wake)
             self?.handleWakeWordTriggered()
         }
         

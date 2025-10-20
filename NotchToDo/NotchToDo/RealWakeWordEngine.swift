@@ -105,6 +105,7 @@ class RealWakeWordEngine: WakeWordEngine {
             
             if let result = result {
                 let transcript = result.bestTranscription.formattedString.lowercased()
+                DebugLog.log("Wake listen partial='\(transcript)' final=\(result.isFinal)", category: .speech)
                 
                 // Check for wake word in transcript
                 self.checkForWakeWord(in: transcript)
@@ -179,20 +180,8 @@ class RealWakeWordEngine: WakeWordEngine {
             if transcript.contains(wakeWord) {
                 DebugLog.log("Wake word detected: '\(wakeWord)' in transcript: '\(transcript)'", category: .speech)
                 
-                // Check if wake word is at the beginning or standalone
-                let words = transcript.split(separator: " ").map { String($0) }
-                
-                // Look for wake word at start or as standalone phrase
-                let isValidTrigger: Bool
-                if wakeWord.contains(" ") {
-                    // Multi-word wake phrase (e.g., "hey notch")
-                    isValidTrigger = transcript.hasPrefix(wakeWord) || transcript == wakeWord
-                } else {
-                    // Single word (e.g., "notch")
-                    isValidTrigger = words.first == wakeWord || 
-                                    (words.count == 1 && words[0] == wakeWord) ||
-                                    transcript.hasPrefix(wakeWord + " ")
-                }
+                // Relaxed validation for initial bring-up: trigger if present anywhere
+                let isValidTrigger: Bool = true
                 
                 if isValidTrigger {
                     lastTriggerTime = Date()
