@@ -68,10 +68,14 @@ class RealSpeechRecognizer: SpeechRecognizer {
             throw SpeechRecognitionError.recognizerNotAvailable
         }
         
-        // Cancel any ongoing recognition
+        // Cancel any ongoing recognition and reset engine
         if let task = recognitionTask {
             task.cancel()
             recognitionTask = nil
+        }
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
         }
         
         // Configure audio session (iOS/tvOS only). On macOS, AVAudioSession APIs are unavailable.
@@ -134,13 +138,14 @@ class RealSpeechRecognizer: SpeechRecognizer {
         
         // Configure audio tap
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: recordingFormat) { buffer, _ in
             self.recognitionRequest?.append(buffer)
         }
         
         // Start audio engine
         audioEngine.prepare()
         try audioEngine.start()
+        DebugLog.log("Audio engine started (input format: \(recordingFormat))", category: .speech)
         
         isRunning = true
         DebugLog.log("Speech recognition started successfully", category: .speech)

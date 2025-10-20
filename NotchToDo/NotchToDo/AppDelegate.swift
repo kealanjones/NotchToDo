@@ -188,6 +188,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleWakeWordTriggered() {
         // Trigger notch trace activation first
         overlayController?.setState(.wake)
+        // Stop wake word listening to free the audio input for dictation
+        wakeWordEngine?.stop()
         overlayController?.activateNotchTrace { [weak self] in
             guard let self else { return }
             self.overlayController?.beginSpeechCaptureSession()
@@ -229,6 +231,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             overlayController?.showClarificationPrompt(for: title)
         default:
             overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: nil, completion: nil)
+        }
+
+        // Resume wake word listening after handling the command
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self else { return }
+            do { try self.wakeWordEngine?.start() } catch {
+                DebugLog.log("Failed to restart wake word engine: \(error)", category: .speech)
+            }
         }
     }
     

@@ -218,6 +218,9 @@ class RealWakeWordEngine: WakeWordEngine {
         
         DebugLog.log("Wake word detection stopped", category: .speech)
     }
+
+    // Expose running state to coordinate with dictation
+    var isActive: Bool { isRunning }
 }
 
 // MARK: - Errors
