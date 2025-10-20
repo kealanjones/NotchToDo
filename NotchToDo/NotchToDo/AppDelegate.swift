@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import AppKit
 
 private struct ClarificationPending {
     let pendingTitle: String
