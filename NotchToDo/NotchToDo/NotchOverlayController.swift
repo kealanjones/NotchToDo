@@ -2695,27 +2695,34 @@ class SemiCircleView: NSView {
         let rimPath = CGMutablePath()
         rimPath.addArc(center: center, radius: radius, startAngle: 0, endAngle: 2 * .pi, clockwise: false)
         
-        // Draw multi-layer glow for rich effect
+        // Draw multi-layer glow for rich effect with bigger, softer glows
         context.saveGState()
         
-        // Outer halo
-        context.setShadow(offset: .zero, blur: 35 * intensity, color: glowColor.withAlphaComponent(0.4 * intensity).cgColor)
-        context.setStrokeColor(glowColor.withAlphaComponent(0.35 * intensity).cgColor)
-        context.setLineWidth(3.5)
+        // Outermost halo (new - very soft and diffuse)
+        context.setShadow(offset: .zero, blur: 80 * intensity, color: glowColor.withAlphaComponent(0.15 * intensity).cgColor)
+        context.setStrokeColor(glowColor.withAlphaComponent(0.12 * intensity).cgColor)
+        context.setLineWidth(5.0)
         context.addPath(rimPath)
         context.strokePath()
         
-        // Mid glow
-        context.setShadow(offset: .zero, blur: 20 * intensity, color: glowColor.withAlphaComponent(0.5 * intensity).cgColor)
-        context.setStrokeColor(glowColor.withAlphaComponent(0.5 * intensity).cgColor)
-        context.setLineWidth(2.5)
+        // Outer halo (softer and bigger)
+        context.setShadow(offset: .zero, blur: 55 * intensity, color: glowColor.withAlphaComponent(0.25 * intensity).cgColor)
+        context.setStrokeColor(glowColor.withAlphaComponent(0.20 * intensity).cgColor)
+        context.setLineWidth(4.0)
         context.addPath(rimPath)
         context.strokePath()
         
-        // Inner bright rim
-        context.setShadow(offset: .zero, blur: 10 * intensity, color: glowColor.blended(withFraction: 0.3, of: .white)?.withAlphaComponent(0.7 * intensity).cgColor ?? glowColor.withAlphaComponent(0.7 * intensity).cgColor)
-        context.setStrokeColor(glowColor.blended(withFraction: 0.5, of: .white)?.withAlphaComponent(0.8 * intensity + 0.2).cgColor ?? glowColor.withAlphaComponent(0.8 * intensity + 0.2).cgColor)
-        context.setLineWidth(1.8)
+        // Mid glow (softer)
+        context.setShadow(offset: .zero, blur: 30 * intensity, color: glowColor.withAlphaComponent(0.35 * intensity).cgColor)
+        context.setStrokeColor(glowColor.withAlphaComponent(0.30 * intensity).cgColor)
+        context.setLineWidth(3.0)
+        context.addPath(rimPath)
+        context.strokePath()
+        
+        // Inner glow (subtle)
+        context.setShadow(offset: .zero, blur: 15 * intensity, color: glowColor.blended(withFraction: 0.3, of: .white)?.withAlphaComponent(0.45 * intensity).cgColor ?? glowColor.withAlphaComponent(0.45 * intensity).cgColor)
+        context.setStrokeColor(glowColor.blended(withFraction: 0.4, of: .white)?.withAlphaComponent(0.50 * intensity + 0.1).cgColor ?? glowColor.withAlphaComponent(0.50 * intensity + 0.1).cgColor)
+        context.setLineWidth(2.0)
         context.addPath(rimPath)
         context.strokePath()
         
