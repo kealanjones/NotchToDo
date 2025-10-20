@@ -38,7 +38,7 @@ final class AudioFeedback {
             sound.play()
         } else {
             // Fallback beep if named sound is unavailable
-            NSBeep()
+            NSSound.beep()
         }
     }
 }
