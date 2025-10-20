@@ -105,11 +105,26 @@ class RealWakeWordEngine: WakeWordEngine {
             guard let self = self else { return }
             
             if let result = result {
-                let transcript = result.bestTranscription.formattedString.lowercased()
-                DebugLog.log("Wake listen partial='\(transcript)' final=\(result.isFinal)", category: .speech)
-                
-                // Check for wake word in transcript
-                self.checkForWakeWord(in: transcript)
+                // Consider multiple hypotheses to improve robustness
+                var hypotheses: [String] = [result.bestTranscription.formattedString]
+                for alt in result.transcriptions {
+                    let text = alt.formattedString
+                    if !hypotheses.contains(text) {
+                        hypotheses.append(text)
+                    }
+                }
+                var triggered = false
+                for hyp in hypotheses {
+                    let transcript = hyp.lowercased()
+                    DebugLog.log("Wake listen partial='\(transcript)' final=\(result.isFinal)", category: .speech)
+                    if self.checkForWakeWord(in: transcript) {
+                        triggered = true
+                        break
+                    }
+                }
+                if triggered {
+                    return
+                }
                 
                 // Keep listening - don't stop on final results for wake word detection
                 if result.isFinal {
@@ -167,22 +182,27 @@ class RealWakeWordEngine: WakeWordEngine {
         }
     }
     
-    private func checkForWakeWord(in transcript: String) {
+    @discardableResult
+    private func checkForWakeWord(in transcript: String) -> Bool {
         // Check cooldown period
         if let lastTrigger = lastTriggerTime {
             let timeSinceLastTrigger = Date().timeIntervalSince(lastTrigger)
             if timeSinceLastTrigger < triggerCooldown {
-                return
+                return false
             }
         }
         
+        // Examine only the last few words (most recent 2-3 seconds of speech)
+        let tokens = transcript.split { !$0.isLetter }.map { String($0) }
+        let lastWindow = tokens.suffix(4).joined(separator: " ")
+        
         // Check if transcript contains any wake word
         for wakeWord in wakeWords {
-            if transcript.contains(wakeWord) {
-                DebugLog.log("Wake word detected: '\(wakeWord)' in transcript: '\(transcript)'", category: .speech)
+            if lastWindow.contains(wakeWord) || isPhoneticMatch(lastWindow, wakeWord: wakeWord) {
+                DebugLog.log("Wake word detected: '\(wakeWord)' in transcript: '\(transcript)' (window='\(lastWindow)')", category: .speech)
                 
                 // Slightly more permissive: trigger if near start or standalone
-                let isValidTrigger: Bool = transcript.hasPrefix(wakeWord) || transcript == wakeWord || transcript.contains("\(wakeWord) ")
+                let isValidTrigger: Bool = transcript.hasPrefix(wakeWord) || transcript == wakeWord || transcript.contains("\(wakeWord) ") || isPhoneticMatch(lastWindow, wakeWord: wakeWord)
                 
                 if isValidTrigger {
                     lastTriggerTime = Date()
@@ -192,10 +212,46 @@ class RealWakeWordEngine: WakeWordEngine {
                     DispatchQueue.main.async {
                         self.onTriggered?()
                     }
-                    return
+                    return true
                 }
             }
         }
+        return false
+    }
+
+    // MARK: - Fuzzy/phonetic matching helpers
+    private func isPhoneticMatch(_ text: String, wakeWord: String) -> Bool {
+        // Allow common variations that ASR might produce
+        let variants: [String] = ["notch", "noch", "natch", "notchh", "nodge", "not", "natchh"]
+        if variants.contains(where: { text.contains($0) }) && wakeWord.contains("notch") {
+            return true
+        }
+        // Levenshtein distance within small threshold for the last token
+        let last = text.split(separator: " ").last.map(String.init) ?? text
+        let d = editDistance(between: last, and: wakeWord)
+        return d <= 1
+    }
+
+    private func editDistance(between a: String, and b: String) -> Int {
+        let aChars = Array(a)
+        let bChars = Array(b)
+        let n = aChars.count
+        let m = bChars.count
+        if n == 0 { return m }
+        if m == 0 { return n }
+        var dp = Array(repeating: Array(repeating: 0, count: m + 1), count: n + 1)
+        for i in 0...n { dp[i][0] = i }
+        for j in 0...m { dp[0][j] = j }
+        for i in 1...n {
+            for j in 1...m {
+                if aChars[i-1] == bChars[j-1] {
+                    dp[i][j] = dp[i-1][j-1]
+                } else {
+                    dp[i][j] = min(dp[i-1][j-1], min(dp[i-1][j], dp[i][j-1])) + 1
+                }
+            }
+        }
+        return dp[n][m]
     }
     
     func stop() {
