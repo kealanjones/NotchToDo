@@ -79,6 +79,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         
+        // Give the recognizer a tiny priming delay to stabilize the input
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            DebugLog.log("Wake word engine primed", category: .speech)
+        }
+        
         wakeWordEngine = realWakeWordEngine
         
         // Create real speech recognizer

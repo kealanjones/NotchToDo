@@ -14,7 +14,7 @@ class RealWakeWordEngine: WakeWordEngine {
     
     private var isRunning = false
     private var lastTriggerTime: Date?
-    private let triggerCooldown: TimeInterval = 2.0 // Prevent multiple triggers in quick succession
+    private let triggerCooldown: TimeInterval = 1.2 // More responsive
     
     // Wake word variations (lowercase for comparison)
     private let wakeWords: Set<String> = [
@@ -94,7 +94,8 @@ class RealWakeWordEngine: WakeWordEngine {
         
         // Configure for continuous listening
         recognitionRequest.shouldReportPartialResults = true
-        recognitionRequest.requiresOnDeviceRecognition = false // Better accuracy with network
+        // Prefer on-device for lower latency and better responsiveness for wake phrase
+        recognitionRequest.requiresOnDeviceRecognition = true
         
         // Get audio input
         let inputNode = audioEngine.inputNode
@@ -137,7 +138,7 @@ class RealWakeWordEngine: WakeWordEngine {
         
         // Configure audio tap
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 512, format: recordingFormat) { buffer, _ in
             self.recognitionRequest?.append(buffer)
         }
         
@@ -180,8 +181,8 @@ class RealWakeWordEngine: WakeWordEngine {
             if transcript.contains(wakeWord) {
                 DebugLog.log("Wake word detected: '\(wakeWord)' in transcript: '\(transcript)'", category: .speech)
                 
-                // Relaxed validation for initial bring-up: trigger if present anywhere
-                let isValidTrigger: Bool = true
+                // Slightly more permissive: trigger if near start or standalone
+                let isValidTrigger: Bool = transcript.hasPrefix(wakeWord) || transcript == wakeWord || transcript.contains("\(wakeWord) ")
                 
                 if isValidTrigger {
                     lastTriggerTime = Date()
