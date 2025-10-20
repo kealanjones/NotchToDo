@@ -2096,6 +2096,12 @@ class SemiCircleView: NSView {
         private var bubbleVelocity: CGPoint = .zero
         private var bubblePresence: CGFloat = 0.0
         
+        // Contextual glow animation properties
+        private var currentGlowIntensity: CGFloat = 0.0
+        private var targetGlowIntensity: CGFloat = 0.0
+        private var currentGlowColor: NSColor?
+        private var targetGlowColor: NSColor?
+        
         init(orbManager: OrbManager, controller: NotchOverlayController) {
             self.orbManager = orbManager
             self.controller = controller
@@ -2502,6 +2508,10 @@ class SemiCircleView: NSView {
         
         func frameTick(deltaTime: CFTimeInterval) {
             guard animationsActive else { return }
+            
+            // Update contextual glow animation
+            updateContextualGlow(deltaTime: deltaTime)
+            
             let bubblePoint = controller?.speechBubbleCenter(relativeTo: self)
             let bubbleTargetId = controller?.bubbleTargetOrbId()
             if let bubblePoint = bubblePoint {
@@ -2627,12 +2637,59 @@ class SemiCircleView: NSView {
         }
     }
     
-    private func drawContextualRimGlow(in context: CGContext, center: CGPoint, radius: CGFloat, orb: ProjectOrb) {
-        // Calculate progress
-        let progress = orb.tasks.isEmpty ? 0.0 : CGFloat(orb.tasks.filter { $0.isCompleted }.count) / CGFloat(orb.tasks.count)
+    private func updateContextualGlow(deltaTime: CFTimeInterval) {
+        // Update target based on current orb
+        if NotchIndicatorView.contextualAnimationsEnabled, let currentOrb = controller?.currentOpenOrb {
+            let progress = currentOrb.tasks.isEmpty ? 0.0 : CGFloat(currentOrb.tasks.filter { $0.isCompleted }.count) / CGFloat(currentOrb.tasks.count)
+            targetGlowIntensity = 0.3 + (progress * 0.6)
+            targetGlowColor = currentOrb.color
+        } else {
+            targetGlowIntensity = 0.0
+            targetGlowColor = nil
+        }
         
-        // Base intensity from progress (0.3 to 0.9)
-        let intensity = 0.3 + (progress * 0.6)
+        // Smooth interpolation (fast fade in, slightly slower fade out)
+        let fadeSpeed: CGFloat = targetGlowIntensity > currentGlowIntensity ? 4.0 : 2.5
+        let smoothing = min(1.0, CGFloat(deltaTime) * fadeSpeed)
+        currentGlowIntensity += (targetGlowIntensity - currentGlowIntensity) * smoothing
+        
+        // Smooth color transition
+        if let targetColor = targetGlowColor {
+            if let current = currentGlowColor {
+                // Blend between colors
+                currentGlowColor = blendColors(from: current, to: targetColor, progress: smoothing)
+            } else {
+                // Fade in new color
+                currentGlowColor = targetColor.withAlphaComponent(smoothing)
+            }
+        } else {
+            // Fade out current color
+            if let current = currentGlowColor {
+                currentGlowColor = current.withAlphaComponent(current.alphaComponent * (1.0 - smoothing))
+                if current.alphaComponent < 0.01 {
+                    currentGlowColor = nil
+                }
+            }
+        }
+    }
+    
+    private func blendColors(from: NSColor, to: NSColor, progress: CGFloat) -> NSColor {
+        guard let fromRGB = from.usingColorSpace(.deviceRGB),
+              let toRGB = to.usingColorSpace(.deviceRGB) else { return to }
+        
+        let r = fromRGB.redComponent + (toRGB.redComponent - fromRGB.redComponent) * progress
+        let g = fromRGB.greenComponent + (toRGB.greenComponent - fromRGB.greenComponent) * progress
+        let b = fromRGB.blueComponent + (toRGB.blueComponent - fromRGB.blueComponent) * progress
+        let a = fromRGB.alphaComponent + (toRGB.alphaComponent - fromRGB.alphaComponent) * progress
+        
+        return NSColor(red: r, green: g, blue: b, alpha: a)
+    }
+    
+    private func drawContextualRimGlow(in context: CGContext, center: CGPoint, radius: CGFloat, orb: ProjectOrb) {
+        // Use animated intensity and color
+        guard let glowColor = currentGlowColor, currentGlowIntensity > 0.01 else { return }
+        
+        let intensity = currentGlowIntensity
         
         // Create rim path
         let rimPath = CGMutablePath()
@@ -2642,22 +2699,22 @@ class SemiCircleView: NSView {
         context.saveGState()
         
         // Outer halo
-        context.setShadow(offset: .zero, blur: 35 * intensity, color: orb.color.withAlphaComponent(0.4 * intensity).cgColor)
-        context.setStrokeColor(orb.color.withAlphaComponent(0.35 * intensity).cgColor)
+        context.setShadow(offset: .zero, blur: 35 * intensity, color: glowColor.withAlphaComponent(0.4 * intensity).cgColor)
+        context.setStrokeColor(glowColor.withAlphaComponent(0.35 * intensity).cgColor)
         context.setLineWidth(3.5)
         context.addPath(rimPath)
         context.strokePath()
         
         // Mid glow
-        context.setShadow(offset: .zero, blur: 20 * intensity, color: orb.color.withAlphaComponent(0.5 * intensity).cgColor)
-        context.setStrokeColor(orb.color.withAlphaComponent(0.5 * intensity).cgColor)
+        context.setShadow(offset: .zero, blur: 20 * intensity, color: glowColor.withAlphaComponent(0.5 * intensity).cgColor)
+        context.setStrokeColor(glowColor.withAlphaComponent(0.5 * intensity).cgColor)
         context.setLineWidth(2.5)
         context.addPath(rimPath)
         context.strokePath()
         
         // Inner bright rim
-        context.setShadow(offset: .zero, blur: 10 * intensity, color: orb.color.blended(withFraction: 0.3, of: .white)?.withAlphaComponent(0.7 * intensity).cgColor ?? orb.color.withAlphaComponent(0.7 * intensity).cgColor)
-        context.setStrokeColor(orb.color.blended(withFraction: 0.5, of: .white)?.withAlphaComponent(0.8 * intensity + 0.2).cgColor ?? orb.color.withAlphaComponent(0.8 * intensity + 0.2).cgColor)
+        context.setShadow(offset: .zero, blur: 10 * intensity, color: glowColor.blended(withFraction: 0.3, of: .white)?.withAlphaComponent(0.7 * intensity).cgColor ?? glowColor.withAlphaComponent(0.7 * intensity).cgColor)
+        context.setStrokeColor(glowColor.blended(withFraction: 0.5, of: .white)?.withAlphaComponent(0.8 * intensity + 0.2).cgColor ?? glowColor.withAlphaComponent(0.8 * intensity + 0.2).cgColor)
         context.setLineWidth(1.8)
         context.addPath(rimPath)
         context.strokePath()
