@@ -237,6 +237,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         setState(.listening)
         pendingBubbleTargetOrbId = nil
         presentSpeechBubble()
+        AudioFeedback.shared.play(.startListening, volume: 0.5)
     }
     
     func updateSpeechCapture(partialTranscript: String) {
@@ -263,6 +264,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         speechBubbleView?.setStatus("Understanding…")
         speechBubbleView?.setThinking(true)
         speechBubbleView?.updateTranscript(displayText, isFinal: true)
+        AudioFeedback.shared.play(.success, volume: 0.6)
         
         speechClassificationWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in

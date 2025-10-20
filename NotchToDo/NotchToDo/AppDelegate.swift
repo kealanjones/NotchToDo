@@ -63,6 +63,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DebugLog.log("🎤 Real wake word detected!", category: .speech)
             // Provide immediate UI feedback even before bubble
             self?.overlayController?.setState(.wake)
+            AudioFeedback.shared.play(.wake, volume: 0.65)
             self?.handleWakeWordTriggered()
         }
         
