@@ -74,10 +74,12 @@ class RealSpeechRecognizer: SpeechRecognizer {
             recognitionTask = nil
         }
         
-        // Configure audio session
+        // Configure audio session (iOS/tvOS only). On macOS, AVAudioSession APIs are unavailable.
+        #if os(iOS) || os(tvOS)
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        #endif
         
         // Create recognition request
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()

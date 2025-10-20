@@ -78,10 +78,12 @@ class RealWakeWordEngine: WakeWordEngine {
             recognitionTask = nil
         }
         
-        // Configure audio session for background listening
+        // Configure audio session for background listening (iOS/tvOS only)
+        #if os(iOS) || os(tvOS)
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        #endif
         
         // Create recognition request
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
