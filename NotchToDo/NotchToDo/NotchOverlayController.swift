@@ -203,6 +203,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             // Clear context when no orb is active
             notchView.updateContext(orbColor: nil, progress: 0.0)
         }
+        
+        // Refresh semi-circle to show contextual glow
+        semiCircleView?.needsDisplay = true
     }
     
     func addTask(_ title: String) {
@@ -2617,6 +2620,49 @@ class SemiCircleView: NSView {
         context.setShadow(offset: CGSize(width: 0, height: -5), blur: 10, color: NSColor.black.withAlphaComponent(0.3).cgColor)
         context.addPath(path)
         context.fillPath()
+        
+        // Draw contextual rim glow if enabled and an orb is active
+        if NotchIndicatorView.contextualAnimationsEnabled, let currentOrb = controller?.currentOpenOrb {
+            drawContextualRimGlow(in: context, center: CGPoint(x: centerX, y: centerY), radius: radius, orb: currentOrb)
+        }
+    }
+    
+    private func drawContextualRimGlow(in context: CGContext, center: CGPoint, radius: CGFloat, orb: ProjectOrb) {
+        // Calculate progress
+        let progress = orb.tasks.isEmpty ? 0.0 : CGFloat(orb.tasks.filter { $0.isCompleted }.count) / CGFloat(orb.tasks.count)
+        
+        // Base intensity from progress (0.3 to 0.9)
+        let intensity = 0.3 + (progress * 0.6)
+        
+        // Create rim path
+        let rimPath = CGMutablePath()
+        rimPath.addArc(center: center, radius: radius, startAngle: 0, endAngle: 2 * .pi, clockwise: false)
+        
+        // Draw multi-layer glow for rich effect
+        context.saveGState()
+        
+        // Outer halo
+        context.setShadow(offset: .zero, blur: 35 * intensity, color: orb.color.withAlphaComponent(0.4 * intensity).cgColor)
+        context.setStrokeColor(orb.color.withAlphaComponent(0.35 * intensity).cgColor)
+        context.setLineWidth(3.5)
+        context.addPath(rimPath)
+        context.strokePath()
+        
+        // Mid glow
+        context.setShadow(offset: .zero, blur: 20 * intensity, color: orb.color.withAlphaComponent(0.5 * intensity).cgColor)
+        context.setStrokeColor(orb.color.withAlphaComponent(0.5 * intensity).cgColor)
+        context.setLineWidth(2.5)
+        context.addPath(rimPath)
+        context.strokePath()
+        
+        // Inner bright rim
+        context.setShadow(offset: .zero, blur: 10 * intensity, color: orb.color.blended(withFraction: 0.3, of: .white)?.withAlphaComponent(0.7 * intensity).cgColor ?? orb.color.withAlphaComponent(0.7 * intensity).cgColor)
+        context.setStrokeColor(orb.color.blended(withFraction: 0.5, of: .white)?.withAlphaComponent(0.8 * intensity + 0.2).cgColor ?? orb.color.withAlphaComponent(0.8 * intensity + 0.2).cgColor)
+        context.setLineWidth(1.8)
+        context.addPath(rimPath)
+        context.strokePath()
+        
+        context.restoreGState()
     }
     
         private func drawOrbs(in context: CGContext) {
