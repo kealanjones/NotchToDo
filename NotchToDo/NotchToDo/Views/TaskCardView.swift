@@ -42,6 +42,8 @@ class TaskCardView: NSView, FrameUpdatable {
     private var isPinned = false
     private var pinButtonRect = NSRect.zero
     private var isHoveringPin = false
+    private var deleteButtonRect = NSRect.zero
+    private var isHoveringDelete = false
     
     // Close button functionality
     private var closeButtonRect = NSRect.zero
@@ -88,16 +90,8 @@ class TaskCardView: NSView, FrameUpdatable {
     private var scrollOffsetSpring = SpringValue(value: 0.0, target: 0.0, stiffness: 170.0, damping: 24.0, threshold: 0.0005)
     private var isScrollSpringActive = false
 
-    private var dragGripRect: NSRect {
-        let cardRect = bounds.insetBy(dx: TaskRowMetrics.cardInset, dy: TaskRowMetrics.cardInset)
-        let gripHeight = min(TaskRowMetrics.dragGripHeight, max(0, cardRect.height))
-        return NSRect(
-            x: cardRect.minX,
-            y: cardRect.maxY - gripHeight,
-            width: cardRect.width,
-            height: gripHeight
-        )
-    }
+    private var dragGripRect = NSRect.zero
+    private var currentOrbId: UUID?
     
     // Celebration animation properties
     private var celebrationPhase: CGFloat = 0.0
@@ -114,6 +108,20 @@ class TaskCardView: NSView, FrameUpdatable {
     private var resizeStartSize = NSSize.zero
     private var resizeHandleRect = NSRect.zero
     private var isHoveringResizeHandle = false
+    
+    private func currentDragRect() -> NSRect {
+        if dragGripRect != .zero {
+            return dragGripRect
+        }
+        let cardRect = bounds.insetBy(dx: TaskRowMetrics.cardInset, dy: TaskRowMetrics.cardInset)
+        let fallbackHeight = TaskRowMetrics.controlBarHeight + 12.0
+        return NSRect(
+            x: cardRect.minX + 16,
+            y: cardRect.maxY - fallbackHeight,
+            width: cardRect.width - 32,
+            height: fallbackHeight
+        )
+    }
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -145,14 +153,19 @@ class TaskCardView: NSView, FrameUpdatable {
         applyCardLiftShadow()
     }
     
-    func updateTasks(_ tasks: [Task], projectName: String, orbColor: NSColor) {
+    func updateTasks(_ tasks: [Task], projectName: String, orbColor: NSColor, orbId: UUID) {
         self.tasks = tasks
         self.projectName = projectName
         self.orbColor = orbColor
+        self.currentOrbId = orbId
         scrollOffsetSpring.snap(to: taskScrollOffset)
         scrollOffsetSpring.setTarget(taskScrollOffset)
         isScrollSpringActive = false
         self.needsDisplay = true
+    }
+    
+    func currentOrbIdentifier() -> UUID? {
+        currentOrbId
     }
     
     func highlightTask(_ task: Task) {
@@ -781,25 +794,31 @@ class TaskCardView: NSView, FrameUpdatable {
             return
         }
         
-        // Scroll bar is now visual only - no drag interaction needed
+        // Check if click is on the delete button
+        if deleteButtonRect.contains(locationInView) {
+            controller?.requestProjectDeletion(for: self)
+            return
+        }
         
-            // Check if click is on a grab handle (only way to start dragging)
-            if let grabHandleIndex = getClickedGrabHandleIndex(at: locationInView) {
-                startTaskDrag(taskIndex: grabHandleIndex, location: locationInView)
-                return
-            }
-            
-            // Check if click is on a checkbox
-            if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
-                toggleTaskCompletion(at: checkboxIndex)
-                return
-            }
-            
-            // Check if click is on a task (to open task detail)
-            if let taskIndex = getClickedTaskIndex(at: locationInView) {
-                openTaskDetail(for: taskIndex)
-                return
-            }
+        // Scroll bar is now visual only - no drag interaction needed
+
+        // Check if click is on a grab handle (only way to start dragging)
+        if let grabHandleIndex = getClickedGrabHandleIndex(at: locationInView) {
+            startTaskDrag(taskIndex: grabHandleIndex, location: locationInView)
+            return
+        }
+        
+        // Check if click is on a checkbox
+        if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
+            toggleTaskCompletion(at: checkboxIndex)
+            return
+        }
+        
+        // Check if click is on a task (to open task detail)
+        if let taskIndex = getClickedTaskIndex(at: locationInView) {
+            openTaskDetail(for: taskIndex)
+            return
+        }
         
         // Reset fade timer on any mouse interaction (only if not pinned)
         if !isPinned {
@@ -807,7 +826,7 @@ class TaskCardView: NSView, FrameUpdatable {
         }
         
         // Check if click is in the drag grip area (top border strip of the card)
-        if dragGripRect.contains(locationInView) {
+        if currentDragRect().contains(locationInView) {
             guard let window = window else { return }
             isDraggingCard = true
             dragStartScreenLocation = NSEvent.mouseLocation
@@ -939,7 +958,7 @@ class TaskCardView: NSView, FrameUpdatable {
         
         // Change cursor when hovering over drag grip
         let locationInView = convert(event.locationInWindow, from: nil)
-        if dragGripRect.contains(locationInView) && !closeButtonRect.contains(locationInView) && !pinButtonRect.contains(locationInView) {
+        if currentDragRect().contains(locationInView) && !closeButtonRect.contains(locationInView) && !pinButtonRect.contains(locationInView) && !deleteButtonRect.contains(locationInView) {
             NSCursor.openHand.set()
         }
     }
@@ -948,6 +967,7 @@ class TaskCardView: NSView, FrameUpdatable {
         isHoveringCard = false
         isHoveringClose = false
         isHoveringPin = false
+        isHoveringDelete = false
         needsDisplay = true
         updateCardLiftTarget()
         NSCursor.arrow.set()
@@ -965,9 +985,11 @@ class TaskCardView: NSView, FrameUpdatable {
         // Check button hover states
         let wasHoveringClose = isHoveringClose
         let wasHoveringPin = isHoveringPin
+        let wasHoveringDelete = isHoveringDelete
         isHoveringClose = closeButtonRect.contains(locationInView)
         isHoveringPin = pinButtonRect.contains(locationInView)
-        if wasHoveringClose != isHoveringClose || wasHoveringPin != isHoveringPin {
+        isHoveringDelete = deleteButtonRect.contains(locationInView)
+        if wasHoveringClose != isHoveringClose || wasHoveringPin != isHoveringPin || wasHoveringDelete != isHoveringDelete {
             needsDisplay = true
         }
         
@@ -999,7 +1021,7 @@ class TaskCardView: NSView, FrameUpdatable {
                 needsDisplay = true
             }
             
-            if dragGripRect.contains(locationInView) && !closeButtonRect.contains(locationInView) && !pinButtonRect.contains(locationInView) {
+            if currentDragRect().contains(locationInView) && !closeButtonRect.contains(locationInView) && !pinButtonRect.contains(locationInView) && !deleteButtonRect.contains(locationInView) {
                 NSCursor.openHand.set()
             } else {
                 NSCursor.arrow.set()
@@ -1041,7 +1063,7 @@ class TaskCardView: NSView, FrameUpdatable {
         let cardRect = bounds.insetBy(dx: TaskRowMetrics.cardInset, dy: TaskRowMetrics.cardInset)
         
         drawGlassBackground(in: context, cardRect: cardRect)
-        drawDragGrip(in: context, cardRect: cardRect)
+        let controlsBottom = drawHeaderControls(in: context, cardRect: cardRect)
         
         if isShowingDropIndicator {
             drawDropTargetHalo(in: context, cardRect: cardRect)
@@ -1051,7 +1073,7 @@ class TaskCardView: NSView, FrameUpdatable {
             drawCelebrationRimGlow(in: context, cardRect: cardRect)
         }
         
-        drawProjectHeader(in: context, cardRect: cardRect)
+        drawProjectHeader(in: context, cardRect: cardRect, contentTop: controlsBottom - 12.0)
         drawTaskList(in: context, cardRect: cardRect)
         drawResizeHandle(in: context, cardRect: cardRect)
     }
@@ -1108,53 +1130,196 @@ class TaskCardView: NSView, FrameUpdatable {
         context.restoreGState()
     }
     
-    private func drawDragGrip(in context: CGContext, cardRect: CGRect) {
-        let gripHeight = min(TaskRowMetrics.dragGripHeight, cardRect.height)
-        guard gripHeight > 0 else { return }
-        
-        let buttonSize: CGFloat = 22
-        let edgeInset: CGFloat = 12
-        let controlSpacing: CGFloat = 8
-        let topY = cardRect.maxY - 1
-        let bottomY = topY - gripHeight
-        let gripRect = CGRect(
-            x: cardRect.minX + edgeInset + buttonSize + controlSpacing,
-            y: bottomY,
-            width: cardRect.width - (edgeInset + buttonSize + controlSpacing) * 2,
-            height: gripHeight
+    @discardableResult
+    private func drawHeaderControls(in context: CGContext, cardRect: CGRect) -> CGFloat {
+        let barHeight = TaskRowMetrics.controlBarHeight
+        let topPadding: CGFloat = 18
+        let horizontalPadding: CGFloat = 24
+        let buttonSpacing: CGFloat = 8
+        let barRect = CGRect(
+            x: cardRect.minX + horizontalPadding,
+            y: cardRect.maxY - topPadding - barHeight,
+            width: cardRect.width - horizontalPadding * 2,
+            height: barHeight
         )
-        let gripRadius = min(18, gripRect.height / 2)
-        
-        context.saveGState()
-        let clipPath = NSBezierPath(roundedRect: cardRect, xRadius: 28, yRadius: 28)
-        clipPath.addClip()
-        context.clip(to: gripRect)
 
-        if let gradient = GradientCache.shared.gradient(
-            colors: [
-                NSColor.white.withAlphaComponent(0.32),
-                orbColor.withAlphaComponent(0.18),
-                NSColor.white.withAlphaComponent(0.1)
-            ],
-            locations: [0.0, 0.55, 1.0]
-        ) {
-            context.drawLinearGradient(
-                gradient,
-                start: CGPoint(x: gripRect.midX, y: gripRect.maxY),
-                end: CGPoint(x: gripRect.midX, y: gripRect.minY),
-                options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
-            )
+        dragGripRect = barRect.insetBy(dx: -4, dy: 6)
+
+        let barPath = NSBezierPath(roundedRect: barRect, xRadius: barHeight / 2, yRadius: barHeight / 2)
+        let baseFill = NSColor(calibratedWhite: 0.08, alpha: 0.28)
+        let strokeColor = NSColor.white.withAlphaComponent(0.1)
+
+        context.saveGState()
+        context.setFillColor(baseFill.cgColor)
+        barPath.fill()
+        context.setStrokeColor(strokeColor.cgColor)
+        context.setLineWidth(1.0)
+        barPath.stroke()
+        context.restoreGState()
+
+        let controlSize = barHeight - 10
+        closeButtonRect = CGRect(
+            x: barRect.minX + 10,
+            y: barRect.midY - controlSize / 2,
+            width: controlSize,
+            height: controlSize
+        )
+        deleteButtonRect = CGRect(
+            x: barRect.maxX - controlSize - 10,
+            y: barRect.midY - controlSize / 2,
+            width: controlSize,
+            height: controlSize
+        )
+        pinButtonRect = CGRect(
+            x: deleteButtonRect.minX - buttonSpacing - controlSize,
+            y: barRect.midY - controlSize / 2,
+            width: controlSize,
+            height: controlSize
+        )
+
+        drawHeaderButton(
+            in: context,
+            rect: closeButtonRect,
+            baseFill: NSColor(calibratedWhite: 0.16, alpha: 0.55),
+            activeFill: NSColor.systemRed.withAlphaComponent(0.75),
+            isHovered: isHoveringClose,
+            isActive: false
+        ) { ctx, iconRect, tint in
+            drawCloseGlyph(in: ctx, rect: iconRect, color: tint)
         }
+
+        drawHeaderButton(
+            in: context,
+            rect: pinButtonRect,
+            baseFill: NSColor(calibratedWhite: 0.16, alpha: 0.55),
+            activeFill: orbColor.withAlphaComponent(0.75),
+            isHovered: isHoveringPin,
+            isActive: isPinned
+        ) { ctx, iconRect, tint in
+            drawPinGlyph(in: ctx, rect: iconRect, color: tint)
+        }
+
+        drawHeaderButton(
+            in: context,
+            rect: deleteButtonRect,
+            baseFill: NSColor(calibratedWhite: 0.16, alpha: 0.55),
+            activeFill: NSColor.systemRed.withAlphaComponent(0.85),
+            isHovered: isHoveringDelete,
+            isActive: false
+        ) { ctx, iconRect, _ in
+            let glyphAlpha: CGFloat = isHoveringDelete ? 1.0 : 0.85
+            drawDeleteGlyph(in: ctx, rect: iconRect, color: NSColor.systemRed.withAlphaComponent(glyphAlpha))
+        }
+
+        let availableWidth = pinButtonRect.minX - closeButtonRect.maxX - buttonSpacing * 2
+        let handleWidth = max(56, availableWidth)
+        let handleX = closeButtonRect.maxX + buttonSpacing + max(0, (availableWidth - handleWidth) / 2)
+        let handleRect = CGRect(
+            x: handleX,
+            y: barRect.midY - 4,
+            width: handleWidth,
+            height: 8
+        )
+        drawDragHandle(in: context, rect: handleRect)
+
+        return barRect.minY
+    }
+
+    private func drawHeaderButton(
+        in context: CGContext,
+        rect: CGRect,
+        baseFill: NSColor,
+        activeFill: NSColor,
+        isHovered: Bool,
+        isActive: Bool,
+        iconRenderer: (CGContext, CGRect, NSColor) -> Void
+    ) {
+        let radius = rect.height / 2
+        let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+        let fillColor = isActive ? activeFill : baseFill
+        let hoveredFill = isHovered ? fillColor.withAlphaComponent(min(1.0, fillColor.alphaComponent + 0.15)) : fillColor
+
+        context.saveGState()
+        context.setFillColor(hoveredFill.cgColor)
+        path.fill()
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.08).cgColor)
+        context.setLineWidth(1.0)
+        path.stroke()
+        context.restoreGState()
+
+        let iconInset = max(4, rect.height * 0.28)
+        let iconRect = rect.insetBy(dx: iconInset, dy: iconInset)
+        let iconColor = NSColor.white.withAlphaComponent(isActive ? 1.0 : (isHovered ? 0.92 : 0.78))
+        iconRenderer(context, iconRect, iconColor)
+    }
+
+    private func drawDragHandle(in context: CGContext, rect: CGRect) {
+        context.saveGState()
+        let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
+        context.setFillColor(NSColor.white.withAlphaComponent(0.18).cgColor)
+        path.fill()
         context.restoreGState()
 
         context.saveGState()
-        let insetGrip = NSBezierPath(roundedRect: gripRect.insetBy(dx: 0.5, dy: 0), xRadius: gripRadius, yRadius: gripRadius)
-        NSColor.white.withAlphaComponent(0.28).setStroke()
-        insetGrip.lineWidth = 1.0
-        insetGrip.stroke()
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
+        context.setLineWidth(1.1)
+        let lineCount = 3
+        let spacing = rect.width / CGFloat(lineCount + 1)
+        for index in 1...lineCount {
+            let x = rect.minX + spacing * CGFloat(index)
+            context.move(to: CGPoint(x: x, y: rect.minY + 1.5))
+            context.addLine(to: CGPoint(x: x, y: rect.maxY - 1.5))
+        }
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    private func drawCloseGlyph(in context: CGContext, rect: CGRect, color: NSColor) {
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(1.6)
+        context.setLineCap(.round)
+        context.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        context.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        context.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+        context.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    private func drawPinGlyph(in context: CGContext, rect: CGRect, color: NSColor) {
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(1.4)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+
+        let headRect = CGRect(x: rect.midX - rect.width * 0.25, y: rect.maxY - rect.height * 0.55, width: rect.width * 0.5, height: rect.height * 0.45)
+        context.addEllipse(in: headRect)
+        if color.alphaComponent > 0.95 {
+            context.fillPath()
+        } else {
+            context.strokePath()
+        }
+
+        context.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        context.addLine(to: CGPoint(x: rect.midX, y: headRect.minY + 2))
+        context.strokePath()
         context.restoreGState()
     }
     
+    private func drawDeleteGlyph(in context: CGContext, rect: CGRect, color: NSColor) {
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(1.6)
+        context.setLineCap(.round)
+        let midY = rect.midY
+        context.move(to: CGPoint(x: rect.minX, y: midY))
+        context.addLine(to: CGPoint(x: rect.maxX, y: midY))
+        context.strokePath()
+        context.restoreGState()
+    }
+
     private func createNoiseTexture() -> CGImage? {
         let size = 128
         var pixels = [UInt8](repeating: 0, count: size * size * 4)
@@ -1215,207 +1380,49 @@ class TaskCardView: NSView, FrameUpdatable {
         return max(minFontSize, min(maxFontSize, adaptiveSize))
     }
     
-    private func drawProjectHeader(in context: CGContext, cardRect: NSRect) {
-        // Simplified header - just title and stats without background box
-        let headerTop = cardRect.maxY - 16
+    private func drawProjectHeader(in context: CGContext, cardRect: NSRect, contentTop: CGFloat) {
         let titleHeight: CGFloat = 28
-        let titleRect = CGRect(x: cardRect.minX + 32, y: headerTop - titleHeight, width: cardRect.width - 64, height: titleHeight)
+        let safeTop = min(cardRect.maxY - TaskRowMetrics.controlBarHeight - 12, contentTop)
+        let titleRect = CGRect(x: cardRect.minX + 32, y: safeTop - titleHeight, width: cardRect.width - 64, height: titleHeight)
 
-        // Project title
-        let titleFont = NSFont.systemFont(ofSize: 22, weight: .semibold)
-        let offBlack = NSColor(calibratedWhite: 0.1, alpha: 0.95)
-        let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: titleFont,
-            .foregroundColor: offBlack
-        ]
         let titleParagraph = NSMutableParagraphStyle()
         titleParagraph.alignment = .center
-        var centeredAttributes = titleAttributes
-        centeredAttributes[.paragraphStyle] = titleParagraph
-        projectName.draw(in: titleRect, withAttributes: centeredAttributes)
+        let titleColor = NSColor(calibratedWhite: 0.1, alpha: 0.95)
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 22, weight: .semibold),
+            .foregroundColor: titleColor,
+            .paragraphStyle: titleParagraph
+        ]
+        projectName.draw(in: titleRect, withAttributes: titleAttributes)
 
-        // Stats below title with orb color accent
+        let detailTop = titleRect.minY - 6
+        let detailRect = CGRect(x: cardRect.minX + 32, y: detailTop - 18, width: cardRect.width - 64, height: 18)
         let completedCount = tasks.filter { $0.isCompleted }.count
         let detailString = "\(tasks.count) task" + (tasks.count == 1 ? "" : "s") + " · \(completedCount) done"
         let detailAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14, weight: .medium),
-            .foregroundColor: offBlack.withAlphaComponent(0.7),
+            .foregroundColor: titleColor.withAlphaComponent(0.7),
             .paragraphStyle: titleParagraph
         ]
-        let detailRect = CGRect(x: cardRect.minX + 32, y: headerTop - titleHeight - 24, width: cardRect.width - 64, height: 18)
         detailString.draw(in: detailRect, withAttributes: detailAttributes)
 
-        // Subtle separator line
-        context.saveGState()
-        let separatorY = detailRect.minY - 12
-        context.move(to: CGPoint(x: cardRect.minX + 32, y: separatorY))
-        context.addLine(to: CGPoint(x: cardRect.maxX - 32, y: separatorY))
-        context.setStrokeColor(orbColor.withAlphaComponent(0.18).cgColor)
-        context.setLineWidth(1.0)
-        context.strokePath()
-        context.restoreGState()
-
-        drawCloseButton(in: context, headerRect: cardRect)
-        drawPinButton(in: context, headerRect: cardRect)
-    }
-    
-    private func drawHeaderStats(in context: CGContext, headerRect: CGRect) {
-        let totalTasks = tasks.count
-        let completedTasks = tasks.filter { $0.isCompleted }.count
-        let openTasks = totalTasks - completedTasks
-        
-        let statsParagraph = NSMutableParagraphStyle()
-        statsParagraph.alignment = .center
-        let statsString = "Open \(openTasks) • Done \(completedTasks)"
+        let openTasks = tasks.count - completedCount
+        let statsString = "Open \(max(0, openTasks)) • Done \(completedCount)"
+        let statsRect = CGRect(x: cardRect.minX + 32, y: detailRect.minY - 20, width: cardRect.width - 64, height: 14)
         let statsAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 0.2, alpha: 0.75),
-            .paragraphStyle: statsParagraph
+            .foregroundColor: titleColor.withAlphaComponent(0.55),
+            .paragraphStyle: titleParagraph
         ]
-        let statsRect = CGRect(x: headerRect.minX + 32, y: headerRect.minY + 4, width: headerRect.width - 64, height: 14)
         statsString.draw(in: statsRect, withAttributes: statsAttributes)
-    }
-    
-    private func drawCloseButton(in context: CGContext, headerRect: CGRect) {
-        let buttonSize: CGFloat = 18
-        let buttonMargin: CGFloat = 16
-        let gripTop = headerRect.maxY
-        let gripBottom = gripTop - TaskRowMetrics.dragGripHeight
-        let buttonY = gripBottom + (TaskRowMetrics.dragGripHeight - buttonSize) / 2
-        closeButtonRect = CGRect(
-            x: headerRect.minX + buttonMargin,
-            y: buttonY,
-            width: buttonSize,
-            height: buttonSize
-        )
-        
-        // Apply hover scale
-        let scale: CGFloat = isHoveringClose ? 1.05 : 1.0
-        let baseOpacity: CGFloat = 0.16
-        let hoverBoost: CGFloat = isHoveringClose ? 0.16 : 0.0
-        let fillOpacity = min(0.4, baseOpacity + hoverBoost)
-        let offBlack = NSColor(calibratedWhite: 0.12, alpha: 1.0)
 
         context.saveGState()
-        if scale != 1.0 {
-            context.translateBy(x: closeButtonRect.midX, y: closeButtonRect.midY)
-            context.scaleBy(x: scale, y: scale)
-            context.translateBy(x: -closeButtonRect.midX, y: -closeButtonRect.midY)
-        }
-
-        // Circular background
-        let buttonPath = NSBezierPath(ovalIn: closeButtonRect)
-        context.setFillColor(offBlack.withAlphaComponent(fillOpacity).cgColor)
-        buttonPath.fill()
-        context.restoreGState()
-
-        // Draw X icon
-        context.saveGState()
-        if scale != 1.0 {
-            context.translateBy(x: closeButtonRect.midX, y: closeButtonRect.midY)
-            context.scaleBy(x: scale, y: scale)
-            context.translateBy(x: -closeButtonRect.midX, y: -closeButtonRect.midY)
-        }
-        drawCloseIcon(in: context, rect: closeButtonRect)
-        context.restoreGState()
-    }
-    
-    private func drawCloseIcon(in context: CGContext, rect: CGRect) {
-        let iconSize: CGFloat = 12
-        let iconRect = CGRect(
-            x: rect.midX - iconSize/2,
-            y: rect.midY - iconSize/2,
-            width: iconSize,
-            height: iconSize
-        )
-        
-            context.saveGState()
-        context.setLineWidth(1.2)
-        context.setStrokeColor(NSColor(calibratedWhite: 0.12, alpha: 0.9).cgColor)
-        
-        // Draw X
-        context.move(to: CGPoint(x: iconRect.minX + 2, y: iconRect.minY + 2))
-        context.addLine(to: CGPoint(x: iconRect.maxX - 2, y: iconRect.maxY - 2))
-        context.move(to: CGPoint(x: iconRect.maxX - 2, y: iconRect.minY + 2))
-        context.addLine(to: CGPoint(x: iconRect.minX + 2, y: iconRect.maxY - 2))
+        let separatorY = statsRect.minY - 12
+        context.move(to: CGPoint(x: cardRect.minX + 32, y: separatorY))
+        context.addLine(to: CGPoint(x: cardRect.maxX - 32, y: separatorY))
+        context.setStrokeColor(orbColor.withAlphaComponent(0.16).cgColor)
+        context.setLineWidth(1.0)
         context.strokePath()
-        
-        context.restoreGState()
-    }
-    
-    private func drawPinButton(in context: CGContext, headerRect: CGRect) {
-        let buttonSize: CGFloat = 18
-        let buttonMargin: CGFloat = 16
-        let gripTop = headerRect.maxY
-        let gripBottom = gripTop - TaskRowMetrics.dragGripHeight
-        let buttonY = gripBottom + (TaskRowMetrics.dragGripHeight - buttonSize) / 2
-        pinButtonRect = CGRect(
-            x: headerRect.maxX - buttonMargin - buttonSize,
-            y: buttonY,
-            width: buttonSize,
-            height: buttonSize
-        )
-
-        // Apply hover scale
-        let scale: CGFloat = isHoveringPin ? 1.05 : 1.0
-        let baseOpacity: CGFloat = isPinned ? 0.45 : 0.16
-        let hoverBoost: CGFloat = isHoveringPin ? 0.2 : 0.0
-        let fillOpacity = min(0.6, baseOpacity + hoverBoost)
-        let offBlack = NSColor(calibratedWhite: 0.12, alpha: 1.0)
-        
-        context.saveGState()
-        if scale != 1.0 {
-            context.translateBy(x: pinButtonRect.midX, y: pinButtonRect.midY)
-            context.scaleBy(x: scale, y: scale)
-            context.translateBy(x: -pinButtonRect.midX, y: -pinButtonRect.midY)
-        }
-        
-        // Circular background
-        let buttonPath = NSBezierPath(ovalIn: pinButtonRect)
-        let fillColor = isPinned ? orbColor.withAlphaComponent(fillOpacity) : offBlack.withAlphaComponent(fillOpacity)
-        context.setFillColor(fillColor.cgColor)
-        buttonPath.fill()
-        context.restoreGState()
-        
-        // Draw pin icon
-        context.saveGState()
-        if scale != 1.0 {
-            context.translateBy(x: pinButtonRect.midX, y: pinButtonRect.midY)
-            context.scaleBy(x: scale, y: scale)
-            context.translateBy(x: -pinButtonRect.midX, y: -pinButtonRect.midY)
-        }
-        drawPinIcon(in: context, rect: pinButtonRect, isPinned: isPinned)
-        context.restoreGState()
-    }
-    
-    private func drawPinIcon(in context: CGContext, rect: CGRect, isPinned: Bool) {
-        let iconSize: CGFloat = 12
-        let iconRect = CGRect(
-            x: rect.midX - iconSize/2,
-            y: rect.midY - iconSize/2,
-            width: iconSize,
-            height: iconSize
-        )
-        
-        context.saveGState()
-        context.setLineWidth(1.3)
-        let strokeColor = isPinned ? NSColor(calibratedWhite: 0.05, alpha: 0.95) : NSColor(calibratedWhite: 0.1, alpha: 0.9)
-        context.setStrokeColor(strokeColor.cgColor)
-        context.setFillColor(strokeColor.cgColor)
-
-        let pinHeadRect = CGRect(x: iconRect.midX - 3, y: iconRect.maxY - 6, width: 6, height: 6)
-        if isPinned {
-            context.addEllipse(in: pinHeadRect)
-            context.fillPath()
-        } else {
-            context.addEllipse(in: pinHeadRect)
-            context.strokePath()
-        }
-
-        context.move(to: CGPoint(x: iconRect.midX, y: iconRect.minY + 2))
-        context.addLine(to: CGPoint(x: iconRect.midX, y: iconRect.maxY - 3))
-        context.strokePath()
-
         context.restoreGState()
     }
     
@@ -1854,10 +1861,11 @@ enum TaskRowMetrics {
     static let chipSpacing: CGFloat = 6
     static let chipVerticalSpacing: CGFloat = 4
     static let metadataTopInset: CGFloat = 26
-    static let headerHeight: CGFloat = 64
+    static let controlBarHeight: CGFloat = 34
+    static let headerHeight: CGFloat = 96
     static let headerDividerSpacing: CGFloat = 10
     static let cardInset: CGFloat = 24
-    static let dragGripHeight: CGFloat = 18
+    static let dragGripHeight: CGFloat = controlBarHeight
     static let scrollBarWidth: CGFloat = 8
     static let scrollBarSpacing: CGFloat = 12
 }

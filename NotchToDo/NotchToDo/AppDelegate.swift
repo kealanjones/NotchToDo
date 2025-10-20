@@ -8,9 +8,12 @@ private struct ClarificationPending {
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var overlayController: NotchOverlayController?
-    private var wakeWordEngine: MockWakeWordEngine?
-    private var speechRecognizer: MockSpeechRecognizer?
+    private var wakeWordEngine: WakeWordEngine?
+    private var speechRecognizer: SpeechRecognizer?
     private var intentRouter: IntentRouter?
+    
+    // Flag to switch between real and mock implementations
+    private let useRealVoice = true // Set to false to use mock implementations
     private var pendingClarification: ClarificationPending?
     private var logMenuItems: [DebugCategory: NSMenuItem] = [:]
     private let persistenceController = PersistenceController.shared
@@ -44,6 +47,55 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func setupAudioEngines() {
+        if useRealVoice {
+            setupRealVoiceEngines()
+        } else {
+            setupMockVoiceEngines()
+        }
+    }
+    
+    private func setupRealVoiceEngines() {
+        DebugLog.log("🎤 Setting up REAL voice engines", category: .speech)
+        
+        // Create real wake word engine
+        let realWakeWordEngine = RealWakeWordEngine()
+        realWakeWordEngine.onTriggered = { [weak self] in
+            DebugLog.log("🎤 Real wake word detected!", category: .speech)
+            self?.handleWakeWordTriggered()
+        }
+        
+        // Start wake word detection
+        do {
+            try realWakeWordEngine.start()
+            DebugLog.log("🎤 Real wake word engine started successfully", category: .speech)
+        } catch {
+            DebugLog.log("🎤 Failed to start real wake word engine: \(error.localizedDescription)", category: .speech)
+            // Fall back to mock if real fails
+            setupMockVoiceEngines()
+            return
+        }
+        
+        wakeWordEngine = realWakeWordEngine
+        
+        // Create real speech recognizer
+        let realSpeechRecognizer = RealSpeechRecognizer()
+        realSpeechRecognizer.onPartial = { [weak self] partial in
+            DebugLog.log("🎤 Real partial transcript: '\(partial)'", category: .speech)
+            self?.handlePartialTranscript(partial)
+        }
+        realSpeechRecognizer.onFinal = { [weak self] final in
+            DebugLog.log("🎤 Real final transcript: '\(final)'", category: .speech)
+            self?.handleFinalTranscript(final)
+        }
+        
+        speechRecognizer = realSpeechRecognizer
+        
+        DebugLog.log("🎤 Real voice engines setup complete", category: .speech)
+    }
+    
+    private func setupMockVoiceEngines() {
+        DebugLog.log("🎤 Setting up MOCK voice engines (fallback)", category: .speech)
+        
         wakeWordEngine = MockWakeWordEngine()
         wakeWordEngine?.onTriggered = { [weak self] in
             self?.handleWakeWordTriggered()

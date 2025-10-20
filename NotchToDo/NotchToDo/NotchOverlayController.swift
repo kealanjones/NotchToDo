@@ -210,7 +210,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         if let window = taskCardWindows[targetOrb.id],
            let taskCardView = window.contentView as? TaskCardView {
-            taskCardView.updateTasks(targetOrb.tasks, projectName: targetOrb.name, orbColor: targetOrb.color)
+            taskCardView.updateTasks(targetOrb.tasks, projectName: targetOrb.name, orbColor: targetOrb.color, orbId: targetOrb.id)
             window.alphaValue = 1.0
             window.makeKeyAndOrderFront(nil)
             if let task = newlyCreatedTask {
@@ -903,7 +903,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         // Create task card view
         let taskCardView = TaskCardView()
         taskCardView.setController(self)
-        taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color)
+        taskCardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color, orbId: orb.id)
         taskCardView.setAmbientAnimationActive(true)
         
         // Ensure the view has the correct frame
@@ -1141,6 +1141,35 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         DebugLog.log("🎯 Task detail window opened and stored for task: '\(task.title)'", category: .tasks)
     }
 
+    func requestProjectDeletion(for taskCardView: TaskCardView) {
+        guard let orbId = taskCardView.currentOrbIdentifier(),
+              let orb = orbManager.orbs.first(where: { $0.id == orbId }) else {
+            DebugLog.log("🗑️ Delete requested but orb lookup failed", category: .overlay)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Delete \"\(orb.name)\"?"
+        alert.informativeText = "This will remove the project and all of its tasks. This action cannot be undone."
+        alert.addButton(withTitle: "Delete Project")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() != .alertFirstButtonReturn {
+            return
+        }
+
+        hideTaskCard(for: orb)
+        customCardSizes.removeValue(forKey: orb.id)
+        orbManager.removeOrb(orb)
+        if currentOpenOrb?.id == orb.id {
+            currentOpenOrb = nil
+        }
+        refreshOrbEmbeddingCache()
+        semiCircleView?.needsDisplay = true
+        DebugLog.log("🗑️ Deleted project \(orb.name)", category: .overlay)
+    }
+
     func closeTaskDetail(for taskId: UUID) {
         DebugLog.log("🎯 Close requested for task ID: \(taskId)", category: .tasks)
         
@@ -1252,8 +1281,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             target.tasks.append(transferredTask)
             
             // Update both task cards
-            sourceCard.updateTasks(source.tasks, projectName: source.name, orbColor: source.color)
-            targetCard.updateTasks(target.tasks, projectName: target.name, orbColor: target.color)
+            sourceCard.updateTasks(source.tasks, projectName: source.name, orbColor: source.color, orbId: source.id)
+            targetCard.updateTasks(target.tasks, projectName: target.name, orbColor: target.color, orbId: target.id)
 
             let sourceMidY = sourceCard.window?.frame.midY ?? targetCard.window?.frame.midY ?? 0
             let targetMidY = targetCard.window?.frame.midY ?? sourceMidY
