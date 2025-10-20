@@ -1,6 +1,7 @@
 import Foundation
 import Speech
 import AVFoundation
+import Accelerate
 
 /// Real-time speech recognizer using Apple's Speech framework
 /// Provides live transcription with partial and final results
@@ -15,6 +16,13 @@ class RealSpeechRecognizer: SpeechRecognizer {
     
     private var isRunning = false
     private var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
+    
+    // End-of-speech detection parameters
+    private var lastDetectedSpeechAt: CFTimeInterval = CACurrentMediaTime()
+    private var isEnding = false
+    private let silenceToEndSeconds: CFTimeInterval = 1.2
+    private let maxRecordingSeconds: CFTimeInterval = 15.0
+    private let minSpeechRMS: Float = 0.01 // ~-40dB; adjust if needed
     
     init(locale: Locale = Locale(identifier: "en-US")) {
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
@@ -138,16 +146,27 @@ class RealSpeechRecognizer: SpeechRecognizer {
         
         // Configure audio tap
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 2048, format: recordingFormat) { buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: recordingFormat) { buffer, when in
             self.recognitionRequest?.append(buffer)
+            // Energy-based silence detection
+            let rms = buffer.rms()
+            if rms > self.minSpeechRMS {
+                self.lastDetectedSpeechAt = CACurrentMediaTime()
+            }
         }
         
         // Start audio engine
         audioEngine.prepare()
         try audioEngine.start()
         DebugLog.log("Audio engine started (input format: \(recordingFormat))", category: .speech)
-        
         isRunning = true
+        isEnding = false
+        lastDetectedSpeechAt = CACurrentMediaTime()
+        
+        // Timer to check for end-of-speech or hard timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.pollForEndConditions()
+        }
         DebugLog.log("Speech recognition started successfully", category: .speech)
     }
     
@@ -169,8 +188,31 @@ class RealSpeechRecognizer: SpeechRecognizer {
         recognitionTask = nil
         
         isRunning = false
+        isEnding = false
         
         DebugLog.log("Speech recognition stopped", category: .speech)
+    }
+
+    // MARK: - End Conditions
+    private func pollForEndConditions() {
+        guard isRunning, !isEnding else { return }
+        let now = CACurrentMediaTime()
+        let sinceSpeech = now - lastDetectedSpeechAt
+        if sinceSpeech >= silenceToEndSeconds {
+            isEnding = true
+            DebugLog.log("Ending due to silence (\(String(format: "%.2f", sinceSpeech))s)", category: .speech)
+            recognitionRequest?.endAudio()
+            return
+        }
+        if sinceSpeech >= maxRecordingSeconds {
+            isEnding = true
+            DebugLog.log("Ending due to max duration", category: .speech)
+            recognitionRequest?.endAudio()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.pollForEndConditions()
+        }
     }
     
     // MARK: - Authorization
@@ -221,6 +263,17 @@ enum SpeechRecognitionError: LocalizedError {
         case .audioEngineError:
             return "Audio engine error occurred."
         }
+    }
+}
+
+// MARK: - Audio utilities
+private extension AVAudioPCMBuffer {
+    func rms() -> Float {
+        guard let channelData = floatChannelData else { return 0 }
+        let frameLength = Int(self.frameLength)
+        var sum: Float = 0
+        vDSP_measqv(channelData[0], 1, &sum, vDSP_Length(frameLength))
+        return sqrtf(sum)
     }
 }
 
