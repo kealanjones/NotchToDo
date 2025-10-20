@@ -19,6 +19,7 @@
 	A1234567890123456789014A /* MockSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789014B /* MockSpeechRecognizer.swift */; };
 	B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018B /* RealSpeechRecognizer.swift */; };
 	B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018D /* RealWakeWordEngine.swift */; };
+	B3234567890123456789018A /* NotchCompactPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3234567890123456789018B /* NotchCompactPreview.swift */; };
 	B2234567890123456789018A /* AudioFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2234567890123456789018B /* AudioFeedback.swift */; };
 	A1234567890123456789014C /* IntentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789014D /* IntentRouter.swift */; };
 	A12345678901234567890178 /* IntentClassification.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890179 /* IntentClassification.swift */; };
@@ -48,6 +49,7 @@
 	B2234567890123456789018B /* AudioFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFeedback.swift; sourceTree = "<group>"; };
 	B1234567890123456789018B /* RealSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealSpeechRecognizer.swift; sourceTree = "<group>"; };
 	B1234567890123456789018D /* RealWakeWordEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealWakeWordEngine.swift; sourceTree = "<group>"; };
+	B3234567890123456789018B /* NotchCompactPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchCompactPreview.swift; sourceTree = "<group>"; };
 	A12345678901234567890179 /* IntentClassification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentClassification.swift; sourceTree = "<group>"; };
 	A1234567890123456789017D /* DebugLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogger.swift; sourceTree = "<group>"; };
 	A12345678901234567890173 /* GradientCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientCache.swift; sourceTree = "<group>"; };
@@ -103,6 +105,7 @@
 		B2234567890123456789018B /* AudioFeedback.swift */,
 		B1234567890123456789018B /* RealSpeechRecognizer.swift */,
 		B1234567890123456789018D /* RealWakeWordEngine.swift */,
+		B3234567890123456789018B /* NotchCompactPreview.swift */,
 		A1234567890123456789017D /* DebugLogger.swift */,
 		A12345678901234567890179 /* IntentClassification.swift */,
 		A1234567890123456789014D /* IntentRouter.swift */,
@@ -216,6 +219,7 @@
 			B2234567890123456789018A /* AudioFeedback.swift in Sources */,
 			B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */,
 			B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */,
+			B3234567890123456789018A /* NotchCompactPreview.swift in Sources */,
 			A12345678901234567890178 /* IntentClassification.swift in Sources */,
 			C2D3E4F5A67890B1C2D3E4F5 /* DebugLogger.swift in Sources */,
 			A1234567890123456789014C /* IntentRouter.swift in Sources */,

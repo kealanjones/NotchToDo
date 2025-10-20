@@ -36,6 +36,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private var pendingTranscript: String?
     private var pendingTaskTitle: String?
     private var pendingBubbleTargetOrbId: UUID?
+    private let compactPreview = NotchCompactPreviewController()
     
         // Auto-fade timer system
     private var fadeTimer: Timer?
@@ -726,6 +727,12 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             self.pendingBubbleTargetOrbId = nil
             self.addTask(taskTitle, to: orb)
             AudioFeedback.shared.play(.dropIntoOrb, volume: 0.55)
+            // Show compact preview near notch
+            self.compactPreview.present(
+                orbColor: orb.color,
+                title: orb.name,
+                subtitle: taskTitle
+            )
             self.pendingTranscript = nil
             self.pendingTaskTitle = nil
             self.setState(.idle)
