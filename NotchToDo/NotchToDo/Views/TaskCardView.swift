@@ -1846,28 +1846,28 @@ class TaskCardView: NSView, FrameUpdatable {
 enum TaskRowMetrics {
     static let rowHeight: CGFloat = 72
     static let rowSpacing: CGFloat = 16
-    static let listInset: CGFloat = 32
-    static let rowVerticalPadding: CGFloat = 20
-    static let rowHorizontalPadding: CGFloat = 20
-    static let accentInset: CGFloat = 20
+    static let listInset: CGFloat = 40  // Increased from 32 - more space from top/bottom
+    static let rowVerticalPadding: CGFloat = 24  // Increased from 20 - more vertical breathing room
+    static let rowHorizontalPadding: CGFloat = 28  // Increased from 20 - more horizontal space
+    static let accentInset: CGFloat = 28  // Increased from 20 - accent bar further from edge
     static let accentWidth: CGFloat = 4
     static let accentCornerRadius: CGFloat = 2
-    static let contentSpacing: CGFloat = 20
+    static let contentSpacing: CGFloat = 24  // Increased from 20 - more space between elements
     static let checkboxSize: CGFloat = 24
-    static let checkboxTrailingInset: CGFloat = 18
+    static let checkboxTrailingInset: CGFloat = 22  // Increased from 18 - checkbox further from edge
     static let dragHitWidth: CGFloat = 44
     static let chipHeight: CGFloat = 18
-    static let chipHorizontalPadding: CGFloat = 8
-    static let chipSpacing: CGFloat = 6
-    static let chipVerticalSpacing: CGFloat = 4
-    static let metadataTopInset: CGFloat = 26
-    static let controlBarHeight: CGFloat = 34
-    static let headerHeight: CGFloat = 96
-    static let headerDividerSpacing: CGFloat = 10
-    static let cardInset: CGFloat = 24
+    static let chipHorizontalPadding: CGFloat = 10  // Increased from 8 - chips less cramped
+    static let chipSpacing: CGFloat = 8  // Increased from 6 - more space between chips
+    static let chipVerticalSpacing: CGFloat = 6  // Increased from 4
+    static let metadataTopInset: CGFloat = 30  // Increased from 26
+    static let controlBarHeight: CGFloat = 40  // Increased from 34 - taller control bar
+    static let headerHeight: CGFloat = 110  // Increased from 96 - taller header
+    static let headerDividerSpacing: CGFloat = 16  // Increased from 10 - more space after header
+    static let cardInset: CGFloat = 32  // Increased from 24 - card itself has more breathing room
     static let dragGripHeight: CGFloat = controlBarHeight
     static let scrollBarWidth: CGFloat = 8
-    static let scrollBarSpacing: CGFloat = 12
+    static let scrollBarSpacing: CGFloat = 16  // Increased from 12 - scroll bar further from edge
 }
 
 private let taskRowRelativeFormatter: RelativeDateTimeFormatter = {
