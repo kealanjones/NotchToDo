@@ -30,6 +30,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupOverlay()
         setupAudioEngines()
         setupNLU()
+        setupTestShortcuts()
+        setupDefaultPreferences()
+    }
+    
+    private func setupDefaultPreferences() {
+        // Set default preferences if not already set
+        if !UserDefaults.standard.bool(forKey: "HasLaunchedBefore") {
+            NotchCompactPreviewController.isEnabled = true
+            AudioFeedback.shared.isEnabled = true
+            UserDefaults.standard.set(true, forKey: "HasLaunchedBefore")
+        }
+    }
+    
+    private func setupTestShortcuts() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 15 { // Cmd+Shift+T
+                self.overlayController?.compactPreview.testPresent()
+                return nil
+            }
+            return event
+        }
     }
     
     private func setupStatusBar() {
@@ -174,12 +195,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         loggingItem.submenu = loggingMenu
         menu.addItem(loggingItem)
+        
+        // Add separator and compact preview toggle
+        menu.addItem(NSMenuItem.separator())
+        let previewItem = NSMenuItem(title: "Show Compact Preview", action: #selector(toggleCompactPreview), keyEquivalent: "")
+        previewItem.target = self
+        previewItem.state = NotchCompactPreviewController.isEnabled ? .on : .off
+        menu.addItem(previewItem)
     }
 
     private func refreshLogMenuStates() {
         for (category, item) in logMenuItems {
             item.state = DebugLogger.shared.isEnabled(category) ? .on : .off
         }
+    }
+    
+    @objc private func toggleCompactPreview(_ sender: NSMenuItem) {
+        NotchCompactPreviewController.isEnabled.toggle()
+        sender.state = NotchCompactPreviewController.isEnabled ? .on : .off
+        print("🔧 Compact preview \(NotchCompactPreviewController.isEnabled ? "enabled" : "disabled")")
     }
     
     

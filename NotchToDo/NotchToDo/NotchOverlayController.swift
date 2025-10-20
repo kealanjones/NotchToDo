@@ -36,7 +36,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private var pendingTranscript: String?
     private var pendingTaskTitle: String?
     private var pendingBubbleTargetOrbId: UUID?
-    private let compactPreview = NotchCompactPreviewController()
+    let compactPreview = NotchCompactPreviewController()
     
         // Auto-fade timer system
     private var fadeTimer: Timer?

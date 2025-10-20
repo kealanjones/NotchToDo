@@ -55,15 +55,29 @@ final class NotchCompactPreviewController {
     private var window: NSWindow?
     private var view: NotchCompactPreviewView?
     private var hideWorkItem: DispatchWorkItem?
+    
+    static var isEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "CompactPreviewEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "CompactPreviewEnabled") }
+    }
 
     func present(orbColor: NSColor, title: String, subtitle: String, duration: TimeInterval = 2.5) {
+        guard NotchCompactPreviewController.isEnabled else {
+            print("🔍 NotchCompactPreview: Disabled by user preference")
+            return
+        }
+        print("🔍 NotchCompactPreview: Presenting - \(title): \(subtitle)")
         ensureWindow()
         view?.orbColor = orbColor
         view?.title = title
         view?.subtitle = subtitle
-        guard let window else { return }
+        guard let window else { 
+            print("🔍 NotchCompactPreview: No window available")
+            return 
+        }
 
         positionNearNotch(window)
+        print("🔍 NotchCompactPreview: Window positioned at \(window.frame)")
         window.alphaValue = 0
         window.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
@@ -89,17 +103,18 @@ final class NotchCompactPreviewController {
 
     private func ensureWindow() {
         guard window == nil else { return }
-        let view = NotchCompactPreviewView(frame: NSRect(x: 0, y: 0, width: 240, height: 32))
+        let view = NotchCompactPreviewView(frame: NSRect(x: 0, y: 0, width: 280, height: 40))
         let win = NSWindow(contentRect: view.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
         win.isOpaque = false
         win.backgroundColor = .clear
         win.hasShadow = true
-        win.level = .statusBar
+        win.level = .floating  // Changed from .statusBar to .floating to make it more visible
         win.ignoresMouseEvents = true
         win.collectionBehavior = [.canJoinAllSpaces, .stationary]
         win.contentView = view
         self.window = win
         self.view = view
+        print("🔍 NotchCompactPreview: Window created with frame \(win.frame)")
     }
 
     private func positionNearNotch(_ window: NSWindow) {
@@ -108,8 +123,14 @@ final class NotchCompactPreviewController {
         let width = window.frame.width
         let height = window.frame.height
         let x = frame.midX - width/2
-        let y = frame.maxY - height - 6
+        // Position below the notch with significant clearance
+        let y = frame.maxY - height - 120  // Even further down to fully clear the notch
         window.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+    
+    // Test method - call this to manually show the preview
+    func testPresent() {
+        present(orbColor: .systemBlue, title: "Test Project", subtitle: "Test task added", duration: 5.0)
     }
 }
 
