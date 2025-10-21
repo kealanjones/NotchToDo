@@ -8,7 +8,8 @@ import Accelerate
 class RealSpeechRecognizer: SpeechRecognizer {
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
-    
+    var onError: ((String) -> Void)?
+
     private let speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
@@ -60,6 +61,8 @@ class RealSpeechRecognizer: SpeechRecognizer {
             return
         case .denied, .restricted:
             DebugLog.log("Speech recognition authorization denied or restricted", category: .speech)
+            let message = "Speech recognition access denied. Please enable it in System Settings > Privacy & Security > Speech Recognition."
+            onError?(message)
             throw SpeechRecognitionError.authorizationDenied
         case .authorized:
             break
@@ -73,6 +76,8 @@ class RealSpeechRecognizer: SpeechRecognizer {
     private func startRecognition() throws {
         guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
             DebugLog.log("Speech recognizer not available", category: .speech)
+            let message = "Speech recognition is not available. Please check your internet connection and try again."
+            onError?(message)
             throw SpeechRecognitionError.recognizerNotAvailable
         }
         

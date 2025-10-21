@@ -46,19 +46,81 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func setupTestShortcuts() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 15 { // Cmd+Shift+T
+            // Cmd+Shift+T - Test compact preview
+            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 15 {
                 self.overlayController?.compactPreview.testPresent()
                 return nil
             }
+
+            // Cmd+N - Quick add task
+            if event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.shift) && event.keyCode == 45 {
+                self.showQuickAddTaskPrompt()
+                return nil
+            }
+
+            // Cmd+Shift+N - New orb/project
+            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 45 {
+                self.showNewProjectPrompt()
+                return nil
+            }
+
+            // Cmd+Shift+O - Toggle overlay
+            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 31 {
+                self.overlayController?.toggleOverlay()
+                return nil
+            }
+
+            // Cmd+1 through Cmd+6 - Switch to orb by index
+            if event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.shift) {
+                let numberKeyCodes: [UInt16: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6]
+                if let orbIndex = numberKeyCodes[event.keyCode] {
+                    self.overlayController?.switchToOrb(at: orbIndex - 1)
+                    return nil
+                }
+            }
+
+            // Esc - Cancel voice capture or hide semi-circle
+            if event.keyCode == 53 { // Escape key
+                if self.overlayController?.isSpeechCaptureActive() == true {
+                    self.overlayController?.cancelSpeechCapture()
+                } else if self.overlayController?.isSemiCircleVisible == true {
+                    self.overlayController?.hideSemiCircle()
+                }
+                return nil
+            }
+
+            // Cmd+Z - Undo
+            if event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.shift) && event.keyCode == 6 {
+                self.overlayController?.performUndo()
+                return nil
+            }
+
+            // Cmd+Shift+Z - Redo
+            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 6 {
+                self.overlayController?.performRedo()
+                return nil
+            }
+
             return event
         }
     }
     
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        
+
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "NotchTo-Do")
+            // Try to load custom icon from assets, fallback to system symbol
+            if let customIcon = NSImage(named: "StatusBarIcon") {
+                print("✅ Custom StatusBarIcon loaded successfully!")
+                print("   Icon size: \(customIcon.size)")
+                button.image = customIcon
+                button.image?.size = NSSize(width: 18, height: 18)
+                button.image?.isTemplate = false  // Keep original colors
+            } else {
+                print("❌ StatusBarIcon not found in assets, using fallback")
+                // Fallback to system symbol if custom icon not found
+                button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "NotchTo-Do")
+            }
             button.action = #selector(statusBarButtonClicked)
             button.target = self
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -118,7 +180,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DebugLog.log("🎤 Real final transcript: '\(final)'", category: .speech)
             self?.handleFinalTranscript(final)
         }
-        
+        realSpeechRecognizer.onError = { [weak self] errorMessage in
+            DebugLog.log("🎤 Speech recognition error: '\(errorMessage)'", category: .speech)
+            self?.handleSpeechError(errorMessage)
+        }
+
         speechRecognizer = realSpeechRecognizer
         
         DebugLog.log("🎤 Real voice engines setup complete", category: .speech)
@@ -158,6 +224,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildDebugMenu(_ menu: NSMenu) {
         menu.removeAllItems()
+        menu.addItem(makeMenuItem(title: "Keyboard Shortcuts…", action: #selector(showKeyboardShortcuts)))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(makeMenuItem(title: "Simulate Wake Word", action: #selector(simulateWakeWord)))
         menu.addItem(makeMenuItem(title: "Simulate Transcript", action: #selector(simulateTranscript)))
         let customItem = makeMenuItem(title: "Simulate Custom Transcript…", action: #selector(simulateCustomTranscriptPrompt))
@@ -209,6 +277,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         animationsItem.target = self
         animationsItem.state = NotchIndicatorView.contextualAnimationsEnabled ? .on : .off
         menu.addItem(animationsItem)
+
+        // Add orb limit submenu
+        let orbLimitItem = NSMenuItem(title: "Max Orbs Limit", action: nil, keyEquivalent: "")
+        let orbLimitMenu = NSMenu()
+        let currentLimit = UserDefaults.standard.integer(forKey: "maxOrbCount")
+        let effectiveLimit = currentLimit > 0 ? currentLimit : 6
+
+        for limit in [6, 8, 10, 12, 15, 20] {
+            let item = NSMenuItem(title: "\(limit) orbs", action: #selector(setMaxOrbLimit(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = limit
+            item.state = (limit == effectiveLimit) ? .on : .off
+            orbLimitMenu.addItem(item)
+        }
+        orbLimitItem.submenu = orbLimitMenu
+        menu.addItem(orbLimitItem)
     }
 
     private func refreshLogMenuStates() {
@@ -229,6 +313,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("🔧 Contextual notch animations \(NotchIndicatorView.contextualAnimationsEnabled ? "enabled" : "disabled")")
         // Refresh the notch display
         overlayController?.notchView?.needsDisplay = true
+    }
+
+    @objc private func setMaxOrbLimit(_ sender: NSMenuItem) {
+        let newLimit = sender.tag
+        UserDefaults.standard.set(newLimit, forKey: "maxOrbCount")
+        print("🔧 Max orb limit set to \(newLimit)")
+
+        // Rebuild menu to update checkmarks
+        rebuildDebugMenu(debugMenu)
     }
     
     
@@ -265,6 +358,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func handlePartialTranscript(_ partial: String) {
         overlayController?.updateSpeechCapture(partialTranscript: partial)
+    }
+
+    private func handleSpeechError(_ errorMessage: String) {
+        overlayController?.setState(.error(errorMessage))
+        overlayController?.showSpeechError(errorMessage)
+        restartWakeWord(after: 2.0)
     }
     
     private func handleFinalTranscript(_ final: String) {
@@ -352,12 +451,57 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// MARK: - Keyboard Shortcut Actions
+extension AppDelegate {
+    func showQuickAddTaskPrompt() {
+        let alert = NSAlert()
+        alert.messageText = "Quick Add Task"
+        alert.informativeText = "Enter the task title:"
+        alert.alertStyle = .informational
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        inputField.placeholderString = "e.g. Buy groceries"
+        alert.accessoryView = inputField
+        alert.addButton(withTitle: "Add Task")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let title = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+
+        overlayController?.addTask(title)
+        AudioFeedback.shared.play(.success, volume: 0.5)
+    }
+
+    func showNewProjectPrompt() {
+        let alert = NSAlert()
+        alert.messageText = "New Project"
+        alert.informativeText = "Enter the project name:"
+        alert.alertStyle = .informational
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        inputField.placeholderString = "e.g. Marketing"
+        alert.accessoryView = inputField
+        alert.addButton(withTitle: "Create Project")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let name = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        overlayController?.createNewProject(name: name)
+        AudioFeedback.shared.play(.success, volume: 0.5)
+    }
+}
+
 // MARK: - Test Menu Actions
 extension AppDelegate {
     @objc func simulateWakeWord() {
         handleWakeWordTriggered()
     }
-    
+
     @objc func simulateTranscript() {
         handleFinalTranscript("add buy milk")
     }
@@ -433,6 +577,42 @@ extension AppDelegate {
         let alert = NSAlert()
         alert.messageText = "Intent Parser Self-Test"
         alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    @objc func showKeyboardShortcuts() {
+        let shortcuts = """
+        GLOBAL SHORTCUTS:
+
+        ⌘N                Quick add task (text prompt)
+        ⇧⌘N              New project/orb (text prompt)
+        ⇧⌘O              Toggle semi-circle overlay
+        ⌘1 - ⌘6          Switch to orb 1-6
+        ⌘Z                Undo last action
+        ⇧⌘Z              Redo last action
+        Esc                Cancel voice capture / Hide overlay
+
+        TASK DETAIL WINDOW:
+
+        Space              Toggle task completion
+        ⌘W                Close window
+        Esc                Close window
+
+        TASK CARD:
+
+        Control+Click     Delete task (with undo)
+        Two-finger click  Delete task (with undo)
+
+        VOICE SHORTCUTS:
+
+        Say "Hey Notch" or "Notch" to activate voice input
+        """
+
+        let alert = NSAlert()
+        alert.messageText = "Keyboard Shortcuts"
+        alert.informativeText = shortcuts
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()

@@ -5,12 +5,14 @@ protocol SpeechRecognizer {
     func stop()
     var onPartial: ((String) -> Void)? { get set }
     var onFinal: ((String) -> Void)? { get set }
+    var onError: ((String) -> Void)? { get set }
 }
 
 class MockSpeechRecognizer: SpeechRecognizer {
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
-    
+    var onError: ((String) -> Void)?
+
     private var isRunning = false
     private var timer: Timer?
     

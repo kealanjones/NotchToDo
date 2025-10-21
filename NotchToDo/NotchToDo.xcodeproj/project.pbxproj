@@ -9,60 +9,62 @@
 /* Begin PBXBuildFile section */
 		A1234567890123456789012A /* NotchToDoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789012B /* NotchToDoApp.swift */; };
 		A1234567890123456789012C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789012D /* AppDelegate.swift */; };
-		A12345678901234567890160 /* ListenState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890161 /* ListenState.swift */; };
-		A12345678901234567890162 /* NotchIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890163 /* NotchIndicatorView.swift */; };
-		A12345678901234567890164 /* OrbModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890165 /* OrbModels.swift */; };
-		A12345678901234567890166 /* TaskCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890167 /* TaskCardView.swift */; };
-		A12345678901234567890168 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890169 /* TaskDetailView.swift */; };
 		A1234567890123456789013C /* NotchOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789013D /* NotchOverlayController.swift */; };
 		A1234567890123456789013E /* MockWakeWordEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789013F /* MockWakeWordEngine.swift */; };
-	A1234567890123456789014A /* MockSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789014B /* MockSpeechRecognizer.swift */; };
-	B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018B /* RealSpeechRecognizer.swift */; };
-	B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018D /* RealWakeWordEngine.swift */; };
-	B3234567890123456789018A /* NotchCompactPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3234567890123456789018B /* NotchCompactPreview.swift */; };
-	B2234567890123456789018A /* AudioFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2234567890123456789018B /* AudioFeedback.swift */; };
-	A1234567890123456789014C /* IntentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789014D /* IntentRouter.swift */; };
-	A12345678901234567890178 /* IntentClassification.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890179 /* IntentClassification.swift */; };
-	A12345678901234567890170 /* FrameTicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890171 /* FrameTicker.swift */; };
-	A12345678901234567890172 /* GradientCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890173 /* GradientCache.swift */; };
-	A12345678901234567890174 /* SpringValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890175 /* SpringValue.swift */; };
-	A12345678901234567890176 /* SpeechCaptureBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890177 /* SpeechCaptureBubbleView.swift */; };
+		A1234567890123456789014A /* MockSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789014B /* MockSpeechRecognizer.swift */; };
+		A1234567890123456789014C /* IntentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789014D /* IntentRouter.swift */; };
+		A12345678901234567890160 /* ListenState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890161 /* ListenState.swift */; };
+		A12345678901234567890162 /* Views/NotchIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890163 /* Views/NotchIndicatorView.swift */; };
+		A12345678901234567890164 /* Models/OrbModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890165 /* Models/OrbModels.swift */; };
+		A12345678901234567890166 /* Views/TaskCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890167 /* Views/TaskCardView.swift */; };
+		A12345678901234567890168 /* Views/TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890169 /* Views/TaskDetailView.swift */; };
+		A12345678901234567890170 /* FrameTicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890171 /* FrameTicker.swift */; };
+		A12345678901234567890172 /* GradientCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890173 /* GradientCache.swift */; };
+		A12345678901234567890174 /* SpringValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890175 /* SpringValue.swift */; };
+		A12345678901234567890176 /* Views/SpeechCaptureBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890177 /* Views/SpeechCaptureBubbleView.swift */; };
+		A12345678901234567890178 /* IntentClassification.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890179 /* IntentClassification.swift */; };
+		B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018B /* RealSpeechRecognizer.swift */; };
+		B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018D /* RealWakeWordEngine.swift */; };
+		B2234567890123456789018A /* AudioFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2234567890123456789018B /* AudioFeedback.swift */; };
+		B3234567890123456789018A /* NotchCompactPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3234567890123456789018B /* NotchCompactPreview.swift */; };
+		C2AA00112233445566778899 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556677 /* PersistenceController.swift */; };
+		C2AA0011223344556677889A /* OrbPersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556678 /* OrbPersistenceStore.swift */; };
+		C2AA0011223344556677889B /* NotchDataModel.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */; };
+		C2AA0011223344556677889D /* Models/OrbPersistenceData.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556682 /* Models/OrbPersistenceData.swift */; };
 		C2D3E4F5A67890B1C2D3E4F5 /* DebugLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789017D /* DebugLogger.swift */; };
-	C2AA00112233445566778899 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556677 /* PersistenceController.swift */; };
-	C2AA0011223344556677889A /* OrbPersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556678 /* OrbPersistenceStore.swift */; };
-	C2AA0011223344556677889B /* NotchDataModel.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */; };
-	C2AA0011223344556677889D /* OrbPersistenceData.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556682 /* OrbPersistenceData.swift */; };
+		E24B3C482EA785A40071EB1C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E24B3C472EA785A40071EB1C /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A1234567890123456789012B /* NotchToDoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchToDoApp.swift; sourceTree = "<group>"; };
 		A1234567890123456789012D /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		A12345678901234567890161 /* ListenState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenState.swift; sourceTree = "<group>"; };
-		A12345678901234567890163 /* NotchIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/NotchIndicatorView.swift"; sourceTree = "<group>"; };
-	A12345678901234567890165 /* OrbModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/OrbModels.swift"; sourceTree = "<group>"; };
-	C2AA00990011223344556682 /* OrbPersistenceData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/OrbPersistenceData.swift"; sourceTree = "<group>"; };
-		A12345678901234567890167 /* TaskCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/TaskCardView.swift"; sourceTree = "<group>"; };
-		A12345678901234567890169 /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/TaskDetailView.swift"; sourceTree = "<group>"; };
 		A1234567890123456789013D /* NotchOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchOverlayController.swift; sourceTree = "<group>"; };
 		A1234567890123456789013F /* MockWakeWordEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockWakeWordEngine.swift; sourceTree = "<group>"; };
-	A1234567890123456789014B /* MockSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockSpeechRecognizer.swift; sourceTree = "<group>"; };
-	B2234567890123456789018B /* AudioFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFeedback.swift; sourceTree = "<group>"; };
-	B1234567890123456789018B /* RealSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealSpeechRecognizer.swift; sourceTree = "<group>"; };
-	B1234567890123456789018D /* RealWakeWordEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealWakeWordEngine.swift; sourceTree = "<group>"; };
-	B3234567890123456789018B /* NotchCompactPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchCompactPreview.swift; sourceTree = "<group>"; };
-	A12345678901234567890179 /* IntentClassification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentClassification.swift; sourceTree = "<group>"; };
-	A1234567890123456789017D /* DebugLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogger.swift; sourceTree = "<group>"; };
-	A12345678901234567890173 /* GradientCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientCache.swift; sourceTree = "<group>"; };
-		A12345678901234567890171 /* FrameTicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameTicker.swift; sourceTree = "<group>"; };
-		A12345678901234567890175 /* SpringValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpringValue.swift; sourceTree = "<group>"; };
-		A12345678901234567890177 /* SpeechCaptureBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/SpeechCaptureBubbleView.swift"; sourceTree = "<group>"; };
+		A1234567890123456789014B /* MockSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockSpeechRecognizer.swift; sourceTree = "<group>"; };
 		A1234567890123456789014D /* IntentRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentRouter.swift; sourceTree = "<group>"; };
 		A1234567890123456789014E /* NotchToDo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotchToDo.entitlements; sourceTree = "<group>"; };
-	A1234567890123456789014F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-	A1234567890123456789015A /* NotchToDo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NotchToDo.app; sourceTree = BUILT_PRODUCTS_DIR; };
-	C2AA00990011223344556677 /* PersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceController.swift; sourceTree = "<group>"; };
-	C2AA00990011223344556678 /* OrbPersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPersistenceStore.swift; sourceTree = "<group>"; };
-	C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodeld; path = NotchDataModel.xcdatamodeld; sourceTree = "<group>"; };
+		A1234567890123456789014F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1234567890123456789015A /* NotchToDo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NotchToDo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A12345678901234567890161 /* ListenState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenState.swift; sourceTree = "<group>"; };
+		A12345678901234567890163 /* Views/NotchIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/NotchIndicatorView.swift; sourceTree = "<group>"; };
+		A12345678901234567890165 /* Models/OrbModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/OrbModels.swift; sourceTree = "<group>"; };
+		A12345678901234567890167 /* Views/TaskCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/TaskCardView.swift; sourceTree = "<group>"; };
+		A12345678901234567890169 /* Views/TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/TaskDetailView.swift; sourceTree = "<group>"; };
+		A12345678901234567890171 /* FrameTicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameTicker.swift; sourceTree = "<group>"; };
+		A12345678901234567890173 /* GradientCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientCache.swift; sourceTree = "<group>"; };
+		A12345678901234567890175 /* SpringValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpringValue.swift; sourceTree = "<group>"; };
+		A12345678901234567890177 /* Views/SpeechCaptureBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/SpeechCaptureBubbleView.swift; sourceTree = "<group>"; };
+		A12345678901234567890179 /* IntentClassification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentClassification.swift; sourceTree = "<group>"; };
+		A1234567890123456789017D /* DebugLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogger.swift; sourceTree = "<group>"; };
+		B1234567890123456789018B /* RealSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealSpeechRecognizer.swift; sourceTree = "<group>"; };
+		B1234567890123456789018D /* RealWakeWordEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealWakeWordEngine.swift; sourceTree = "<group>"; };
+		B2234567890123456789018B /* AudioFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFeedback.swift; sourceTree = "<group>"; };
+		B3234567890123456789018B /* NotchCompactPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchCompactPreview.swift; sourceTree = "<group>"; };
+		C2AA00990011223344556677 /* PersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceController.swift; sourceTree = "<group>"; };
+		C2AA00990011223344556678 /* OrbPersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPersistenceStore.swift; sourceTree = "<group>"; };
+		C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodeld; path = NotchDataModel.xcdatamodeld; sourceTree = "<group>"; };
+		C2AA00990011223344556682 /* Models/OrbPersistenceData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/OrbPersistenceData.swift; sourceTree = "<group>"; };
+		E24B3C472EA785A40071EB1C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,54 +86,55 @@
 			);
 			sourceTree = "<group>";
 		};
-	A1234567890123456789015D /* NotchToDo */ = {
-		isa = PBXGroup;
-		children = (
-			A1234567890123456789012B /* NotchToDoApp.swift */,
-			A1234567890123456789012D /* AppDelegate.swift */,
-			A12345678901234567890161 /* ListenState.swift */,
-			A12345678901234567890163 /* NotchIndicatorView.swift */,
-			A12345678901234567890165 /* OrbModels.swift */,
-			C2AA00990011223344556682 /* OrbPersistenceData.swift */,
-			A12345678901234567890167 /* TaskCardView.swift */,
-			A12345678901234567890169 /* TaskDetailView.swift */,
-			A12345678901234567890177 /* SpeechCaptureBubbleView.swift */,
-			A12345678901234567890173 /* GradientCache.swift */,
-			A12345678901234567890175 /* SpringValue.swift */,
-			A12345678901234567890171 /* FrameTicker.swift */,
-		A1234567890123456789013D /* NotchOverlayController.swift */,
-		A1234567890123456789013F /* MockWakeWordEngine.swift */,
-		A1234567890123456789014B /* MockSpeechRecognizer.swift */,
-		B2234567890123456789018B /* AudioFeedback.swift */,
-		B1234567890123456789018B /* RealSpeechRecognizer.swift */,
-		B1234567890123456789018D /* RealWakeWordEngine.swift */,
-		B3234567890123456789018B /* NotchCompactPreview.swift */,
-		A1234567890123456789017D /* DebugLogger.swift */,
-		A12345678901234567890179 /* IntentClassification.swift */,
-		A1234567890123456789014D /* IntentRouter.swift */,
-		C2AA00990011223344556680 /* Persistence */,
-		C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */,
-			A1234567890123456789014E /* NotchToDo.entitlements */,
-			A1234567890123456789014F /* Info.plist */,
-		);
-		path = NotchToDo;
-		sourceTree = "<group>";
-	};
-	C2AA00990011223344556680 /* Persistence */ = {
-		isa = PBXGroup;
-		children = (
-			C2AA00990011223344556677 /* PersistenceController.swift */,
-			C2AA00990011223344556678 /* OrbPersistenceStore.swift */,
-		);
-		path = Persistence;
-		sourceTree = "<group>";
-	};
+		A1234567890123456789015D /* NotchToDo */ = {
+			isa = PBXGroup;
+			children = (
+				A1234567890123456789012B /* NotchToDoApp.swift */,
+				E24B3C472EA785A40071EB1C /* Assets.xcassets */,
+				A1234567890123456789012D /* AppDelegate.swift */,
+				A12345678901234567890161 /* ListenState.swift */,
+				A12345678901234567890163 /* Views/NotchIndicatorView.swift */,
+				A12345678901234567890165 /* Models/OrbModels.swift */,
+				C2AA00990011223344556682 /* Models/OrbPersistenceData.swift */,
+				A12345678901234567890167 /* Views/TaskCardView.swift */,
+				A12345678901234567890169 /* Views/TaskDetailView.swift */,
+				A12345678901234567890177 /* Views/SpeechCaptureBubbleView.swift */,
+				A12345678901234567890173 /* GradientCache.swift */,
+				A12345678901234567890175 /* SpringValue.swift */,
+				A12345678901234567890171 /* FrameTicker.swift */,
+				A1234567890123456789013D /* NotchOverlayController.swift */,
+				A1234567890123456789013F /* MockWakeWordEngine.swift */,
+				A1234567890123456789014B /* MockSpeechRecognizer.swift */,
+				B2234567890123456789018B /* AudioFeedback.swift */,
+				B1234567890123456789018B /* RealSpeechRecognizer.swift */,
+				B1234567890123456789018D /* RealWakeWordEngine.swift */,
+				B3234567890123456789018B /* NotchCompactPreview.swift */,
+				A1234567890123456789017D /* DebugLogger.swift */,
+				A12345678901234567890179 /* IntentClassification.swift */,
+				A1234567890123456789014D /* IntentRouter.swift */,
+				C2AA00990011223344556680 /* Persistence */,
+				C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */,
+				A1234567890123456789014E /* NotchToDo.entitlements */,
+				A1234567890123456789014F /* Info.plist */,
+			);
+			path = NotchToDo;
+			sourceTree = "<group>";
+		};
 		A1234567890123456789015E /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				A1234567890123456789015A /* NotchToDo.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C2AA00990011223344556680 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				C2AA00990011223344556677 /* PersistenceController.swift */,
+				C2AA00990011223344556678 /* OrbPersistenceStore.swift */,
+			);
+			path = Persistence;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -192,6 +195,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E24B3C482EA785A40071EB1C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -205,29 +209,29 @@
 				A1234567890123456789012A /* NotchToDoApp.swift in Sources */,
 				A1234567890123456789012C /* AppDelegate.swift in Sources */,
 				A12345678901234567890160 /* ListenState.swift in Sources */,
-				A12345678901234567890162 /* NotchIndicatorView.swift in Sources */,
-				A12345678901234567890164 /* OrbModels.swift in Sources */,
-				A12345678901234567890166 /* TaskCardView.swift in Sources */,
+				A12345678901234567890162 /* Views/NotchIndicatorView.swift in Sources */,
+				A12345678901234567890164 /* Models/OrbModels.swift in Sources */,
+				A12345678901234567890166 /* Views/TaskCardView.swift in Sources */,
 				A12345678901234567890170 /* FrameTicker.swift in Sources */,
 				A12345678901234567890174 /* SpringValue.swift in Sources */,
 				A12345678901234567890172 /* GradientCache.swift in Sources */,
-				A12345678901234567890176 /* SpeechCaptureBubbleView.swift in Sources */,
-				A12345678901234567890168 /* TaskDetailView.swift in Sources */,
+				A12345678901234567890176 /* Views/SpeechCaptureBubbleView.swift in Sources */,
+				A12345678901234567890168 /* Views/TaskDetailView.swift in Sources */,
 				A1234567890123456789013C /* NotchOverlayController.swift in Sources */,
 				A1234567890123456789013E /* MockWakeWordEngine.swift in Sources */,
-			A1234567890123456789014A /* MockSpeechRecognizer.swift in Sources */,
-			B2234567890123456789018A /* AudioFeedback.swift in Sources */,
-			B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */,
-			B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */,
-			B3234567890123456789018A /* NotchCompactPreview.swift in Sources */,
-			A12345678901234567890178 /* IntentClassification.swift in Sources */,
-			C2D3E4F5A67890B1C2D3E4F5 /* DebugLogger.swift in Sources */,
-			A1234567890123456789014C /* IntentRouter.swift in Sources */,
-			C2AA00112233445566778899 /* PersistenceController.swift in Sources */,
-			C2AA0011223344556677889A /* OrbPersistenceStore.swift in Sources */,
-			C2AA0011223344556677889B /* NotchDataModel.xcdatamodeld in Sources */,
-			C2AA0011223344556677889D /* OrbPersistenceData.swift in Sources */,
-		);
+				A1234567890123456789014A /* MockSpeechRecognizer.swift in Sources */,
+				B2234567890123456789018A /* AudioFeedback.swift in Sources */,
+				B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */,
+				B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */,
+				B3234567890123456789018A /* NotchCompactPreview.swift in Sources */,
+				A12345678901234567890178 /* IntentClassification.swift in Sources */,
+				C2D3E4F5A67890B1C2D3E4F5 /* DebugLogger.swift in Sources */,
+				A1234567890123456789014C /* IntentRouter.swift in Sources */,
+				C2AA00112233445566778899 /* PersistenceController.swift in Sources */,
+				C2AA0011223344556677889A /* OrbPersistenceStore.swift in Sources */,
+				C2AA0011223344556677889B /* NotchDataModel.xcdatamodeld in Sources */,
+				C2AA0011223344556677889D /* Models/OrbPersistenceData.swift in Sources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

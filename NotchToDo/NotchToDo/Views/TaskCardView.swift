@@ -770,9 +770,72 @@ class TaskCardView: NSView, FrameUpdatable {
         addTrackingArea(trackingArea)
     }
     
+    override func rightMouseDown(with event: NSEvent) {
+        let locationInView = convert(event.locationInWindow, from: nil)
+
+        print("🖱️ Right-click detected at: \(locationInView)")
+
+        // Check if right-click is on a task
+        if let taskIndex = getClickedTaskIndex(at: locationInView) {
+            print("🖱️ Right-clicked on task index: \(taskIndex)")
+            showTaskContextMenu(for: taskIndex, at: locationInView)
+            return
+        }
+
+        print("🖱️ Right-click not on a task, passing to super")
+        super.rightMouseDown(with: event)
+    }
+
+    private func showTaskContextMenu(for taskIndex: Int, at location: CGPoint) {
+        guard taskIndex >= 0 && taskIndex < tasks.count else {
+            print("❌ Invalid task index: \(taskIndex)")
+            return
+        }
+        guard let orb = controller?.orbManager.orbs.first(where: { $0.id == currentOrbId }) else {
+            print("❌ Could not find orb for ID: \(currentOrbId ?? UUID())")
+            return
+        }
+
+        let task = tasks[taskIndex]
+        print("✅ Showing context menu for task: \(task.title)")
+
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let deleteItem = NSMenuItem(title: "Delete \"\(task.title)\"", action: #selector(handleDeleteTaskFromMenu(_:)), keyEquivalent: "")
+        deleteItem.target = self
+        deleteItem.representedObject = task
+        deleteItem.isEnabled = true
+        menu.addItem(deleteItem)
+
+        // Position menu at the click location
+        NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: self)
+    }
+
+    @objc private func handleDeleteTaskFromMenu(_ sender: NSMenuItem) {
+        guard let task = sender.representedObject as? Task else {
+            print("❌ No task in menu item")
+            return
+        }
+        guard let orb = controller?.orbManager.orbs.first(where: { $0.id == currentOrbId }) else {
+            print("❌ Could not find orb for deletion")
+            return
+        }
+
+        print("🗑️ Deleting task: \(task.title)")
+        controller?.deleteTask(task, from: orb)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let locationInView = convert(event.locationInWindow, from: nil)
-        
+
+        // Check for Control+Click (right-click on Mac)
+        if event.modifierFlags.contains(.control) {
+            print("🖱️ Control+Click detected, treating as right-click")
+            rightMouseDown(with: event)
+            return
+        }
+
         // Check if click is on the resize handle
         if resizeHandleRect.contains(locationInView) {
             guard let window = window else { return }
@@ -781,25 +844,25 @@ class TaskCardView: NSView, FrameUpdatable {
             resizeStartSize = window.frame.size
             return
         }
-        
+
         // Check if click is on the close button
         if closeButtonRect.contains(locationInView) {
             closeTaskCard()
             return
         }
-        
+
         // Check if click is on the pin button
         if pinButtonRect.contains(locationInView) {
             togglePin()
             return
         }
-        
+
         // Check if click is on the delete button
         if deleteButtonRect.contains(locationInView) {
             controller?.requestProjectDeletion(for: self)
             return
         }
-        
+
         // Scroll bar is now visual only - no drag interaction needed
 
         // Check if click is on a grab handle (only way to start dragging)
@@ -807,24 +870,24 @@ class TaskCardView: NSView, FrameUpdatable {
             startTaskDrag(taskIndex: grabHandleIndex, location: locationInView)
             return
         }
-        
+
         // Check if click is on a checkbox
         if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
             toggleTaskCompletion(at: checkboxIndex)
             return
         }
-        
+
         // Check if click is on a task (to open task detail)
         if let taskIndex = getClickedTaskIndex(at: locationInView) {
             openTaskDetail(for: taskIndex)
             return
         }
-        
+
         // Reset fade timer on any mouse interaction (only if not pinned)
         if !isPinned {
             controller?.resetFadeTimer()
         }
-        
+
         // Check if click is in the drag grip area (top border strip of the card)
         if currentDragRect().contains(locationInView) {
             guard let window = window else { return }

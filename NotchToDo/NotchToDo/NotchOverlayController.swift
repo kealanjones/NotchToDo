@@ -16,7 +16,7 @@ extension NSScreen {
 class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     private let persistenceController: PersistenceController
     private let orbStore: OrbPersistenceStore
-    private let orbManager: OrbManager
+    internal let orbManager: OrbManager  // Changed to internal for TaskCardView access
     private var notchIndicatorWindow: NSWindow?
     private var semiCircleWindow: NSWindow?
     private var semiCircleView: SemiCircleWithOrbsView? // Added
@@ -50,7 +50,10 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     // Card size preferences (stores custom sizes per orb)
     internal var customCardSizes: [UUID: CGSize] = [:]
-    
+
+    // Undo Manager
+    private let undoManager = UndoManager()
+
     init(persistenceController: PersistenceController = .shared) {
         self.persistenceController = persistenceController
         self.orbStore = OrbPersistenceStore(persistenceController: persistenceController)
@@ -360,6 +363,43 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         speechBubbleView?.setClarificationAccent(false)
         speechBubbleView?.setStatus(nil)
         dismissSpeechBubble(after: 0.1)
+    }
+
+    func showSpeechError(_ errorMessage: String) {
+        ensureSpeechBubbleWindow()
+        if speechBubbleWindow?.isVisible != true {
+            presentSpeechBubble()
+        }
+        speechBubbleView?.updateTranscript("Error", isFinal: true)
+        speechBubbleView?.setStatus(errorMessage)
+        speechBubbleView?.setThinking(false)
+
+        // Auto-dismiss after showing error
+        dismissSpeechBubble(after: 3.0)
+    }
+
+    // MARK: - Keyboard Shortcut Helpers
+    func isSpeechCaptureActive() -> Bool {
+        return speechBubbleWindow?.isVisible ?? false
+    }
+
+    func switchToOrb(at index: Int) {
+        guard index >= 0 && index < orbManager.orbs.count else {
+            DebugLog.log("⌨️ Cannot switch to orb at index \(index) - out of bounds", category: .app)
+            return
+        }
+
+        let orb = orbManager.orbs[index]
+        DebugLog.log("⌨️ Switching to orb \(index + 1): \(orb.name)", category: .app)
+
+        // Show semi-circle if not visible
+        if !isSemiCircleVisible {
+            showSemiCircle()
+        }
+
+        // Show task card for the selected orb
+        showTaskCard(for: orb)
+        AudioFeedback.shared.play(.wake, volume: 0.3)
     }
     
     private func ensureSpeechBubbleWindow() {
@@ -1151,7 +1191,10 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         let taskDetailView = TaskDetailView(task: task, orbColor: orbColor)
         taskDetailView.setDelegate(self)
         DebugLog.log("🎯 Created TaskDetailView: \(taskDetailView)", category: .app)
-        
+
+        // Set the task detail view reference for keyboard shortcuts
+        window.taskDetailView = taskDetailView
+
         window.contentView = taskDetailView
         window.contentView?.wantsLayer = true
         window.contentView?.layer?.cornerRadius = 24
@@ -1188,7 +1231,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         let alert = NSAlert()
         alert.alertStyle = .critical
         alert.messageText = "Delete \"\(orb.name)\"?"
-        alert.informativeText = "This will remove the project and all of its tasks. This action cannot be undone."
+        alert.informativeText = "This will remove the project and all of its tasks. You can undo this action with Cmd+Z."
         alert.addButton(withTitle: "Delete Project")
         alert.addButton(withTitle: "Cancel")
 
@@ -1196,15 +1239,137 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             return
         }
 
+        deleteProject(orb)
+    }
+
+    // MARK: - Delete Operations with Undo Support
+
+    func deleteProject(_ orb: ProjectOrb) {
+        guard let index = orbManager.removeOrb(orb) else {
+            DebugLog.log("🗑️ Failed to remove orb", category: .overlay)
+            return
+        }
+
+        // Store state for undo
+        let deletedOrb = orb
+        let savedIndex = index
+        let wasOpen = currentOpenOrb?.id == orb.id
+        let savedCardSize = customCardSizes[orb.id]
+
+        // Perform deletion
         hideTaskCard(for: orb)
         customCardSizes.removeValue(forKey: orb.id)
-        orbManager.removeOrb(orb)
         if currentOpenOrb?.id == orb.id {
             currentOpenOrb = nil
         }
         refreshOrbEmbeddingCache()
         semiCircleView?.needsDisplay = true
+
         DebugLog.log("🗑️ Deleted project \(orb.name)", category: .overlay)
+        showUndoNotification(message: "Deleted \"\(deletedOrb.name)\"")
+
+        // Register undo
+        undoManager.registerUndo(withTarget: self) { controller in
+            controller.restoreProject(deletedOrb, at: savedIndex, wasOpen: wasOpen, cardSize: savedCardSize)
+        }
+        undoManager.setActionName("Delete Project")
+    }
+
+    private func restoreProject(_ orb: ProjectOrb, at index: Int, wasOpen: Bool, cardSize: CGSize?) {
+        orbManager.insertOrb(orb, at: index)
+
+        if let size = cardSize {
+            customCardSizes[orb.id] = size
+        }
+
+        if wasOpen {
+            currentOpenOrb = orb
+            showTaskCard(for: orb)
+        }
+
+        refreshOrbEmbeddingCache()
+        semiCircleView?.needsDisplay = true
+
+        DebugLog.log("↩️ Restored project \(orb.name)", category: .overlay)
+        showUndoNotification(message: "Restored \"\(orb.name)\"")
+
+        // Register redo
+        undoManager.registerUndo(withTarget: self) { controller in
+            controller.deleteProject(orb)
+        }
+        undoManager.setActionName("Restore Project")
+    }
+
+    func deleteTask(_ task: Task, from orb: ProjectOrb) {
+        guard let index = orb.deleteTask(task) else {
+            DebugLog.log("🗑️ Failed to delete task", category: .tasks)
+            return
+        }
+
+        // Close task detail window if open
+        closeTaskDetail(for: task.id)
+
+        // Refresh task card
+        if let cardWindow = taskCardWindows[orb.id],
+           let cardView = cardWindow.contentView as? TaskCardView {
+            cardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color, orbId: orb.id)
+        }
+
+        DebugLog.log("🗑️ Deleted task \"\(task.title)\"", category: .tasks)
+        showUndoNotification(message: "Deleted \"\(task.title)\"")
+
+        // Register undo
+        undoManager.registerUndo(withTarget: self) { controller in
+            controller.restoreTask(task, to: orb, at: index)
+        }
+        undoManager.setActionName("Delete Task")
+    }
+
+    private func restoreTask(_ task: Task, to orb: ProjectOrb, at index: Int) {
+        orb.insertTask(task, at: index)
+
+        // Refresh task card
+        if let cardWindow = taskCardWindows[orb.id],
+           let cardView = cardWindow.contentView as? TaskCardView {
+            cardView.updateTasks(orb.tasks, projectName: orb.name, orbColor: orb.color, orbId: orb.id)
+        }
+
+        DebugLog.log("↩️ Restored task \"\(task.title)\"", category: .tasks)
+        showUndoNotification(message: "Restored \"\(task.title)\"")
+
+        // Register redo
+        undoManager.registerUndo(withTarget: self) { controller in
+            controller.deleteTask(task, from: orb)
+        }
+        undoManager.setActionName("Restore Task")
+    }
+
+    private func showUndoNotification(message: String) {
+        // Create a simple toast-style notification
+        print("💬 \(message) - Press Cmd+Z to undo")
+        AudioFeedback.shared.play(.success, volume: 0.3)
+    }
+
+    func performUndo() {
+        guard undoManager.canUndo else {
+            print("⚠️ Nothing to undo")
+            return
+        }
+
+        undoManager.undo()
+        AudioFeedback.shared.play(.wake, volume: 0.4)
+        print("↩️ Undo: \(undoManager.undoActionName)")
+    }
+
+    func performRedo() {
+        guard undoManager.canRedo else {
+            print("⚠️ Nothing to redo")
+            return
+        }
+
+        undoManager.redo()
+        AudioFeedback.shared.play(.wake, volume: 0.4)
+        print("↪️ Redo: \(undoManager.redoActionName)")
     }
 
     func closeTaskDetail(for taskId: UUID) {
@@ -1598,9 +1763,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             return
         }
         
-        if orbManager.orbs.count >= 6 {
-            DebugLog.log("🎯 Maximum number of orbs (6) reached. Cannot create new project.", category: .app)
-            showMaximumOrbsNotification()
+        let maxOrbs = UserDefaults.standard.integer(forKey: "maxOrbCount")
+        let effectiveMax = maxOrbs > 0 ? maxOrbs : 6
+        if orbManager.orbs.count >= effectiveMax {
+            DebugLog.log("🎯 Maximum number of orbs (\(effectiveMax)) reached. Cannot create new project.", category: .app)
+            showMaximumOrbsNotification(max: effectiveMax)
             return
         }
         
@@ -1679,19 +1846,19 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         return matrix[m][n]
     }
     
-    private func showMaximumOrbsNotification() {
+    private func showMaximumOrbsNotification(max: Int) {
         let center = UNUserNotificationCenter.current()
-        
+
         center.getNotificationSettings { [weak self] settings in
             guard let self else { return }
-            
+
             switch settings.authorizationStatus {
             case .authorized, .provisional:
-                self.scheduleMaximumOrbsNotification(using: center)
+                self.scheduleMaximumOrbsNotification(using: center, max: max)
             case .notDetermined:
                 center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
                     guard let self, granted else { return }
-                    self.scheduleMaximumOrbsNotification(using: center)
+                    self.scheduleMaximumOrbsNotification(using: center, max: max)
                 }
             case .denied:
                 break
@@ -1700,11 +1867,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             }
         }
     }
-    
-    private func scheduleMaximumOrbsNotification(using center: UNUserNotificationCenter) {
+
+    private func scheduleMaximumOrbsNotification(using center: UNUserNotificationCenter, max: Int) {
         let content = UNMutableNotificationContent()
         content.title = "Maximum Project Orbs Reached"
-        content.body = "You can only have 6 project orbs at a time. Remove an existing project to create a new one."
+        content.body = "You can have up to \(max) project orbs. Remove an existing project to create a new one, or increase the limit in settings."
         content.sound = .default
         
         let request = UNNotificationRequest(
@@ -2499,7 +2666,10 @@ class SemiCircleView: NSView {
         
         func frameTick(deltaTime: CFTimeInterval) {
             guard animationsActive else { return }
-            
+
+            // Performance: Skip physics updates if semi-circle is not visible
+            guard controller?.isSemiCircleVisible == true else { return }
+
             let bubblePoint = controller?.speechBubbleCenter(relativeTo: self)
             let bubbleTargetId = controller?.bubbleTargetOrbId()
             if let bubblePoint = bubblePoint {
@@ -2997,12 +3167,29 @@ class SemiCircleView: NSView {
 // MARK: - TaskDetailWindow
 class TaskDetailWindow: NSWindow {
     var isPinned: Bool = false
-    
+    weak var taskDetailView: TaskDetailView?
+
     override var canBecomeKey: Bool {
         return true
     }
-    
+
     override var canBecomeMain: Bool {
         return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Space - Toggle task complete
+        if event.keyCode == 49 && !event.modifierFlags.contains(.command) { // Space key
+            taskDetailView?.toggleTaskCompletion()
+            return
+        }
+
+        // Cmd+W or Esc - Close window
+        if (event.modifierFlags.contains(.command) && event.keyCode == 13) || event.keyCode == 53 {
+            taskDetailView?.requestClose()
+            return
+        }
+
+        super.keyDown(with: event)
     }
 }

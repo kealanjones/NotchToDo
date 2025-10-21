@@ -162,6 +162,24 @@ import Cocoa
             registerTaskCountChange(newValue: taskCount)
             notifyChange()
         }
+
+        func deleteTask(_ task: Task) -> Int? {
+            guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return nil }
+            tasks.remove(at: index)
+            reindexTasks()
+            taskCount = tasks.count
+            registerTaskCountChange(newValue: taskCount)
+            notifyChange()
+            return index
+        }
+
+        func insertTask(_ task: Task, at index: Int) {
+            tasks.insert(task, at: index)
+            reindexTasks()
+            taskCount = tasks.count
+            registerTaskCountChange(newValue: taskCount)
+            notifyChange()
+        }
         
         func syncTaskCount() {
             let oldCount = taskCount
@@ -406,7 +424,10 @@ extension NSColor {
     // Orb sizing
     private let baseOrbSize: Double = 40.0
     private let minOrbSize: Double = 20.0
-    private let maxOrbs: Int = 6
+    private var maxOrbs: Int {
+        let saved = UserDefaults.standard.integer(forKey: "maxOrbCount")
+        return saved > 0 ? saved : 6  // Default to 6 if not set
+    }
     var onChange: (() -> Void)?
     private let includeSampleData: Bool
     
@@ -617,8 +638,17 @@ extension NSColor {
             return positions
         }
     
-    func removeOrb(_ orb: ProjectOrb) {
-        orbs.removeAll { $0.id == orb.id }
+    func removeOrb(_ orb: ProjectOrb) -> Int? {
+        guard let index = orbs.firstIndex(where: { $0.id == orb.id }) else { return nil }
+        orbs.remove(at: index)
+        reindexOrbs()
+        updateOrbPositions()
+        notifyChange()
+        return index
+    }
+
+    func insertOrb(_ orb: ProjectOrb, at index: Int) {
+        orbs.insert(orb, at: min(index, orbs.count))
         reindexOrbs()
         updateOrbPositions()
         notifyChange()

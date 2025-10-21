@@ -1,6 +1,19 @@
 import Cocoa
 import QuartzCore
 
+// MARK: - Timestamped Note Entry
+struct TimestampedNoteEntry: Codable {
+    let id: UUID
+    let content: String
+    let timestamp: Date
+    
+    init(content: String, timestamp: Date = Date()) {
+        self.id = UUID()
+        self.content = content
+        self.timestamp = timestamp
+    }
+}
+
 // MARK: - Task Detail View
 protocol TaskDetailViewDelegate: AnyObject {
     func closeTaskDetail(for taskId: UUID)
@@ -33,8 +46,10 @@ class TaskDetailView: NSView {
     
     private let notesLabel = NSTextField(labelWithString: "Notes")
     private let notesScrollView = NSScrollView()
-    private let notesTextView = NotesTextView()
-    private let notesPlaceholder = NSTextField(labelWithString: "Add any details, decisions, or next steps…")
+    private let notesStackView = NSStackView()
+    private let notesInputField = NSTextField()
+    private let notesInputButton = NSButton()
+    private var timestampedNotes: [TimestampedNoteEntry] = []
     
     private let actionRow = NSStackView()
     private let copyTitleButton = NSButton()
@@ -73,7 +88,7 @@ class TaskDetailView: NSView {
     init(task: Task, orbColor: NSColor) {
         self.task = task
         self.orbColor = orbColor
-        super.init(frame: NSRect(x: 0, y: 0, width: 440, height: 560))
+        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 380))
         translatesAutoresizingMaskIntoConstraints = false
         setupView()
         updateUI()
@@ -104,10 +119,8 @@ class TaskDetailView: NSView {
         configureDragStrip()
         configureContentStack()
         configureHeader()
-        configureMetaRow()
         configureNotesSection()
-        configureActionRow()
-        configureMetadataLabel()
+        configureMetaRow()
         chromeLayer.type = .axial
         chromeLayer.opacity = 0.45
         chromeLayer.cornerRadius = 24
@@ -166,9 +179,9 @@ class TaskDetailView: NSView {
     
     private func configureContentStack() {
         contentStack.orientation = .vertical
-        contentStack.spacing = 48
+        contentStack.spacing = 30
         contentStack.alignment = .leading
-        contentStack.edgeInsets = NSEdgeInsets(top: 84, left: 72, bottom: 68, right: 72)
+        contentStack.edgeInsets = NSEdgeInsets(top: 50, left: 60, bottom: 0, right: 60)
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         backdropView.addSubview(contentStack)
         
@@ -261,9 +274,8 @@ class TaskDetailView: NSView {
         ])
         
         contentStack.addArrangedSubview(headerBar)
-        headerBar.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
-        headerBar.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor).isActive = true
-        contentStack.setCustomSpacing(56, after: headerBar)
+        // Let the header bar use the contentStack's natural padding
+        contentStack.setCustomSpacing(30, after: headerBar)
     }
 
     private func configureChromeButtons() {
@@ -318,13 +330,18 @@ class TaskDetailView: NSView {
     private func configureMetaRow() {
         metaRow.orientation = .horizontal
         metaRow.alignment = .top
-        metaRow.spacing = 36
-        metaRow.distribution = .fillEqually
+        metaRow.spacing = 20
+        metaRow.distribution = .fill
         metaRow.translatesAutoresizingMaskIntoConstraints = false
+        metaRow.edgeInsets = NSEdgeInsets(top: 0, left: 30, bottom: 0, right: 30)
         contentStack.addArrangedSubview(metaRow)
-        metaRow.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
-        metaRow.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor).isActive = true
-        contentStack.setCustomSpacing(48, after: metaRow)
+        // Let the meta row use the contentStack's natural padding
+        contentStack.setCustomSpacing(0, after: metaRow)
+        
+        // Force the meta row to stick to the bottom with a bit more space
+        NSLayoutConstraint.activate([
+            metaRow.bottomAnchor.constraint(equalTo: contentStack.bottomAnchor, constant: -15)
+        ])
         
         statusButton.title = ""
         statusButton.isBordered = false
@@ -337,8 +354,8 @@ class TaskDetailView: NSView {
         statusButton.imagePosition = .imageLeading
         statusButton.translatesAutoresizingMaskIntoConstraints = false
         statusButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        statusButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 150).isActive = true
-        statusButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        statusButton.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        statusButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         
         dueButton.title = "Set due date"
         dueButton.isBordered = false
@@ -351,8 +368,8 @@ class TaskDetailView: NSView {
         dueButton.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Set due date")
         dueButton.imagePosition = .imageLeading
         dueButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        dueButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        dueButton.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        dueButton.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        dueButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         
         clearDueButton.isBordered = false
         clearDueButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear due date")
@@ -369,7 +386,8 @@ class TaskDetailView: NSView {
         priorityControl.target = self
         priorityControl.action = #selector(handlePriorityChanged)
         priorityControl.translatesAutoresizingMaskIntoConstraints = false
-        priorityControl.widthAnchor.constraint(equalToConstant: 210).isActive = true
+        priorityControl.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        priorityControl.setContentCompressionResistancePriority(.required, for: .horizontal)
         
         let statusColumn = makeMetaColumn(title: "STATUS", content: statusButton)
         let dueHorizontal = NSStackView(views: [dueButton, clearDueButton])
@@ -389,57 +407,72 @@ class TaskDetailView: NSView {
         notesLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 0.9)
         notesLabel.translatesAutoresizingMaskIntoConstraints = false
         contentStack.addArrangedSubview(notesLabel)
-        contentStack.setCustomSpacing(32, after: notesLabel)
+        contentStack.setCustomSpacing(20, after: notesLabel)
         
+        // Configure notes stack view for timestamped entries
+        notesStackView.orientation = .vertical
+        notesStackView.alignment = .leading
+        notesStackView.spacing = 12
+        notesStackView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Configure scroll view
         notesScrollView.translatesAutoresizingMaskIntoConstraints = false
         notesScrollView.borderType = .noBorder
         notesScrollView.drawsBackground = false
         notesScrollView.hasVerticalScroller = true
         notesScrollView.wantsLayer = true
-        notesScrollView.layer?.cornerRadius = 26
-        notesScrollView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
-        notesScrollView.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        notesScrollView.layer?.cornerRadius = 16
+        notesScrollView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        notesScrollView.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
         notesScrollView.layer?.borderWidth = 1.0
         notesScrollView.layer?.masksToBounds = true
-        notesScrollView.heightAnchor.constraint(equalToConstant: 240).isActive = true
+        notesScrollView.heightAnchor.constraint(equalToConstant: 120).isActive = true
         
-        notesTextView.backgroundColor = .clear
-        notesTextView.font = NSFont.systemFont(ofSize: 15, weight: .regular)
-        notesTextView.textColor = NSColor(calibratedWhite: 0.12, alpha: 1.0)
-        notesTextView.insertionPointColor = NSColor(calibratedWhite: 0.2, alpha: 1.0)
-        notesTextView.isRichText = false
-        notesTextView.isAutomaticQuoteSubstitutionEnabled = false
-        notesTextView.isAutomaticSpellingCorrectionEnabled = false
-        notesTextView.isAutomaticDataDetectionEnabled = true
-        notesTextView.isHorizontallyResizable = false
-        notesTextView.isVerticallyResizable = true
-        notesTextView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        notesTextView.delegate = self
-        notesTextView.string = task.details
-        notesTextView.textContainerInset = NSSize(width: 26, height: 26)
-        notesTextView.textContainer?.widthTracksTextView = true
+        notesScrollView.documentView = notesStackView
         
-        notesScrollView.documentView = notesTextView
-        notesPlaceholder.font = NSFont.systemFont(ofSize: 14)
-        notesPlaceholder.textColor = NSColor(calibratedWhite: 0.45, alpha: 0.9)
-        notesPlaceholder.isBezeled = false
-        notesPlaceholder.drawsBackground = false
-        notesPlaceholder.isEditable = false
-        notesPlaceholder.isSelectable = false
-        notesPlaceholder.translatesAutoresizingMaskIntoConstraints = false
-        notesPlaceholder.lineBreakMode = .byWordWrapping
-        notesPlaceholder.maximumNumberOfLines = 2
-        notesTextView.addSubview(notesPlaceholder)
-        NSLayoutConstraint.activate([
-            notesPlaceholder.leadingAnchor.constraint(equalTo: notesTextView.leadingAnchor, constant: 30),
-            notesPlaceholder.topAnchor.constraint(equalTo: notesTextView.topAnchor, constant: 28),
-            notesPlaceholder.trailingAnchor.constraint(lessThanOrEqualTo: notesTextView.trailingAnchor, constant: -30)
-        ])
+        // Configure input field and button
+        notesInputField.translatesAutoresizingMaskIntoConstraints = false
+        notesInputField.isBordered = true
+        notesInputField.isBezeled = true
+        notesInputField.bezelStyle = .roundedBezel
+        notesInputField.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        notesInputField.textColor = NSColor(calibratedWhite: 0.12, alpha: 1.0)
+        notesInputField.backgroundColor = NSColor.white.withAlphaComponent(0.12)
+        notesInputField.placeholderString = "Add a note..."
+        notesInputField.target = self
+        notesInputField.action = #selector(handleNotesInput)
+        
+        notesInputButton.translatesAutoresizingMaskIntoConstraints = false
+        notesInputButton.title = "Add"
+        notesInputButton.bezelStyle = .inline
+        notesInputButton.isBordered = false
+        notesInputButton.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        notesInputButton.wantsLayer = true
+        notesInputButton.layer?.cornerRadius = 8
+        notesInputButton.layer?.backgroundColor = orbColor.withAlphaComponent(0.2).cgColor
+        notesInputButton.contentTintColor = orbColor
+        notesInputButton.target = self
+        notesInputButton.action = #selector(handleAddNote)
+        
+        let inputRow = NSStackView()
+        inputRow.orientation = .horizontal
+        inputRow.spacing = 8
+        inputRow.alignment = .centerY
+        inputRow.distribution = .fill
+        inputRow.translatesAutoresizingMaskIntoConstraints = false
+        inputRow.addArrangedSubview(notesInputField)
+        inputRow.addArrangedSubview(notesInputButton)
+        
+        notesInputButton.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        notesInputField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         
         contentStack.addArrangedSubview(notesScrollView)
-        notesScrollView.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
-        notesScrollView.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor).isActive = true
-        contentStack.setCustomSpacing(44, after: notesScrollView)
+        contentStack.addArrangedSubview(inputRow)
+        
+        // Load existing notes from task.details
+        loadExistingNotes()
+        
+        contentStack.setCustomSpacing(20, after: inputRow)
     }
     
     private func configureActionRow() {
@@ -492,9 +525,8 @@ class TaskDetailView: NSView {
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         actionRow.addArrangedSubview(spacer)
         contentStack.addArrangedSubview(actionRow)
-        actionRow.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
-        actionRow.trailingAnchor.constraint(lessThanOrEqualTo: contentStack.trailingAnchor).isActive = true
-        contentStack.setCustomSpacing(40, after: actionRow)
+        // Let the action row use the contentStack's natural padding
+        contentStack.setCustomSpacing(60, after: actionRow)
     }
     
     private func configureMetadataLabel() {
@@ -505,8 +537,7 @@ class TaskDetailView: NSView {
         metadataLabel.alignment = .left
         metadataLabel.translatesAutoresizingMaskIntoConstraints = false
         contentStack.addArrangedSubview(metadataLabel)
-        metadataLabel.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor).isActive = true
-        metadataLabel.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor).isActive = true
+        // Let the metadata label use the contentStack's natural padding
     }
     
     private func makeMetaColumn(title: String, content: NSView) -> NSView {
@@ -530,10 +561,10 @@ class TaskDetailView: NSView {
         wrapper.addSubview(stack)
         
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 18),
-            stack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -18),
-            stack.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -16)
+            stack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: wrapper.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor)
         ])
         
         return wrapper
@@ -630,7 +661,6 @@ class TaskDetailView: NSView {
         updateStatusButton()
         updateDueButton()
         updatePriorityControl()
-        updateNotesPlaceholder()
         updateMetadataLabel()
         updateHeaderSubtitle()
         updateChromePalette()
@@ -696,10 +726,6 @@ class TaskDetailView: NSView {
         updateHeaderSubtitle()
     }
     
-    private func updateNotesPlaceholder() {
-        let text = notesTextView.string.trimmingCharacters(in: .whitespacesAndNewlines)
-        notesPlaceholder.isHidden = !text.isEmpty
-    }
     
     private func updateMetadataLabel() {
         var parts: [String] = []
@@ -888,6 +914,130 @@ class TaskDetailView: NSView {
             priorityControl.setSelected(segment == index, forSegment: segment)
         }
     }
+    
+    // MARK: - Smart Notes System
+    private func loadExistingNotes() {
+        // Try to deserialize timestamped notes from task.details
+        if !task.details.isEmpty {
+            if let data = task.details.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode([TimestampedNoteEntry].self, from: data) {
+                timestampedNotes = decoded
+            } else {
+                // Legacy: Convert old plain text to a single timestamped entry
+                let existingNote = TimestampedNoteEntry(content: task.details)
+                timestampedNotes = [existingNote]
+            }
+            refreshNotesDisplay()
+        }
+    }
+    
+    private func refreshNotesDisplay() {
+        // Clear existing views
+        for view in notesStackView.arrangedSubviews {
+            notesStackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        
+        // Add timestamped note entries
+        for note in timestampedNotes.reversed() { // Show newest first
+            let noteView = createNoteEntryView(for: note)
+            notesStackView.addArrangedSubview(noteView)
+        }
+    }
+    
+    private func createNoteEntryView(for note: TimestampedNoteEntry) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        
+        let timestampLabel = NSTextField(labelWithString: formatTimestamp(note.timestamp))
+        timestampLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        timestampLabel.textColor = NSColor(calibratedWhite: 0.4, alpha: 0.8)
+        timestampLabel.isBezeled = false
+        timestampLabel.drawsBackground = false
+        timestampLabel.isEditable = false
+        timestampLabel.isSelectable = false
+        timestampLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Add bullet point before content
+        let bulletLabel = NSTextField(labelWithString: "•")
+        bulletLabel.font = NSFont.systemFont(ofSize: 14, weight: .bold)
+        bulletLabel.textColor = orbColor.withAlphaComponent(0.8)
+        bulletLabel.isBezeled = false
+        bulletLabel.drawsBackground = false
+        bulletLabel.isEditable = false
+        bulletLabel.isSelectable = false
+        bulletLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        let contentLabel = NSTextField(labelWithString: note.content)
+        contentLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        contentLabel.textColor = NSColor(calibratedWhite: 0.15, alpha: 1.0)
+        contentLabel.isBezeled = false
+        contentLabel.drawsBackground = false
+        contentLabel.isEditable = false
+        contentLabel.isSelectable = true
+        contentLabel.lineBreakMode = .byWordWrapping
+        contentLabel.maximumNumberOfLines = 0
+        contentLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        container.addSubview(timestampLabel)
+        container.addSubview(bulletLabel)
+        container.addSubview(contentLabel)
+        
+        NSLayoutConstraint.activate([
+            container.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
+            
+            timestampLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 0),
+            timestampLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            timestampLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: 0),
+            
+            bulletLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 0),
+            bulletLabel.topAnchor.constraint(equalTo: timestampLabel.bottomAnchor, constant: 4),
+            bulletLabel.widthAnchor.constraint(equalToConstant: 12),
+            
+            contentLabel.leadingAnchor.constraint(equalTo: bulletLabel.trailingAnchor, constant: 6),
+            contentLabel.topAnchor.constraint(equalTo: timestampLabel.bottomAnchor, constant: 4),
+            contentLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: 0),
+            contentLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
+        ])
+        
+        // Add subtle background
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
+        container.layer?.cornerRadius = 8
+        
+        return container
+    }
+    
+    private func formatTimestamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+    
+    @objc private func handleNotesInput() {
+        // Handle Enter key in input field
+        if NSEvent.modifierFlags.contains(.command) {
+            handleAddNote()
+        }
+    }
+    
+    @objc private func handleAddNote() {
+        let content = notesInputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !content.isEmpty {
+            let newNote = TimestampedNoteEntry(content: content)
+            timestampedNotes.append(newNote)
+            
+            // Serialize notes with timestamps to JSON
+            if let encoded = try? JSONEncoder().encode(timestampedNotes),
+               let jsonString = String(data: encoded, encoding: .utf8) {
+                task.details = jsonString
+            }
+            
+            refreshNotesDisplay()
+            notesInputField.stringValue = ""
+        }
+    }
 }
 
 extension TaskDetailView {
@@ -895,7 +1045,6 @@ extension TaskDetailView {
         isClosing = true
         datePopover.performClose(nil)
         window?.makeFirstResponder(nil)
-        notesTextView.delegate = nil
         titleField.delegate = nil
         titleField.target = nil
         statusButton.target = nil
@@ -908,18 +1057,17 @@ extension TaskDetailView {
         pinButton.target = nil
         delegate = nil
     }
-}
 
-// MARK: - NSTextViewDelegate
-extension TaskDetailView: NSTextViewDelegate {
-    func textDidChange(_ notification: Notification) {
-        guard notification.object as? NSTextView === notesTextView else {
-            return
-        }
-        task.details = notesTextView.string
-        updateNotesPlaceholder()
+    // MARK: - Keyboard Shortcuts
+    func toggleTaskCompletion() {
+        handleStatusToggle()
+    }
+
+    func requestClose() {
+        handleCloseTapped()
     }
 }
+
 
 // MARK: - NSTextFieldDelegate
 extension TaskDetailView: NSTextFieldDelegate {
