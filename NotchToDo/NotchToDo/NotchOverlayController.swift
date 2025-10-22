@@ -949,8 +949,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         DebugLog.log("🎯 Orb has \(orb.tasks.count) tasks", category: .tasks)
         
         // Calculate dynamic height, or use custom size if set
-        let defaultWidth: CGFloat = 360
-        let defaultHeight: CGFloat = 480
+        let defaultWidth: CGFloat = 420  // Increased from 360 for more breathing room
+        let defaultHeight: CGFloat = 560  // Increased from 480 for better content visibility
         let cardWidth: CGFloat = customCardSizes[orb.id]?.width ?? defaultWidth
         let cardHeight: CGFloat = customCardSizes[orb.id]?.height ?? max(defaultHeight, calculateCardHeight(for: orb.tasks.count))
         

@@ -663,7 +663,12 @@ extension NSColor {
         orb.removeTask()
         notifyChange()
     }
-    
+
+    func clearAllOrbs() {
+        orbs.removeAll()
+        notifyChange()
+    }
+
         // MARK: - Positioning and Scaling
         private func updateOrbPositions() {
             guard !orbs.isEmpty else { return }
