@@ -19,10 +19,11 @@ class RealSpeechRecognizer: SpeechRecognizer {
     private var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
     
     // End-of-speech detection parameters
+    private var recordingStartedAt: CFTimeInterval = CACurrentMediaTime()
     private var lastDetectedSpeechAt: CFTimeInterval = CACurrentMediaTime()
     private var isEnding = false
     private let silenceToEndSeconds: CFTimeInterval = 1.2
-    private let maxRecordingSeconds: CFTimeInterval = 15.0
+    private let maxRecordingSeconds: CFTimeInterval = 10.0  // Maximum 10 seconds recording
     private let minSpeechRMS: Float = 0.01 // ~-40dB; adjust if needed
     
     init(locale: Locale = Locale(identifier: "en-US")) {
@@ -80,16 +81,37 @@ class RealSpeechRecognizer: SpeechRecognizer {
             onError?(message)
             throw SpeechRecognitionError.recognizerNotAvailable
         }
-        
-        // Cancel any ongoing recognition and reset engine
+
+        DebugLog.log("Starting recognition - current state: isRunning=\(isRunning), isEnding=\(isEnding)", category: .speech)
+
+        // Force complete cleanup of any previous session
         if let task = recognitionTask {
+            DebugLog.log("Cancelling previous recognition task", category: .speech)
             task.cancel()
             recognitionTask = nil
         }
+
+        // Always try to stop and clean up audio engine, regardless of running state
         if audioEngine.isRunning {
+            DebugLog.log("Stopping running audio engine", category: .speech)
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
+
+        // Always remove tap to ensure clean state
+        let inputNode = audioEngine.inputNode
+        inputNode.removeTap(onBus: 0)
+        DebugLog.log("Removed audio tap from input node", category: .speech)
+
+        // Clean up recognition request
+        if recognitionRequest != nil {
+            recognitionRequest?.endAudio()
+            recognitionRequest = nil
+            DebugLog.log("Cleaned up previous recognition request", category: .speech)
+        }
+
+        // Reset all state flags
+        isRunning = false
+        isEnding = false
         
         // Configure audio session (iOS/tvOS only). On macOS, AVAudioSession APIs are unavailable.
         #if os(iOS) || os(tvOS)
@@ -133,17 +155,24 @@ class RealSpeechRecognizer: SpeechRecognizer {
             
             if error != nil || isFinal {
                 DebugLog.log("Speech recognition ended: error=\(error?.localizedDescription ?? "none"), isFinal=\(isFinal)", category: .speech)
-                
+
                 // Stop audio engine
-                self.audioEngine.stop()
+                if self.audioEngine.isRunning {
+                    self.audioEngine.stop()
+                }
                 inputNode.removeTap(onBus: 0)
-                
+
+                // Clean up all state
                 self.recognitionRequest = nil
                 self.recognitionTask = nil
                 self.isRunning = false
-                
+                self.isEnding = false  // IMPORTANT: Reset this flag for next session
+
+                DebugLog.log("Recognition cleanup complete - isRunning=\(self.isRunning), isEnding=\(self.isEnding)", category: .speech)
+
                 // If we got an error but no final result, still send the last partial as final
                 if error != nil && !isFinal, let lastTranscript = result?.bestTranscription.formattedString {
+                    DebugLog.log("Sending error recovery final result: '\(lastTranscript)'", category: .speech)
                     self.onFinal?(lastTranscript)
                 }
             }
@@ -151,7 +180,9 @@ class RealSpeechRecognizer: SpeechRecognizer {
         
         // Configure audio tap
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 2048, format: recordingFormat) { buffer, when in
+        DebugLog.log("Installing audio tap with format: \(recordingFormat)", category: .speech)
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: recordingFormat) { [weak self] buffer, when in
+            guard let self = self else { return }
             self.recognitionRequest?.append(buffer)
             // Energy-based silence detection
             let rms = buffer.rms()
@@ -159,14 +190,19 @@ class RealSpeechRecognizer: SpeechRecognizer {
                 self.lastDetectedSpeechAt = CACurrentMediaTime()
             }
         }
-        
+
         // Start audio engine
         audioEngine.prepare()
         try audioEngine.start()
-        DebugLog.log("Audio engine started (input format: \(recordingFormat))", category: .speech)
+
+        // NOW set running state after everything is successfully started
         isRunning = true
         isEnding = false
+        recordingStartedAt = CACurrentMediaTime()
         lastDetectedSpeechAt = CACurrentMediaTime()
+
+        DebugLog.log("Audio engine started successfully (format: \(recordingFormat))", category: .speech)
+        DebugLog.log("Recording session initialized - isRunning=\(isRunning), isEnding=\(isEnding)", category: .speech)
         
         // Timer to check for end-of-speech or hard timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
@@ -203,18 +239,24 @@ class RealSpeechRecognizer: SpeechRecognizer {
         guard isRunning, !isEnding else { return }
         let now = CACurrentMediaTime()
         let sinceSpeech = now - lastDetectedSpeechAt
+        let totalRecordingTime = now - recordingStartedAt
+
+        // Check for max recording duration first (hard timeout)
+        if totalRecordingTime >= maxRecordingSeconds {
+            isEnding = true
+            DebugLog.log("Ending due to max duration (\(String(format: "%.2f", totalRecordingTime))s)", category: .speech)
+            recognitionRequest?.endAudio()
+            return
+        }
+
+        // Check for silence
         if sinceSpeech >= silenceToEndSeconds {
             isEnding = true
             DebugLog.log("Ending due to silence (\(String(format: "%.2f", sinceSpeech))s)", category: .speech)
             recognitionRequest?.endAudio()
             return
         }
-        if sinceSpeech >= maxRecordingSeconds {
-            isEnding = true
-            DebugLog.log("Ending due to max duration", category: .speech)
-            recognitionRequest?.endAudio()
-            return
-        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.pollForEndConditions()
         }

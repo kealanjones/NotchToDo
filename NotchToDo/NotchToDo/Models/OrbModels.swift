@@ -761,45 +761,33 @@ extension NSColor {
         func showOrbs(completion: (() -> Void)? = nil) {
             DebugLog.log("showOrbs() called - starting staggered orb appearance", category: .overlay)
             isVisible = true
-            
+
             guard !orbs.isEmpty else {
                 visibleOrbCount = 0
                 completion?()
                 return
             }
-            
-            let alreadyVisible = orbs.filter { $0.isVisible }
-            let hiddenEntries = orbs.enumerated().filter { !$0.element.isVisible }
-            
-            visibleOrbCount = alreadyVisible.count
-            DebugLog.log("Currently visible orbs: \(visibleOrbCount), hidden orbs: \(hiddenEntries.count)", category: .overlay)
-            
-            // If everything is already visible (e.g. reposition after adding a project), just ensure full scale and bail.
-            guard !hiddenEntries.isEmpty else {
-                for orb in orbs {
-                    orb.isVisible = true
-                    orb.animationScale = max(orb.animationScale, 1.0)
-                }
-                completion?()
-                return
-            }
-            
-            // Prepare hidden orbs for intro animation without disturbing the visible ones.
-            for (_, orb) in hiddenEntries {
+
+            // ALWAYS reset all orbs to invisible to ensure animation happens every time
+            // This is essential for the user experience
+            for orb in orbs {
                 orb.isVisible = false
                 orb.animationScale = 0.0
             }
-            
-            for (revealIndex, entry) in hiddenEntries.enumerated() {
-                let (absoluteIndex, orb) = entry
-                let delay = Double(revealIndex) * 0.3
+            visibleOrbCount = 0
+
+            DebugLog.log("Reset all \(orbs.count) orbs to invisible for sequential animation", category: .overlay)
+
+            // Animate each orb in sequence
+            for (index, orb) in orbs.enumerated() {
+                let delay = Double(index) * 0.3
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     orb.isVisible = true
                     self.visibleOrbCount += 1
-                    DebugLog.log("Orb \(absoluteIndex) appeared - visible count: \(self.visibleOrbCount)", category: .overlay)
+                    DebugLog.log("Orb \(index) appeared - visible count: \(self.visibleOrbCount)", category: .overlay)
                     self.animateOrbGrowth(orb: orb, duration: 0.6)
-                    
-                    if revealIndex == hiddenEntries.count - 1 {
+
+                    if index == self.orbs.count - 1 {
                         let settleDelay = 0.6
                         DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay) {
                             completion?()
