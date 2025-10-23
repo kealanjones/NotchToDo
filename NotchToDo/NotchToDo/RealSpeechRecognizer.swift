@@ -17,6 +17,8 @@ class RealSpeechRecognizer: SpeechRecognizer {
     
     private var isRunning = false
     private var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
+    private let stateLock = NSLock()
+    private var sessionID = 0  // Track session for debugging
     
     // End-of-speech detection parameters
     private var recordingStartedAt: CFTimeInterval = CACurrentMediaTime()
@@ -49,7 +51,7 @@ class RealSpeechRecognizer: SpeechRecognizer {
             DebugLog.log("Speech recognizer already running", category: .speech)
             return
         }
-        
+
         // Check authorization status
         switch SFSpeechRecognizer.authorizationStatus() {
         case .notDetermined:
@@ -70,7 +72,7 @@ class RealSpeechRecognizer: SpeechRecognizer {
         @unknown default:
             break
         }
-        
+
         try startRecognition()
     }
     
@@ -82,7 +84,13 @@ class RealSpeechRecognizer: SpeechRecognizer {
             throw SpeechRecognitionError.recognizerNotAvailable
         }
 
-        DebugLog.log("Starting recognition - current state: isRunning=\(isRunning), isEnding=\(isEnding)", category: .speech)
+        // Acquire lock to ensure single-threaded cleanup
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        sessionID += 1
+        let currentSessionID = sessionID
+        DebugLog.log("🆕 Starting recognition session #\(currentSessionID) - isRunning=\(isRunning), isEnding=\(isEnding)", category: .speech)
 
         // Force complete cleanup of any previous session
         if let task = recognitionTask {
@@ -130,11 +138,8 @@ class RealSpeechRecognizer: SpeechRecognizer {
         // Configure request
         recognitionRequest.shouldReportPartialResults = true
         recognitionRequest.requiresOnDeviceRecognition = false // Allow network for better accuracy
-        
-        // Get audio input node
-        let inputNode = audioEngine.inputNode
-        
-        // Start recognition task
+
+        // Start recognition task (inputNode already declared above for cleanup)
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self = self else { return }
             
@@ -156,19 +161,26 @@ class RealSpeechRecognizer: SpeechRecognizer {
             if error != nil || isFinal {
                 DebugLog.log("Speech recognition ended: error=\(error?.localizedDescription ?? "none"), isFinal=\(isFinal)", category: .speech)
 
-                // Stop audio engine
-                if self.audioEngine.isRunning {
-                    self.audioEngine.stop()
+                // Perform cleanup synchronously on main thread
+                DispatchQueue.main.async {
+                    self.stateLock.lock()
+
+                    // Stop audio engine
+                    if self.audioEngine.isRunning {
+                        self.audioEngine.stop()
+                    }
+                    inputNode.removeTap(onBus: 0)
+
+                    // Clean up all state
+                    self.recognitionRequest = nil
+                    self.recognitionTask = nil
+                    self.isRunning = false
+                    self.isEnding = false
+
+                    DebugLog.log("✅ Recognition cleanup complete (session #\(currentSessionID))", category: .speech)
+
+                    self.stateLock.unlock()
                 }
-                inputNode.removeTap(onBus: 0)
-
-                // Clean up all state
-                self.recognitionRequest = nil
-                self.recognitionTask = nil
-                self.isRunning = false
-                self.isEnding = false  // IMPORTANT: Reset this flag for next session
-
-                DebugLog.log("Recognition cleanup complete - isRunning=\(self.isRunning), isEnding=\(self.isEnding)", category: .speech)
 
                 // If we got an error but no final result, still send the last partial as final
                 if error != nil && !isFinal, let lastTranscript = result?.bestTranscription.formattedString {
@@ -208,43 +220,75 @@ class RealSpeechRecognizer: SpeechRecognizer {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.pollForEndConditions()
         }
-        DebugLog.log("Speech recognition started successfully", category: .speech)
+
+        DebugLog.log("✅ Speech recognition started successfully (session #\(currentSessionID))", category: .speech)
     }
     
     func stop() {
-        guard isRunning else { return }
-        
-        DebugLog.log("Stopping speech recognition", category: .speech)
-        
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        DebugLog.log("stop() called - current state: isRunning=\(isRunning), isEnding=\(isEnding)", category: .speech)
+
+        // Always perform cleanup, even if not marked as running
+        // This prevents stuck states
+
         // Stop audio engine
-        audioEngine.stop()
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            DebugLog.log("Audio engine stopped", category: .speech)
+        }
+
+        // Remove tap (safe even if no tap exists)
         audioEngine.inputNode.removeTap(onBus: 0)
-        
+
         // End recognition request
-        recognitionRequest?.endAudio()
+        if let request = recognitionRequest {
+            request.endAudio()
+            DebugLog.log("Recognition request ended", category: .speech)
+        }
         recognitionRequest = nil
-        
-        // Cancel recognition task
-        recognitionTask?.cancel()
+
+        // Cancel recognition task - this will trigger the completion handler
+        if let task = recognitionTask {
+            task.cancel()
+            DebugLog.log("Recognition task cancelled", category: .speech)
+        }
         recognitionTask = nil
-        
+
+        // Reset all state flags
         isRunning = false
         isEnding = false
-        
-        DebugLog.log("Speech recognition stopped", category: .speech)
+
+        DebugLog.log("✅ Speech recognition stopped and cleaned up completely", category: .speech)
     }
 
     // MARK: - End Conditions
     private func pollForEndConditions() {
-        guard isRunning, !isEnding else { return }
+        guard isRunning, !isEnding else {
+            if !isRunning {
+                DebugLog.log("pollForEndConditions: Not running, stopping poll", category: .speech)
+            }
+            if isEnding {
+                DebugLog.log("pollForEndConditions: Already ending, stopping poll", category: .speech)
+            }
+            return
+        }
+
         let now = CACurrentMediaTime()
         let sinceSpeech = now - lastDetectedSpeechAt
         let totalRecordingTime = now - recordingStartedAt
 
+        // Log every 2 seconds to track progress
+        let timeInterval = Int(totalRecordingTime * 10) // Log every second
+        if timeInterval % 10 == 0 {
+            DebugLog.log("Recording progress: \(String(format: "%.1f", totalRecordingTime))s / \(String(format: "%.1f", maxRecordingSeconds))s, silence: \(String(format: "%.1f", sinceSpeech))s", category: .speech)
+        }
+
         // Check for max recording duration first (hard timeout)
         if totalRecordingTime >= maxRecordingSeconds {
             isEnding = true
-            DebugLog.log("Ending due to max duration (\(String(format: "%.2f", totalRecordingTime))s)", category: .speech)
+            DebugLog.log("⏱️ Ending due to max duration (\(String(format: "%.2f", totalRecordingTime))s)", category: .speech)
             recognitionRequest?.endAudio()
             return
         }
@@ -252,11 +296,12 @@ class RealSpeechRecognizer: SpeechRecognizer {
         // Check for silence
         if sinceSpeech >= silenceToEndSeconds {
             isEnding = true
-            DebugLog.log("Ending due to silence (\(String(format: "%.2f", sinceSpeech))s)", category: .speech)
+            DebugLog.log("🤫 Ending due to silence (\(String(format: "%.2f", sinceSpeech))s)", category: .speech)
             recognitionRequest?.endAudio()
             return
         }
 
+        // Continue polling
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.pollForEndConditions()
         }
