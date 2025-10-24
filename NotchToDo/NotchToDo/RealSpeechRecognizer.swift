@@ -86,7 +86,6 @@ class RealSpeechRecognizer: SpeechRecognizer {
 
         // Acquire lock to ensure single-threaded cleanup
         stateLock.lock()
-        defer { stateLock.unlock() }
 
         sessionID += 1
         let currentSessionID = sessionID
@@ -99,17 +98,6 @@ class RealSpeechRecognizer: SpeechRecognizer {
             recognitionTask = nil
         }
 
-        // Always try to stop and clean up audio engine, regardless of running state
-        if audioEngine.isRunning {
-            DebugLog.log("Stopping running audio engine", category: .speech)
-            audioEngine.stop()
-        }
-
-        // Always remove tap to ensure clean state
-        let inputNode = audioEngine.inputNode
-        inputNode.removeTap(onBus: 0)
-        DebugLog.log("Removed audio tap from input node", category: .speech)
-
         // Clean up recognition request
         if recognitionRequest != nil {
             recognitionRequest?.endAudio()
@@ -120,6 +108,24 @@ class RealSpeechRecognizer: SpeechRecognizer {
         // Reset all state flags
         isRunning = false
         isEnding = false
+
+        // Release lock before audio operations (they can take time and block)
+        stateLock.unlock()
+
+        // Always try to stop and clean up audio engine (outside lock to avoid blocking)
+        if audioEngine.isRunning {
+            DebugLog.log("Stopping running audio engine", category: .speech)
+            audioEngine.stop()
+        }
+
+        // Always remove tap to ensure clean state
+        let inputNode = audioEngine.inputNode
+        inputNode.removeTap(onBus: 0)
+        DebugLog.log("Removed audio tap from input node", category: .speech)
+
+        // CRITICAL: Give audio engine time to fully release resources
+        // This prevents conflicts when wake word engine just stopped
+        Thread.sleep(forTimeInterval: 0.15)
         
         // Configure audio session (iOS/tvOS only). On macOS, AVAudioSession APIs are unavailable.
         #if os(iOS) || os(tvOS)
@@ -199,21 +205,60 @@ class RealSpeechRecognizer: SpeechRecognizer {
             // Energy-based silence detection
             let rms = buffer.rms()
             if rms > self.minSpeechRMS {
+                self.stateLock.lock()
                 self.lastDetectedSpeechAt = CACurrentMediaTime()
+                self.stateLock.unlock()
             }
         }
 
         // Start audio engine
         audioEngine.prepare()
-        try audioEngine.start()
 
-        // NOW set running state after everything is successfully started
+        do {
+            try audioEngine.start()
+            DebugLog.log("Audio engine started successfully (format: \(recordingFormat))", category: .speech)
+        } catch {
+            DebugLog.log("⚠️ Audio engine failed to start: \(error.localizedDescription)", category: .speech)
+            // Clean up and retry after longer delay
+            inputNode.removeTap(onBus: 0)
+            self.recognitionRequest = nil
+            DebugLog.log("⚠️ Waiting longer for audio resources and retrying...", category: .speech)
+            Thread.sleep(forTimeInterval: 0.25)
+
+            // Re-create recognition request for retry
+            self.recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+            guard let retryRequest = self.recognitionRequest else {
+                throw SpeechRecognitionError.unableToCreateRequest
+            }
+            retryRequest.shouldReportPartialResults = true
+            retryRequest.requiresOnDeviceRecognition = false
+
+            // Reinstall tap for retry
+            inputNode.installTap(onBus: 0, bufferSize: 2048, format: recordingFormat) { [weak self] buffer, when in
+                guard let self = self else { return }
+                self.recognitionRequest?.append(buffer)
+                let rms = buffer.rms()
+                if rms > self.minSpeechRMS {
+                    self.stateLock.lock()
+                    self.lastDetectedSpeechAt = CACurrentMediaTime()
+                    self.stateLock.unlock()
+                }
+            }
+
+            // Second attempt
+            audioEngine.prepare()
+            try audioEngine.start()
+            DebugLog.log("✅ Audio engine started on retry", category: .speech)
+        }
+
+        // NOW set running state after everything is successfully started (re-acquire lock)
+        stateLock.lock()
         isRunning = true
         isEnding = false
         recordingStartedAt = CACurrentMediaTime()
         lastDetectedSpeechAt = CACurrentMediaTime()
+        stateLock.unlock()
 
-        DebugLog.log("Audio engine started successfully (format: \(recordingFormat))", category: .speech)
         DebugLog.log("Recording session initialized - isRunning=\(isRunning), isEnding=\(isEnding)", category: .speech)
         
         // Timer to check for end-of-speech or hard timeout
@@ -265,29 +310,39 @@ class RealSpeechRecognizer: SpeechRecognizer {
 
     // MARK: - End Conditions
     private func pollForEndConditions() {
-        guard isRunning, !isEnding else {
-            if !isRunning {
+        // Thread-safe read of state variables
+        stateLock.lock()
+        let currentlyRunning = isRunning
+        let currentlyEnding = isEnding
+        let speechTime = lastDetectedSpeechAt
+        let startTime = recordingStartedAt
+        stateLock.unlock()
+
+        guard currentlyRunning, !currentlyEnding else {
+            if !currentlyRunning {
                 DebugLog.log("pollForEndConditions: Not running, stopping poll", category: .speech)
             }
-            if isEnding {
+            if currentlyEnding {
                 DebugLog.log("pollForEndConditions: Already ending, stopping poll", category: .speech)
             }
             return
         }
 
         let now = CACurrentMediaTime()
-        let sinceSpeech = now - lastDetectedSpeechAt
-        let totalRecordingTime = now - recordingStartedAt
+        let sinceSpeech = now - speechTime
+        let totalRecordingTime = now - startTime
 
-        // Log every 2 seconds to track progress
-        let timeInterval = Int(totalRecordingTime * 10) // Log every second
+        // Log every second to track progress
+        let timeInterval = Int(totalRecordingTime * 10)
         if timeInterval % 10 == 0 {
             DebugLog.log("Recording progress: \(String(format: "%.1f", totalRecordingTime))s / \(String(format: "%.1f", maxRecordingSeconds))s, silence: \(String(format: "%.1f", sinceSpeech))s", category: .speech)
         }
 
         // Check for max recording duration first (hard timeout)
         if totalRecordingTime >= maxRecordingSeconds {
+            stateLock.lock()
             isEnding = true
+            stateLock.unlock()
             DebugLog.log("⏱️ Ending due to max duration (\(String(format: "%.2f", totalRecordingTime))s)", category: .speech)
             recognitionRequest?.endAudio()
             return
@@ -295,7 +350,9 @@ class RealSpeechRecognizer: SpeechRecognizer {
 
         // Check for silence
         if sinceSpeech >= silenceToEndSeconds {
+            stateLock.lock()
             isEnding = true
+            stateLock.unlock()
             DebugLog.log("🤫 Ending due to silence (\(String(format: "%.2f", sinceSpeech))s)", category: .speech)
             recognitionRequest?.endAudio()
             return

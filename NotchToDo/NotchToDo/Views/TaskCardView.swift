@@ -290,6 +290,7 @@ class TaskCardView: NSView, FrameUpdatable {
     }
     
     func frameTick(deltaTime: CFTimeInterval) {
+        DebugLog.log("📊 frameTick called - deltaTime: \(deltaTime), isScrollSpringActive: \(isScrollSpringActive)", category: .tasks)
         var requiresDisplay = false
         
         if isAmbientAnimationActive {
@@ -365,14 +366,20 @@ class TaskCardView: NSView, FrameUpdatable {
         }
 
         if isScrollSpringActive || !scrollOffsetSpring.isAtRest {
+            DebugLog.log("📊 Scroll spring update - active: \(isScrollSpringActive), atRest: \(scrollOffsetSpring.isAtRest)", category: .tasks)
             let previousValue = scrollOffsetSpring.value
             let stillAnimating = scrollOffsetSpring.update(deltaTime: deltaTime)
             let clamped = max(0.0, min(scrollOffsetSpring.value, maxScrollOffset))
+            DebugLog.log("📊 Spring values - previous: \(previousValue), current: \(scrollOffsetSpring.value), clamped: \(clamped), taskScrollOffset: \(taskScrollOffset), maxScrollOffset: \(maxScrollOffset)", category: .tasks)
             if abs(previousValue - clamped) > 0.0001 || abs(taskScrollOffset - clamped) > 0.0001 {
+                DebugLog.log("📊 Updating taskScrollOffset from \(taskScrollOffset) to \(clamped), setting requiresDisplay=true", category: .tasks)
                 taskScrollOffset = clamped
                 requiresDisplay = true
+            } else {
+                DebugLog.log("📊 No offset change needed (diff too small)", category: .tasks)
             }
             isScrollSpringActive = stillAnimating || !scrollOffsetSpring.isAtRest
+            DebugLog.log("📊 After update - stillAnimating: \(stillAnimating), isScrollSpringActive: \(isScrollSpringActive)", category: .tasks)
         }
 
         if (isDragWindowSpringActive || isDraggingTask), let dragWindow = controller?.draggedTaskWindow {
@@ -397,7 +404,10 @@ class TaskCardView: NSView, FrameUpdatable {
         }
 
         if requiresDisplay || liftAnimating {
+            DebugLog.log("📊 Setting needsDisplay=true (requiresDisplay: \(requiresDisplay), liftAnimating: \(liftAnimating))", category: .tasks)
             needsDisplay = true
+        } else {
+            DebugLog.log("📊 NOT setting needsDisplay (requiresDisplay: \(requiresDisplay), liftAnimating: \(liftAnimating))", category: .tasks)
         }
 
         updateTickerSubscription()
@@ -899,7 +909,9 @@ class TaskCardView: NSView, FrameUpdatable {
     
     func calculateMaxScrollOffset(forListHeight listHeight: CGFloat? = nil) {
         let resolvedHeight = listHeight ?? defaultListHeight()
+        DebugLog.log("🔢 calculateMaxScrollOffset - resolvedHeight: \(resolvedHeight)", category: .tasks)
         guard resolvedHeight > 0 else {
+            DebugLog.log("🔢 resolvedHeight <= 0, setting maxScrollOffset=0", category: .tasks)
             maxScrollOffset = 0
             taskScrollOffset = 0
             scrollOffsetSpring.snap(to: 0)
@@ -907,9 +919,10 @@ class TaskCardView: NSView, FrameUpdatable {
             isScrollSpringActive = false
             return
         }
-        
+
         let taskCount = CGFloat(tasks.count)
         if taskCount <= 0 {
+            DebugLog.log("🔢 taskCount <= 0, setting maxScrollOffset=0", category: .tasks)
             maxScrollOffset = 0
             taskScrollOffset = 0
             scrollOffsetSpring.snap(to: 0)
@@ -917,19 +930,31 @@ class TaskCardView: NSView, FrameUpdatable {
             isScrollSpringActive = false
             return
         }
-        
+
         let contentHeight = taskCount * TaskRowMetrics.rowHeight + max(0, taskCount - 1) * TaskRowMetrics.rowSpacing
+        let calculatedMaxScroll = contentHeight - resolvedHeight
+        DebugLog.log("🔢 taskCount: \(taskCount), contentHeight: \(contentHeight), resolvedHeight: \(resolvedHeight), calculated: \(calculatedMaxScroll)", category: .tasks)
         maxScrollOffset = max(0, contentHeight - resolvedHeight)
-        taskScrollOffset = max(0, min(taskScrollOffset, maxScrollOffset))
-        scrollOffsetSpring.snap(to: taskScrollOffset)
-        scrollOffsetSpring.setTarget(taskScrollOffset)
-        isScrollSpringActive = false
+        DebugLog.log("🔢 Final maxScrollOffset: \(maxScrollOffset)", category: .tasks)
+
+        // Only reset scroll state if there's no active scroll animation
+        if !isScrollSpringActive {
+            taskScrollOffset = max(0, min(taskScrollOffset, maxScrollOffset))
+            scrollOffsetSpring.snap(to: taskScrollOffset)
+            scrollOffsetSpring.setTarget(taskScrollOffset)
+        } else {
+            // During scroll animation, just clamp the current offset
+            taskScrollOffset = max(0, min(taskScrollOffset, maxScrollOffset))
+            DebugLog.log("🔢 Preserving active scroll animation - not resetting spring", category: .tasks)
+        }
     }
-    
+
     private func defaultListHeight() -> CGFloat {
         let cardRect = bounds.insetBy(dx: TaskRowMetrics.cardInset, dy: TaskRowMetrics.cardInset)
         let headerBottom = cardRect.maxY - TaskRowMetrics.headerHeight
-        return max(0, headerBottom - (cardRect.minY + TaskRowMetrics.listInset) - TaskRowMetrics.headerDividerSpacing)
+        let listHeight = max(0, headerBottom - (cardRect.minY + TaskRowMetrics.listInset) - TaskRowMetrics.headerDividerSpacing)
+        DebugLog.log("🔢 defaultListHeight - bounds: \(bounds.size), cardRect: \(cardRect.size), listHeight: \(listHeight)", category: .tasks)
+        return listHeight
     }
     
     private func configureGlassEffect() {
@@ -1312,28 +1337,40 @@ class TaskCardView: NSView, FrameUpdatable {
     }
     
     override func scrollWheel(with event: NSEvent) {
+        DebugLog.log("📜 scrollWheel called - tasks: \(tasks.count), filtered: \(filteredTasks.count), maxScrollOffset: \(maxScrollOffset), isDragging: \(isDraggingTask), delta: \(event.scrollingDeltaY)", category: .tasks)
+
         // Only handle scrolling if there are tasks to scroll and we're not dragging
-        guard maxScrollOffset > 0 && !isDraggingTask else { return }
-        
+        guard maxScrollOffset > 0 && !isDraggingTask else {
+            DebugLog.log("📜 Scroll blocked - maxScrollOffset: \(maxScrollOffset), isDraggingTask: \(isDraggingTask)", category: .tasks)
+            // Pass the event up if we can't handle it
+            super.scrollWheel(with: event)
+            return
+        }
+
         // Reset fade timer on scroll
         if !isPinned {
             controller?.resetFadeTimer()
         }
-        
+
         let scrollDelta = event.scrollingDeltaY
         let scrollSensitivity: CGFloat = 2.0
-        
+
         // Calculate new offset (reverse direction: scroll down = negative delta = decrease offset)
         let newOffset = taskScrollOffset - (scrollDelta * scrollSensitivity)
-        
+
         let clampedOffset = max(0, min(newOffset, maxScrollOffset))
+        DebugLog.log("📜 Scrolling: delta=\(scrollDelta), old offset=\(taskScrollOffset), new offset=\(clampedOffset), spring current=\(scrollOffsetSpring.value), spring target will be=\(clampedOffset)", category: .tasks)
+
         scrollOffsetSpring.setTarget(clampedOffset)
         if !isScrollSpringActive {
             scrollOffsetSpring.snap(to: taskScrollOffset)
+            DebugLog.log("📜 Spring was not active, snapped to current position: \(taskScrollOffset)", category: .tasks)
         }
         isScrollSpringActive = true
         needsDisplay = true
+        DebugLog.log("📜 isScrollSpringActive=\(isScrollSpringActive), isTickerRegistered=\(isTickerRegistered)", category: .tasks)
         updateTickerSubscription()
+        DebugLog.log("📜 After updateTickerSubscription: isTickerRegistered=\(isTickerRegistered)", category: .tasks)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -1402,8 +1439,9 @@ class TaskCardView: NSView, FrameUpdatable {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        DebugLog.log("🎨 draw() called - taskScrollOffset: \(taskScrollOffset), maxScrollOffset: \(maxScrollOffset)", category: .tasks)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
+
         // Clear to transparent
         context.clear(dirtyRect)
         
@@ -1933,10 +1971,14 @@ class TaskCardView: NSView, FrameUpdatable {
         context.clip(to: listRect)
 
         let rowStride = TaskRowMetrics.rowHeight + TaskRowMetrics.rowSpacing
+        DebugLog.log("🎨 Drawing tasks - count: \(filteredTasks.count), taskScrollOffset: \(taskScrollOffset), rowStride: \(rowStride)", category: .tasks)
         for (index, task) in filteredTasks.enumerated() {
             if isDraggingTask && draggedTaskIndex == index { continue }
-            
-            let offset = CGFloat(index) * rowStride + taskScrollOffset
+
+            let offset = CGFloat(index) * rowStride - taskScrollOffset
+            if index == 0 {
+                DebugLog.log("🎨 First task - index: \(index), offset: \(offset), rowY will be: \(listRect.maxY - offset - TaskRowMetrics.rowHeight)", category: .tasks)
+            }
             let rowY = listRect.maxY - offset - TaskRowMetrics.rowHeight
             let rowRect = CGRect(
                 x: listRect.minX,
@@ -1981,7 +2023,8 @@ class TaskCardView: NSView, FrameUpdatable {
         let scrollBarWidth = trackRect.width
         let scrollBarHeight = trackRect.height
         let thumbHeight = max(24, scrollBarHeight * (trackRect.height / (trackRect.height + maxScrollOffset)))
-        let thumbOffset = (scrollBarHeight - thumbHeight) * (maxScrollOffset == 0 ? 0 : taskScrollOffset / maxScrollOffset)
+        // Invert the position: when taskScrollOffset=0 (top), thumb should be at top (maxY)
+        let thumbOffset = (scrollBarHeight - thumbHeight) * (maxScrollOffset == 0 ? 0 : 1.0 - (taskScrollOffset / maxScrollOffset))
         let thumbRect = NSRect(x: trackRect.minX, y: trackRect.minY + thumbOffset, width: scrollBarWidth, height: thumbHeight)
 
         scrollBarRect = trackRect

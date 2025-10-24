@@ -40,11 +40,13 @@ class RealWakeWordEngine: WakeWordEngine {
     }
     
     func start() throws {
+        DebugLog.log("🎙️ Wake word engine start() called - isRunning: \(isRunning)", category: .speech)
+
         guard !isRunning else {
-            DebugLog.log("Wake word engine already running", category: .speech)
+            DebugLog.log("⚠️ Wake word engine already running - skipping", category: .speech)
             return
         }
-        
+
         // Check authorization
         switch SFSpeechRecognizer.authorizationStatus() {
         case .notDetermined:
@@ -56,26 +58,38 @@ class RealWakeWordEngine: WakeWordEngine {
             }
             return
         case .denied, .restricted:
-            DebugLog.log("Speech recognition authorization denied", category: .speech)
+            DebugLog.log("❌ Speech recognition authorization denied", category: .speech)
             throw WakeWordError.authorizationDenied
         case .authorized:
+            DebugLog.log("✅ Speech recognition authorized", category: .speech)
             break
         @unknown default:
             break
         }
-        
+
         try startListening()
     }
     
     private func startListening() throws {
+        DebugLog.log("🎙️ Wake word startListening() called", category: .speech)
+
         guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
+            DebugLog.log("❌ Wake word: Speech recognizer not available", category: .speech)
             throw WakeWordError.recognizerNotAvailable
         }
-        
+
         // Cancel any existing task
         if let task = recognitionTask {
+            DebugLog.log("Cancelling existing wake word recognition task", category: .speech)
             task.cancel()
             recognitionTask = nil
+        }
+
+        // Stop audio engine if running
+        if audioEngine.isRunning {
+            DebugLog.log("Stopping existing wake word audio engine", category: .speech)
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
         }
         
         // Configure audio session for background listening (iOS/tvOS only)
@@ -156,13 +170,33 @@ class RealWakeWordEngine: WakeWordEngine {
         inputNode.installTap(onBus: 0, bufferSize: 512, format: recordingFormat) { buffer, _ in
             self.recognitionRequest?.append(buffer)
         }
-        
-        // Start audio engine
+
+        // Start audio engine with retry logic
         audioEngine.prepare()
-        try audioEngine.start()
-        
+
+        do {
+            try audioEngine.start()
+            DebugLog.log("✅ Wake word audio engine started successfully", category: .speech)
+        } catch {
+            DebugLog.log("⚠️ Wake word audio engine failed to start: \(error.localizedDescription)", category: .speech)
+            // Clean up and retry after delay
+            inputNode.removeTap(onBus: 0)
+            DebugLog.log("⚠️ Waiting for audio resources and retrying wake word engine...", category: .speech)
+            Thread.sleep(forTimeInterval: 0.3)
+
+            // Reinstall tap for retry
+            inputNode.installTap(onBus: 0, bufferSize: 512, format: recordingFormat) { buffer, _ in
+                self.recognitionRequest?.append(buffer)
+            }
+
+            // Second attempt
+            audioEngine.prepare()
+            try audioEngine.start()
+            DebugLog.log("✅ Wake word audio engine started on retry", category: .speech)
+        }
+
         isRunning = true
-        DebugLog.log("Wake word detection started - listening for: \(wakeWords.joined(separator: ", "))", category: .speech)
+        DebugLog.log("✅ Wake word detection started - listening for: \(wakeWords.joined(separator: ", "))", category: .speech)
     }
     
     private func restartRecognition() {
@@ -256,26 +290,30 @@ class RealWakeWordEngine: WakeWordEngine {
     
     func stop() {
         guard isRunning else { return }
-        
+
         DebugLog.log("Stopping wake word detection", category: .speech)
-        
+
         isRunning = false
-        
+
         // Stop audio engine
         if audioEngine.isRunning {
             audioEngine.stop()
         }
         audioEngine.inputNode.removeTap(onBus: 0)
-        
+
         // End recognition
         recognitionRequest?.endAudio()
         recognitionRequest = nil
-        
+
         // Cancel task
         recognitionTask?.cancel()
         recognitionTask = nil
-        
-        DebugLog.log("Wake word detection stopped", category: .speech)
+
+        DebugLog.log("Wake word detection stopped - audio resources released", category: .speech)
+
+        // CRITICAL: Give audio engine time to fully release resources
+        // This prevents conflicts when speech recognizer tries to start immediately after
+        Thread.sleep(forTimeInterval: 0.1)
     }
 
     // Expose running state to coordinate with dictation

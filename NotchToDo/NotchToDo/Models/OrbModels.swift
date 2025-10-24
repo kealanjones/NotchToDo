@@ -346,14 +346,14 @@ import Cocoa
 // MARK: - Color Palette System
 struct OrbColorPalette {
     static let colors: [NSColor] = [
-        NSColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0), // Blue
-        NSColor(red: 0.8, green: 0.2, blue: 0.2, alpha: 1.0), // Red
-        NSColor(red: 0.2, green: 0.8, blue: 0.2, alpha: 1.0), // Green
-        NSColor(red: 0.8, green: 0.6, blue: 0.2, alpha: 1.0), // Orange
-        NSColor(red: 0.6, green: 0.2, blue: 0.8, alpha: 1.0), // Purple
-        NSColor(red: 0.2, green: 0.8, blue: 0.8, alpha: 1.0), // Cyan
-        NSColor(red: 0.8, green: 0.2, blue: 0.8, alpha: 1.0), // Magenta
-        NSColor(red: 0.6, green: 0.6, blue: 0.6, alpha: 1.0), // Gray
+        NSColor(red: 0.0, green: 0.5, blue: 1.0, alpha: 1.0),   // Vivid Blue
+        NSColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 1.0),   // Vivid Red
+        NSColor(red: 0.0, green: 0.95, blue: 0.3, alpha: 1.0),  // Vivid Green
+        NSColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 1.0),   // Vivid Orange
+        NSColor(red: 0.7, green: 0.0, blue: 1.0, alpha: 1.0),   // Vivid Purple
+        NSColor(red: 0.0, green: 0.9, blue: 0.9, alpha: 1.0),   // Vivid Cyan
+        NSColor(red: 1.0, green: 0.0, blue: 0.6, alpha: 1.0),   // Vivid Hot Pink
+        NSColor(red: 1.0, green: 0.95, blue: 0.0, alpha: 1.0),  // Vivid Yellow
     ]
     
     static func getColor(for index: Int) -> NSColor {
@@ -688,7 +688,7 @@ extension NSColor {
             orb.angle = angle
             orb.radius = currentRadius
             orb.scale = scale
-            orb.isVisible = true
+            // Don't set isVisible here - let showOrbs() handle the animated appearance
         }
     }
     

@@ -651,11 +651,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Wake word lifecycle helpers
-    private func restartWakeWord(after delay: TimeInterval = 0.6) {
+    private func restartWakeWord(after delay: TimeInterval = 0.8) {
+        DebugLog.log("⏰ Scheduling wake word restart in \(delay)s", category: .speech)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
-            do { try self.wakeWordEngine?.start() } catch {
-                DebugLog.log("Failed to restart wake word engine: \(error)", category: .speech)
+            DebugLog.log("🔄 Attempting to restart wake word engine...", category: .speech)
+            do {
+                try self.wakeWordEngine?.start()
+                DebugLog.log("✅ Wake word engine restarted successfully", category: .speech)
+            } catch {
+                DebugLog.log("❌ Failed to restart wake word engine: \(error)", category: .speech)
             }
         }
     }

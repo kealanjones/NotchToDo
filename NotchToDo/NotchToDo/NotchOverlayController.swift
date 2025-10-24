@@ -228,7 +228,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     func addTask(_ title: String, to targetOrb: ProjectOrb) {
         targetOrb.addTask(title: title)
         let newlyCreatedTask = targetOrb.tasks.last
-        
+
         if let window = taskCardWindows[targetOrb.id],
            let taskCardView = window.contentView as? TaskCardView {
             taskCardView.updateTasks(targetOrb.tasks, projectName: targetOrb.name, orbColor: targetOrb.color, orbId: targetOrb.id)
@@ -238,17 +238,20 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
                 taskCardView.highlightTask(task)
             }
         }
-        
+
         if currentOpenOrb?.id == targetOrb.id, taskCardWindows[targetOrb.id] == nil {
             currentOpenOrb = nil
         }
-        
+
         // Update notch context if this is the current orb
         if currentOpenOrb?.id == targetOrb.id {
             updateNotchContext(for: targetOrb)
         }
-        
+
         semiCircleView?.needsDisplay = true
+
+        // Reset fade timer when a task is added
+        resetFadeTimer()
     }
     
     // MARK: - Speech Capture Bubble
@@ -264,6 +267,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         pendingBubbleTargetOrbId = nil
         presentSpeechBubble()
         AudioFeedback.shared.play(.startListening, volume: 0.5)
+
+        // Reset fade timer when recording starts
+        resetFadeTimer()
     }
     
     func updateSpeechCapture(partialTranscript: String) {
