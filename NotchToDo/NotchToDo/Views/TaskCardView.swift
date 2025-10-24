@@ -427,7 +427,11 @@ class TaskCardView: NSView, FrameUpdatable {
     func getPinnedState() -> Bool {
         return isPinned
     }
-    
+
+    func getSearchActiveState() -> Bool {
+        return isSearchActive
+    }
+
     func setPinned(_ pinned: Bool) {
         isPinned = pinned
         needsDisplay = true
@@ -1091,11 +1095,16 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // Check if click is on the search field
         if searchFieldRect.contains(locationInView) {
+            DebugLog.log("🔍 Search field clicked - isSearchActive: \(isSearchActive)", category: .tasks)
             if !isSearchActive {
                 isSearchActive = true
                 needsDisplay = true
+                DebugLog.log("🔍 Search activated", category: .tasks)
+                // Reset fade timer when search is activated
+                controller?.resetFadeTimer()
             }
-            window?.makeFirstResponder(self)
+            let success = window?.makeFirstResponder(self)
+            DebugLog.log("🔍 makeFirstResponder result: \(success == true ? "success" : "failed")", category: .tasks)
             return
         }
 
@@ -1374,6 +1383,8 @@ class TaskCardView: NSView, FrameUpdatable {
     }
 
     override func keyDown(with event: NSEvent) {
+        DebugLog.log("🔍 keyDown - isSearchActive: \(isSearchActive), characters: \(event.characters ?? "nil"), keyCode: \(event.keyCode)", category: .tasks)
+
         // Cmd+F to toggle search
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "f" {
             toggleSearch()
@@ -1388,9 +1399,13 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // Only handle text input if search is active
         guard isSearchActive else {
+            DebugLog.log("🔍 Search not active, passing to super", category: .tasks)
             super.keyDown(with: event)
             return
         }
+
+        // Reset fade timer on any keyboard input while search is active
+        controller?.resetFadeTimer()
 
         // Handle Escape to clear/deactivate search
         if event.keyCode == 53 { // Escape key
@@ -1413,6 +1428,7 @@ class TaskCardView: NSView, FrameUpdatable {
             let printableChars = characters.filter { $0.isLetter || $0.isNumber || $0.isWhitespace || $0.isPunctuation }
             if !printableChars.isEmpty {
                 searchQuery.append(printableChars)
+                DebugLog.log("🔍 Search query updated: '\(searchQuery)' - filtered tasks: \(filteredTasks.count)", category: .tasks)
                 taskScrollOffset = 0  // Reset scroll when filtering
                 scrollOffsetSpring.snap(to: 0)
                 needsDisplay = true

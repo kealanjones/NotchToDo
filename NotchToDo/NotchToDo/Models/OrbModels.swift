@@ -712,16 +712,21 @@ extension NSColor {
     
     private func calculateOrbScale(for count: Int) -> Double {
         guard count > 0 else { return 1.0 }
-        
-        // Scale down as more orbs are added
+
+        // Scale down as more orbs are added (with gentler curve)
         let maxScale = 1.0
         let minScale = minOrbSize / baseOrbSize
-        
+
         if count <= 3 {
             return maxScale
         } else if count <= maxOrbs {
-            let scaleFactor = 1.0 - (Double(count - 3) / Double(maxOrbs - 3)) * (maxScale - minScale)
-            return max(minScale, scaleFactor)
+            // Use ease-in curve for gentle downscaling with higher minimum
+            let progress = Double(count - 3) / Double(maxOrbs - 3)
+            let easedProgress = pow(progress, 2.5) // Gentler curve - keeps orbs larger
+            // Reduce scaling range to keep orbs bigger at maximum count
+            let adjustedMinScale = 0.65 // Instead of 0.5 (20/40)
+            let scaleFactor = 1.0 - easedProgress * (maxScale - adjustedMinScale)
+            return max(adjustedMinScale, scaleFactor)
         } else {
             return minScale
         }
@@ -780,15 +785,15 @@ extension NSColor {
 
             // Animate each orb in sequence
             for (index, orb) in orbs.enumerated() {
-                let delay = Double(index) * 0.3
+                let delay = Double(index) * 0.12  // Reduced from 0.3 for faster animation
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     orb.isVisible = true
                     self.visibleOrbCount += 1
                     DebugLog.log("Orb \(index) appeared - visible count: \(self.visibleOrbCount)", category: .overlay)
-                    self.animateOrbGrowth(orb: orb, duration: 0.6)
+                    self.animateOrbGrowth(orb: orb, duration: 0.35)  // Reduced from 0.6 for snappier feel
 
                     if index == self.orbs.count - 1 {
-                        let settleDelay = 0.6
+                        let settleDelay = 0.35  // Match growth duration
                         DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay) {
                             completion?()
                         }

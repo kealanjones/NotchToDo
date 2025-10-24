@@ -961,7 +961,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         let cardHeight: CGFloat = customCardSizes[orb.id]?.height ?? max(defaultHeight, calculateCardHeight(for: orb.tasks.count))
         
         // Create a new task card window for this orb
-        let window = NSWindow(
+        let window = TaskCardWindow(
             contentRect: NSRect(x: 0, y: 0, width: cardWidth, height: cardHeight),
             styleMask: [.borderless],
             backing: .buffered,
@@ -973,6 +973,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         window.hasShadow = true
         window.level = .floating
         window.ignoresMouseEvents = false
+        window.acceptsMouseMovedEvents = true  // Required for scroll events
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isMovable = true
         window.contentView?.wantsLayer = true
@@ -1572,7 +1573,31 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     // MARK: - Auto-Fade System
-    
+
+    /// Check if user is actively interacting with any UI elements
+    private func hasActiveInteractions() -> Bool {
+        // Check if any task cards are visible
+        let hasVisibleTaskCards = taskCardWindows.values.contains { $0.isVisible }
+
+        // Check if any task detail windows are visible
+        let hasVisibleTaskDetails = taskDetailWindows.values.contains { $0.isVisible }
+
+        // Check if any task card has active search
+        let hasActiveSearch = taskCardWindows.values.compactMap { window in
+            window.contentView as? TaskCardView
+        }.contains { taskCardView in
+            taskCardView.getSearchActiveState()
+        }
+
+        let hasInteractions = hasVisibleTaskCards || hasVisibleTaskDetails || hasActiveSearch
+
+        if hasInteractions {
+            DebugLog.log("🔄 Active interactions detected - taskCards: \(hasVisibleTaskCards), taskDetails: \(hasVisibleTaskDetails), search: \(hasActiveSearch)", category: .app)
+        }
+
+        return hasInteractions
+    }
+
     func resetFadeTimer() {
         // Cancel existing timer
         fadeTimer?.invalidate()
@@ -1618,7 +1643,18 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     private func fadeAllElements() {
         guard !isFaded else { return }
-        
+
+        // Don't fade if user is actively interacting with any elements
+        if hasActiveInteractions() {
+            DebugLog.log("🔄 Skipping auto-fade due to active user interactions - rescheduling timer", category: .app)
+            // Reschedule the fade timer to check again later
+            fadeTimer?.invalidate()
+            fadeTimer = Timer.scheduledTimer(withTimeInterval: fadeDelay, repeats: false) { [weak self] _ in
+                self?.fadeAllElements()
+            }
+            return
+        }
+
         isFaded = true
         DebugLog.log("🎯 Auto-fading all elements after \(fadeDelay) seconds of inactivity", category: .app)
         
@@ -2050,35 +2086,43 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     private func showSemiCircle(completion: (() -> Void)? = nil) {
-        guard let window = semiCircleWindow else { 
+        guard let window = semiCircleWindow else {
             DebugLog.log("🚨 ERROR: semiCircleWindow is nil!", category: .app)
             completion?()
-            return 
+            return
         }
-        
+
         if isSemiCircleVisible {
             positionSemiCircle(window)
             window.alphaValue = 1.0
             window.orderFront(nil)
+            // Re-animate orbs when re-showing an already visible semi-circle
             if orbManager.visibleOrbCount == 0 {
                 orbManager.showOrbs {
                     self.semiCircleView?.needsDisplay = true
                     completion?()
                 }
             } else {
-                semiCircleView?.needsDisplay = true
-                completion?()
+                // Orbs already visible, just trigger animation again
+                orbManager.hideOrbs()
+                orbManager.showOrbs {
+                    self.semiCircleView?.needsDisplay = true
+                    completion?()
+                }
             }
             semiCircleView?.setAnimationsActive(true)
             resetFadeTimerWithoutShowing()
-            return 
+            return
         }
-        
+
         DebugLog.log("🎯 showSemiCircle() called", category: .app)
         DebugLog.log("🎯 Window frame: \(window.frame)", category: .app)
         DebugLog.log("🎯 Window level: \(window.level.rawValue)", category: .app)
         DebugLog.log("🎯 Window isVisible: \(window.isVisible)", category: .app)
-        
+
+        // Reset orbs to invisible before first show animation
+        orbManager.hideOrbs()
+
         // Ensure window is positioned correctly before animation
         positionSemiCircle(window)
         
@@ -3169,6 +3213,16 @@ class SemiCircleView: NSView {
 }
 
 
+// MARK: - TaskCardWindow
+class TaskCardWindow: NSWindow {
+    override var canBecomeKey: Bool {
+        return true
+    }
+
+    override var canBecomeMain: Bool {
+        return true
+    }
+}
 
 // MARK: - TaskDetailWindow
 class TaskDetailWindow: NSWindow {
