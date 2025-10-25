@@ -897,6 +897,13 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         speechBubbleWindow?.orderOut(nil)
         speechBubbleView?.resetForNewCapture()
         isSemiCircleVisible = false
+
+        // Show notch base rim when resetting
+        if let notchView = notchIndicatorWindow?.contentView as? NotchIndicatorView {
+            notchView.isSemiCircleVisible = false
+            notchView.needsDisplay = true
+        }
+
         orbManager.hideOrbs()
         semiCircleView?.setAnimationsActive(false)
         semiCircleView?.needsDisplay = true
@@ -906,10 +913,16 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     func hideSemiCircle() {
         guard let window = semiCircleWindow else { return }
-        
+
         // Mark as not visible
         isSemiCircleVisible = false
-        
+
+        // Show notch base rim when semi-circle is hidden
+        if let notchView = notchIndicatorWindow?.contentView as? NotchIndicatorView {
+            notchView.isSemiCircleVisible = false
+            notchView.needsDisplay = true
+        }
+
         // Hide orbs first
         orbManager.hideOrbs()
         semiCircleView?.setAnimationsActive(false)
@@ -1707,8 +1720,14 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             // Update the task card windows to only include pinned ones
             self.taskCardWindows = pinnedCards
             self.currentOpenOrb = self.taskCardWindows.isEmpty ? nil : self.orbManager.orbs.first { self.taskCardWindows[$0.id] != nil }
-            
+
             self.isSemiCircleVisible = false
+
+            // Show notch base rim when fading
+            if let notchView = self.notchIndicatorWindow?.contentView as? NotchIndicatorView {
+                notchView.isSemiCircleVisible = false
+                notchView.needsDisplay = true
+            }
         }
     }
     
@@ -1750,8 +1769,14 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
                     DebugLog.log("🔄 Window cannot become key, but will still receive mouse events", category: .app)
                 }
             }
-            
+
             isSemiCircleVisible = true
+
+            // Hide notch base rim when showing all elements
+            if let notchView = notchIndicatorWindow?.contentView as? NotchIndicatorView {
+                notchView.isSemiCircleVisible = true
+                notchView.needsDisplay = true
+            }
         }
         
         // Show task cards if any were open (using new dynamic system)
@@ -2153,10 +2178,16 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         DebugLog.log("🎯 Window made key and ordered front", category: .app)
         DebugLog.log("🎯 Window isVisible after makeKeyAndOrderFront: \(window.isVisible)", category: .app)
-        
+
         // Mark as visible
         isSemiCircleVisible = true
         semiCircleView?.setAnimationsActive(true)
+
+        // Hide notch base rim when semi-circle is visible
+        if let notchView = notchIndicatorWindow?.contentView as? NotchIndicatorView {
+            notchView.isSemiCircleVisible = true
+            notchView.needsDisplay = true
+        }
         
         // Animate expansion from center top
         NSAnimationContext.runAnimationGroup { context in
@@ -2292,13 +2323,33 @@ class SemiCircleView: NSView {
         private var mouseTrackingArea: NSTrackingArea?
         private var animationsActive = false
         private var isTickerRegistered = false
-        
+
+        // Text size scale factor
+        private var textScale: CGFloat {
+            return TextSizePreference.scaleFactor
+        }
+
+        // Base orb size - smaller when there are 3 or fewer orbs
+        private var baseOrbSize: CGFloat {
+            let orbCount = orbManager.orbs.count
+            return orbCount <= 3 ? 34.0 : 40.0
+        }
+
         // Drag and drop functionality
         private var isDragging: Bool = false
         private var draggedOrb: ProjectOrb? = nil
         private var dragStartLocation: NSPoint = NSPoint.zero
         private var dragCurrentLocation: NSPoint = NSPoint.zero
-        
+        private let maxDragDistance: CGFloat = 35.0
+        private var dragShakeOffset: CGPoint = .zero
+        private var currentDragStrain: CGFloat = 0.0 // 0 to 1, used for continuous shake
+
+        // Return animation
+        private var isReturning: Bool = false
+        private var returnStartLocation: NSPoint = NSPoint.zero
+        private var returnProgress: CGFloat = 0.0
+        private var returnAnimationTimer: Timer?
+
         // Smooth hover animation properties
         private var currentHoverScale: Double = 1.0
         private var targetHoverScale: Double = 1.0
@@ -2314,13 +2365,27 @@ class SemiCircleView: NSView {
             self.orbManager = orbManager
             self.controller = controller
             super.init(frame: NSRect.zero)
-            
+
             // Enable mouse events
             self.wantsLayer = true
+
+            // Observe text size changes
+            NotificationCenter.default.addObserver(
+                forName: .textSizeDidChange,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.needsDisplay = true
+            }
         }
-    
+
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self, name: .textSizeDidChange, object: nil)
+            returnAnimationTimer?.invalidate()
         }
         
         override func viewDidMoveToWindow() {
@@ -2528,17 +2593,42 @@ class SemiCircleView: NSView {
         }
         
         private func updateDragOperation(to location: NSPoint) {
-            dragCurrentLocation = location
+            // Calculate distance from start
+            let dx = location.x - dragStartLocation.x
+            let dy = location.y - dragStartLocation.y
+            let distance = sqrt(dx * dx + dy * dy)
+
+            // Constrain to max distance
+            if distance > maxDragDistance {
+                let angle = atan2(dy, dx)
+                dragCurrentLocation.x = dragStartLocation.x + cos(angle) * maxDragDistance
+                dragCurrentLocation.y = dragStartLocation.y + sin(angle) * maxDragDistance
+
+                // Store strain for continuous shake animation
+                currentDragStrain = 1.0
+            } else {
+                dragCurrentLocation = location
+
+                // Gentle shake starts at 80% of max distance
+                let strainThreshold: CGFloat = 0.8
+                if distance > maxDragDistance * strainThreshold {
+                    let normalizedStrain = (distance - maxDragDistance * strainThreshold) / (maxDragDistance * (1.0 - strainThreshold))
+                    currentDragStrain = normalizedStrain
+                } else {
+                    currentDragStrain = 0.0
+                }
+            }
+
             needsDisplay = true
         }
         
         private func endDragOperation(at location: NSPoint) {
             DebugLog.log("🚀 Ending drag operation at: \(location)", category: .app)
-            
+
             // Check if orb was dragged far enough from original position
             let dragDistance = sqrt(pow(location.x - dragStartLocation.x, 2) + pow(location.y - dragStartLocation.y, 2))
             let threshold: CGFloat = 30.0 // Minimum drag distance to trigger drop
-            
+
             if dragDistance > threshold {
                 DebugLog.log("🚀 Orb dragged far enough, opening task list", category: .tasks)
                 // Open task list for the dragged orb
@@ -2552,14 +2642,58 @@ class SemiCircleView: NSView {
                     NotificationCenter.default.post(name: NSNotification.Name("OrbClicked"), object: orb)
                 }
             }
-            
-            // Reset drag state
+
+            // Start smooth return animation
             isDragging = false
-            draggedOrb = nil
-            dragStartLocation = NSPoint.zero
-            dragCurrentLocation = NSPoint.zero
-            
-            needsDisplay = true
+            dragShakeOffset = .zero
+            currentDragStrain = 0.0
+            startReturnAnimation()
+        }
+
+        private func startReturnAnimation() {
+            guard draggedOrb != nil else { return }
+
+            isReturning = true
+            returnStartLocation = dragCurrentLocation
+            returnProgress = 0.0
+
+            returnAnimationTimer?.invalidate()
+
+            let startTime = CACurrentMediaTime()
+            let duration: TimeInterval = 0.7 // Duration of return animation (slower)
+
+            returnAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+                guard let self = self else {
+                    timer.invalidate()
+                    return
+                }
+
+                let elapsed = CACurrentMediaTime() - startTime
+                let progress = min(elapsed / duration, 1.0)
+
+                // Smooth ease-out cubic for gentle return
+                let eased: CGFloat = 1.0 - pow(1.0 - progress, 3.0)
+
+                self.returnProgress = eased
+
+                // Interpolate position
+                let dx = self.dragStartLocation.x - self.returnStartLocation.x
+                let dy = self.dragStartLocation.y - self.returnStartLocation.y
+                self.dragCurrentLocation.x = self.returnStartLocation.x + dx * eased
+                self.dragCurrentLocation.y = self.returnStartLocation.y + dy * eased
+
+                self.needsDisplay = true
+
+                if progress >= 1.0 {
+                    timer.invalidate()
+                    self.returnAnimationTimer = nil
+                    self.isReturning = false
+                    self.draggedOrb = nil
+                    self.dragStartLocation = NSPoint.zero
+                    self.dragCurrentLocation = NSPoint.zero
+                    self.needsDisplay = true
+                }
+            }
         }
         
         private func checkOrbHover(at location: NSPoint) {
@@ -2577,8 +2711,8 @@ class SemiCircleView: NSView {
                 let currentPoint = currentPosition(for: orb)
                 let currentX = currentPoint.x
                 let currentY = currentPoint.y
-                
-                let size = 40.0 * orb.scale * orb.animationScale
+
+                let size = baseOrbSize * orb.scale * orb.animationScale
                 
                 // Check if mouse is within orb bounds (using current position with physics)
                 let orbRect = NSRect(x: currentX - size/2.0 - 10.0, y: currentY - size/2.0 - 10.0, width: size + 20.0, height: size + 20.0)
@@ -2632,7 +2766,7 @@ class SemiCircleView: NSView {
                 
                 // Calculate force strength based on proximity (closer = stronger)
                 let proximityStrength = 1.0 - (distance / interactionRange) // 0.0 at edge, 1.0 at center
-                let maxTargetOffset: CGFloat = 22.0
+                let maxTargetOffset: CGFloat = 32.0 // Increased significantly for more noticeable magnetic pull
                 let targetDistance = maxTargetOffset * proximityStrength
                 let target = CGPoint(
                     x: normalizedX * targetDistance,
@@ -2642,8 +2776,8 @@ class SemiCircleView: NSView {
 
                 let impulseStrength: CGFloat = proximityStrength * 0.9
                 let impulse = CGPoint(
-                    x: normalizedX * impulseStrength * 0.25,
-                    y: normalizedY * impulseStrength * 0.25
+                    x: normalizedX * impulseStrength * 0.45, // Increased significantly for stronger attraction
+                    y: normalizedY * impulseStrength * 0.45
                 )
                 orb.applyImpulse(impulse)
             } else if (abs(orb.springTargetDisplacement.x) > 0.05 || abs(orb.springTargetDisplacement.y) > 0.05) && orb.bubbleInfluence < 0.05 {
@@ -2750,7 +2884,7 @@ class SemiCircleView: NSView {
                 orb.updateHover(deltaTime: deltaTime)
                 let basePos = basePosition(for: orb)
                 let isHovered = (hoveredOrbId == orb.id)
-                let isDraggedOrb = isDragging && draggedOrb?.id == orb.id
+                let isDraggedOrb = (isDragging || isReturning) && draggedOrb?.id == orb.id
                 if let bubblePoint = bubblePoint, bubblePresence > 0.01, !isDraggedOrb {
                     applyBubbleInfluence(
                         to: orb,
@@ -2797,7 +2931,19 @@ class SemiCircleView: NSView {
             } else {
                 tooltipAnimationPhase = max(0.0, tooltipAnimationPhase - deltaTime * 4.0)
             }
-            
+
+            // Update drag shake continuously when under strain
+            if isDragging && currentDragStrain > 0.0 {
+                // Smaller and quicker shake
+                let shakeAmount: CGFloat = 0.5 + currentDragStrain * 0.8 // 0.5-1.3px shake (was 2-5px)
+                let shakeSpeed = 50.0 + currentDragStrain * 30.0 // Faster shake (was 30-50)
+                let shakePhase = CACurrentMediaTime() * shakeSpeed
+                dragShakeOffset.x = cos(shakePhase) * shakeAmount
+                dragShakeOffset.y = sin(shakePhase * 1.3) * shakeAmount // Different frequency for y
+            } else {
+                dragShakeOffset = .zero
+            }
+
             needsDisplay = true
         }
         
@@ -2851,9 +2997,9 @@ class SemiCircleView: NSView {
         let bubbleTargetId = controller?.bubbleTargetOrbId()
         
         for (index, orb) in orbManager.orbs.enumerated() {
-            
-            // Skip drawing the dragged orb in its original position
-            if isDragging && draggedOrb?.id == orb.id {
+
+            // Skip drawing the dragged orb in its original position during drag or return
+            if (isDragging || isReturning) && draggedOrb?.id == orb.id {
                 continue
             }
             
@@ -2861,7 +3007,7 @@ class SemiCircleView: NSView {
             let currentPoint = currentPosition(for: orb)
             let x = Double(currentPoint.x)
             let y = Double(currentPoint.y)
-            let baseSize = 40.0 * orb.scale
+            let baseSize = baseOrbSize * orb.scale
             let animatedSize = baseSize * orb.animationScale // Apply growth animation
 
             let displacementMagnitude = hypot(Double(orb.springTargetDisplacement.x), Double(orb.springTargetDisplacement.y))
@@ -2895,19 +3041,24 @@ class SemiCircleView: NSView {
             }
         }
         
-        // Draw dragged orb at cursor position if dragging
-        if isDragging, let orb = draggedOrb {
-            let baseSize = 40.0 * orb.scale
+        // Draw dragged orb at cursor position if dragging or returning
+        if (isDragging || isReturning), let orb = draggedOrb {
+            let baseSize = baseOrbSize * orb.scale
             let animatedSize = baseSize * orb.animationScale
-            let finalSize = animatedSize * 1.2 // Slightly larger when dragging
-            
+            let scaleFactor = isDragging ? 1.2 : (1.2 - (returnProgress * 0.2)) // Scale back to normal during return
+            let finalSize = animatedSize * scaleFactor
+
+            // Apply shake offset during drag
+            let drawX = Double(dragCurrentLocation.x + dragShakeOffset.x)
+            let drawY = Double(dragCurrentLocation.y + dragShakeOffset.y)
+
             drawModernOrb(
                 context: context,
                 orb: orb,
-                x: Double(dragCurrentLocation.x),
-                y: Double(dragCurrentLocation.y),
+                x: drawX,
+                y: drawY,
                 size: finalSize,
-                scale: orb.scale * orb.animationScale * 1.2,
+                scale: orb.scale * orb.animationScale * scaleFactor,
                 animationPhase: orb.animationPhase,
                 orbIndex: 999,
                 isHovered: false,
@@ -2925,7 +3076,7 @@ class SemiCircleView: NSView {
         let currentPoint = currentPosition(for: orb)
         let x = Double(currentPoint.x)
         let y = Double(currentPoint.y)
-        let size = 40.0 * orb.scale * orb.animationScale
+        let size = baseOrbSize * orb.scale * orb.animationScale
         
         // Position tooltip below the orb
         let tooltipY = y - size/2 - 25
@@ -2953,7 +3104,7 @@ class SemiCircleView: NSView {
         
         // Draw project name text
         let textRect = tooltipRect.insetBy(dx: 8, dy: 4)
-        let font = NSFont(name: "SF Pro Text", size: 12) ?? NSFont.systemFont(ofSize: 12)
+        let font = NSFont(name: "SF Pro Text", size: 12 * textScale) ?? NSFont.systemFont(ofSize: 12 * textScale)
         let textAttributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.white.withAlphaComponent(alpha),
@@ -3186,7 +3337,9 @@ class SemiCircleView: NSView {
             
             // Badge text with subtle glow
             let text = "\(taskCount)" as NSString
-            let fontSize = (10 * scale) + CGFloat(easedPulse) * 0.9
+            // Badge counter gets slightly larger boost in Large mode (1.45x vs 1.3x for other text)
+            let badgeTextScale = TextSizePreference.current == .large ? 1.45 : textScale
+            let fontSize = (10 * scale * badgeTextScale) + CGFloat(easedPulse) * 0.9
             let font = NSFont(name: "SF Pro Display", size: fontSize) ?? NSFont.systemFont(ofSize: fontSize, weight: .heavy)
             let textAttributes: [NSAttributedString.Key: Any] = [
                 .font: font,

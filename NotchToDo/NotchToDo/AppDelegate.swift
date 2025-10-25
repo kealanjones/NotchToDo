@@ -738,6 +738,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         orbLimitItem.submenu = orbLimitMenu
         menu.addItem(orbLimitItem)
+
+        // Add text size submenu
+        let textSizeItem = NSMenuItem(title: "Text Size", action: nil, keyEquivalent: "")
+        let textSizeMenu = NSMenu()
+        let currentSize = TextSizePreference.current
+
+        let regularItem = NSMenuItem(title: "Regular", action: #selector(setTextSize(_:)), keyEquivalent: "")
+        regularItem.target = self
+        regularItem.tag = 0  // 0 = regular
+        regularItem.state = (currentSize == .regular) ? .on : .off
+        textSizeMenu.addItem(regularItem)
+
+        let largeItem = NSMenuItem(title: "Large", action: #selector(setTextSize(_:)), keyEquivalent: "")
+        largeItem.target = self
+        largeItem.tag = 1  // 1 = large
+        largeItem.state = (currentSize == .large) ? .on : .off
+        textSizeMenu.addItem(largeItem)
+
+        textSizeItem.submenu = textSizeMenu
+        menu.addItem(textSizeItem)
     }
 
     private func refreshLogMenuStates() {
@@ -768,8 +788,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Rebuild menu to update checkmarks
         rebuildDebugMenu(debugMenu)
     }
-    
-    
+
+    @objc private func setTextSize(_ sender: NSMenuItem) {
+        let newSize: TextSizePreference.Size = sender.tag == 0 ? .regular : .large
+        TextSizePreference.current = newSize
+        print("🔧 Text size set to \(newSize.rawValue)")
+
+        // Rebuild menu to update checkmarks
+        rebuildDebugMenu(debugMenu)
+    }
+
+
     @objc private func statusBarButtonClicked() {
         guard let event = NSApp.currentEvent else {
             overlayController?.toggleOverlay()

@@ -32,6 +32,11 @@ class TaskCardView: NSView, FrameUpdatable {
     private weak var controller: NotchOverlayController?
     private let celebrationManager = CelebrationManager.shared
 
+    // Text size scale factor
+    private var textScale: CGFloat {
+        return TextSizePreference.scaleFactor
+    }
+
     // Computed filtered tasks based on search
     private var filteredTasks: [Task] {
         guard !searchQuery.isEmpty else { return tasks }
@@ -154,8 +159,9 @@ class TaskCardView: NSView, FrameUpdatable {
         setupDragTracking()
         configureGlassEffect()
         applyCardLiftShadow()
+        setupTextSizeObserver()
     }
-    
+
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         wantsLayer = true
@@ -169,6 +175,21 @@ class TaskCardView: NSView, FrameUpdatable {
         setupDragTracking()
         configureGlassEffect()
         applyCardLiftShadow()
+        setupTextSizeObserver()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: .textSizeDidChange, object: nil)
+    }
+
+    private func setupTextSizeObserver() {
+        NotificationCenter.default.addObserver(
+            forName: .textSizeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.needsDisplay = true
+        }
     }
     
     func updateTasks(_ tasks: [Task], projectName: String, orbColor: NSColor, orbId: UUID) {
@@ -1562,7 +1583,7 @@ class TaskCardView: NSView, FrameUpdatable {
         let titleColor = NSColor(calibratedWhite: 0.1, alpha: 0.95)
 
         let statsAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 12 * textScale, weight: .medium),
             .foregroundColor: titleColor.withAlphaComponent(0.5),
             .paragraphStyle: titleParagraph
         ]
@@ -1573,7 +1594,7 @@ class TaskCardView: NSView, FrameUpdatable {
         // Title below buttons
         var currentY = iconY - 16
         let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 19, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 19 * textScale, weight: .semibold),
             .foregroundColor: titleColor,
             .paragraphStyle: titleParagraph
         ]
@@ -1667,7 +1688,7 @@ class TaskCardView: NSView, FrameUpdatable {
         let textRect = CGRect(x: textX, y: searchFieldRect.minY, width: textWidth, height: searchHeight)
 
         let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .regular),
+            .font: NSFont.systemFont(ofSize: 13 * textScale, weight: .regular),
             .foregroundColor: searchQuery.isEmpty ?
                 NSColor(calibratedWhite: 0.5, alpha: 0.6) :
                 NSColor(calibratedWhite: 0.2, alpha: 0.9)
@@ -1740,7 +1761,7 @@ class TaskCardView: NSView, FrameUpdatable {
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.lineBreakMode = .byTruncatingTail
             let textAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                .font: NSFont.systemFont(ofSize: 12 * textScale, weight: .medium),
                 .foregroundColor: NSColor.white.withAlphaComponent(0.9),
                 .paragraphStyle: paragraphStyle
             ]
@@ -1758,7 +1779,7 @@ class TaskCardView: NSView, FrameUpdatable {
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.lineBreakMode = .byTruncatingTail
             let placeholderAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 12, weight: .regular),
+                .font: NSFont.systemFont(ofSize: 12 * textScale, weight: .regular),
                 .foregroundColor: NSColor.white.withAlphaComponent(0.4),
                 .paragraphStyle: paragraphStyle
             ]
@@ -2159,7 +2180,7 @@ class TaskCardView: NSView, FrameUpdatable {
         let style = NSMutableParagraphStyle()
         style.alignment = .center
         let headingAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 15 * textScale, weight: .semibold),
             .foregroundColor: NSColor(calibratedWhite: 0.1, alpha: 0.9),
             .paragraphStyle: style
         ]
@@ -2175,7 +2196,7 @@ class TaskCardView: NSView, FrameUpdatable {
         // Main instruction
         let detail = "Say \"add [task]\" or press ⌘N"
         let detailAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 12.5 * textScale, weight: .medium),
             .foregroundColor: NSColor(calibratedWhite: 0.2, alpha: 0.9),
             .paragraphStyle: style
         ]
@@ -2191,7 +2212,7 @@ class TaskCardView: NSView, FrameUpdatable {
         // Additional hint
         let hint = "You can also drag and drop items here"
         let hintAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+            .font: NSFont.systemFont(ofSize: 11 * textScale, weight: .regular),
             .foregroundColor: NSColor(calibratedWhite: 0.35, alpha: 0.75),
             .paragraphStyle: style
         ]
@@ -2211,7 +2232,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
         let message = "No matching tasks"
         let messageAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 14 * textScale, weight: .medium),
             .foregroundColor: NSColor(calibratedWhite: 0.25, alpha: 0.85),
             .paragraphStyle: style
         ]
@@ -2226,7 +2247,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
         let hint = "Try a different search term"
         let hintAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+            .font: NSFont.systemFont(ofSize: 11 * textScale, weight: .regular),
             .foregroundColor: NSColor(calibratedWhite: 0.35, alpha: 0.7),
             .paragraphStyle: style
         ]
@@ -2327,7 +2348,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // --- TOP SECTION: TITLE ---
         let titleRect = CGRect(x: contentX, y: topSectionY, width: contentWidth, height: 22)
-        let titleFont = NSFont.systemFont(ofSize: 15, weight: task.isCompleted ? .regular : .semibold)
+        let titleFont = NSFont.systemFont(ofSize: 15 * textScale, weight: task.isCompleted ? .regular : .semibold)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let titleColor = task.isCompleted ?
@@ -2364,7 +2385,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // --- BOTTOM SECTION: METADATA (with clear visual separation) ---
         var metadataX = contentX
-        let metadataFont = NSFont.systemFont(ofSize: 11.5, weight: .medium)
+        let metadataFont = NSFont.systemFont(ofSize: 11.5 * textScale, weight: .medium)
         let metadataColor = NSColor(calibratedWhite: 0.5, alpha: animatedOpacity)
 
         // Note count (instead of showing snippet)
@@ -2385,7 +2406,7 @@ class TaskCardView: NSView, FrameUpdatable {
         let chips = makeTaskRowChips(for: task, orbColor: orbColor)
         if !chips.isEmpty {
             for chip in chips {
-                let chipWidth = chip.text.size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)]).width + TaskRowMetrics.chipHorizontalPadding * 2
+                let chipWidth = chip.text.size(withAttributes: [.font: NSFont.systemFont(ofSize: 11 * textScale, weight: .medium)]).width + TaskRowMetrics.chipHorizontalPadding * 2
 
                 let chipRect = CGRect(
                     x: metadataX,
@@ -2423,7 +2444,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // Text
         let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 12 * textScale, weight: .medium),
             .foregroundColor: chip.foreground.withAlphaComponent(0.85 * opacity)
         ]
         let textSize = chip.text.size(withAttributes: textAttributes)
@@ -2448,7 +2469,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // Text
         let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11 * textScale, weight: .medium),
             .foregroundColor: chip.foreground.withAlphaComponent(0.75 * opacity)
         ]
         let textSize = chip.text.size(withAttributes: textAttributes)
@@ -2474,7 +2495,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // Text - smaller font for metadata section
         let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 11 * textScale, weight: .medium),
             .foregroundColor: chip.foreground.withAlphaComponent(0.7 * opacity)
         ]
         let textSize = chip.text.size(withAttributes: textAttributes)
@@ -2691,7 +2712,7 @@ private func makeTaskRowChips(for task: Task, orbColor: NSColor, referenceDate: 
 
 private func drawTaskChips(_ chips: [TaskRowChip], startingAt startX: CGFloat, baselineY: CGFloat, context: CGContext) -> CGFloat {
     var currentX = startX
-    let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+    let font = NSFont.systemFont(ofSize: 11 * TextSizePreference.scaleFactor, weight: .medium)
     let pillPadding: CGFloat = TaskRowMetrics.chipHorizontalPadding
     let pillHeight: CGFloat = TaskRowMetrics.chipHeight
     
@@ -2791,7 +2812,7 @@ class TaskDragView: NSView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 15 * TextSizePreference.scaleFactor, weight: .semibold),
             .foregroundColor: NSColor(calibratedWhite: 0.1, alpha: 1.0),
             .paragraphStyle: paragraph
         ]

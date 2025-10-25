@@ -11,10 +11,11 @@ class NotchIndicatorView: NSView {
     private var glowIntensity: CGFloat = 0.0
     private var isPerformingSweep = false
     private var listenState: ListenState = .idle
-    
+
     // Contextual animation properties
     var activeOrbColor: NSColor?
     var projectProgress: CGFloat = 0.0  // 0.0 to 1.0
+    var isSemiCircleVisible: Bool = false  // Hide base rim when semi-circle is open
     
     static var contextualAnimationsEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "ContextualNotchAnimationsEnabled") as? Bool ?? true }
@@ -106,14 +107,16 @@ class NotchIndicatorView: NSView {
         context.addPath(cgPath)
         context.fillPath()
         context.restoreGState()
-        
-        // Subtle base outline
-        context.saveGState()
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.12).cgColor)
-        context.setLineWidth(1.0)
-        context.addPath(cgPath)
-        context.strokePath()
-        context.restoreGState()
+
+        // Subtle base outline (only when semi-circle is not visible)
+        if !isSemiCircleVisible {
+            context.saveGState()
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.12).cgColor)
+            context.setLineWidth(1.0)
+            context.addPath(cgPath)
+            context.strokePath()
+            context.restoreGState()
+        }
         
         // Draw shining white trace around the notch perimeter SECOND (on top)
         drawShiningTrace(context: context, notchRect: notchRect, cornerRadius: cornerRadius)

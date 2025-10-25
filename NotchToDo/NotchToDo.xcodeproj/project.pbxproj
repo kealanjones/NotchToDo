@@ -26,6 +26,8 @@
 		B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018B /* RealSpeechRecognizer.swift */; };
 		B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018D /* RealWakeWordEngine.swift */; };
 		B2234567890123456789018A /* AudioFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2234567890123456789018B /* AudioFeedback.swift */; };
+		71347F2081894941A8C922AD /* TextSizePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89F59308ABA5458EAB88E186 /* TextSizePreference.swift */; };
+
 		B3234567890123456789018A /* NotchCompactPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3234567890123456789018B /* NotchCompactPreview.swift */; };
 		C2AA00112233445566778899 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556677 /* PersistenceController.swift */; };
 		C2AA0011223344556677889A /* OrbPersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556678 /* OrbPersistenceStore.swift */; };
@@ -59,6 +61,8 @@
 		B1234567890123456789018B /* RealSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealSpeechRecognizer.swift; sourceTree = "<group>"; };
 		B1234567890123456789018D /* RealWakeWordEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealWakeWordEngine.swift; sourceTree = "<group>"; };
 		B2234567890123456789018B /* AudioFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFeedback.swift; sourceTree = "<group>"; };
+		89F59308ABA5458EAB88E186 /* TextSizePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSizePreference.swift; sourceTree = "<group>"; };
+
 		B3234567890123456789018B /* NotchCompactPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchCompactPreview.swift; sourceTree = "<group>"; };
 		C2AA00990011223344556677 /* PersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceController.swift; sourceTree = "<group>"; };
 		C2AA00990011223344556678 /* OrbPersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPersistenceStore.swift; sourceTree = "<group>"; };
@@ -106,6 +110,8 @@
 				A1234567890123456789013F /* MockWakeWordEngine.swift */,
 				A1234567890123456789014B /* MockSpeechRecognizer.swift */,
 				B2234567890123456789018B /* AudioFeedback.swift */,
+				89F59308ABA5458EAB88E186 /* TextSizePreference.swift */,
+
 				B1234567890123456789018B /* RealSpeechRecognizer.swift */,
 				B1234567890123456789018D /* RealWakeWordEngine.swift */,
 				B3234567890123456789018B /* NotchCompactPreview.swift */,
@@ -221,6 +227,8 @@
 				A1234567890123456789013E /* MockWakeWordEngine.swift in Sources */,
 				A1234567890123456789014A /* MockSpeechRecognizer.swift in Sources */,
 				B2234567890123456789018A /* AudioFeedback.swift in Sources */,
+				71347F2081894941A8C922AD /* TextSizePreference.swift in Sources */,
+
 				B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */,
 				B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */,
 				B3234567890123456789018A /* NotchCompactPreview.swift in Sources */,

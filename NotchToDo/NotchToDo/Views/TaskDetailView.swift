@@ -24,7 +24,12 @@ class TaskDetailView: NSView {
     private var task: Task
     private var orbColor: NSColor
     private weak var delegate: TaskDetailViewDelegate?
-    
+
+    // Text size scale factor
+    private var textScale: CGFloat {
+        return TextSizePreference.scaleFactor
+    }
+
     private let backdropView = NSVisualEffectView()
     private let contentStack = NSStackView()
     private let chromeLayer = CAGradientLayer()
@@ -228,7 +233,7 @@ class TaskDetailView: NSView {
         titleField.isBordered = false
         titleField.drawsBackground = false
         titleField.focusRingType = .none
-        titleField.font = NSFont.systemFont(ofSize: 27, weight: .semibold)
+        titleField.font = NSFont.systemFont(ofSize: 27 * textScale, weight: .semibold)
         titleField.textColor = NSColor(calibratedWhite: 0.08, alpha: 0.95)
         titleField.alignment = .left
         titleField.lineBreakMode = .byTruncatingTail
@@ -237,7 +242,7 @@ class TaskDetailView: NSView {
         titleField.target = self
         titleField.action = #selector(handleTitleEditingEnd)
         
-        headerSubtitleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        headerSubtitleLabel.font = NSFont.systemFont(ofSize: 13 * textScale, weight: .medium)
         headerSubtitleLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 0.9)
         headerSubtitleLabel.alignment = .left
         headerSubtitleLabel.lineBreakMode = .byTruncatingTail
@@ -349,7 +354,7 @@ class TaskDetailView: NSView {
         statusButton.layer?.cornerRadius = 14
         statusButton.target = self
         statusButton.action = #selector(handleStatusToggle)
-        statusButton.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        statusButton.font = NSFont.systemFont(ofSize: 14 * textScale, weight: .semibold)
         statusButton.contentTintColor = .white
         statusButton.imagePosition = .imageLeading
         statusButton.translatesAutoresizingMaskIntoConstraints = false
@@ -363,7 +368,7 @@ class TaskDetailView: NSView {
         dueButton.layer?.cornerRadius = 14
         dueButton.target = self
         dueButton.action = #selector(handleDueTapped)
-        dueButton.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        dueButton.font = NSFont.systemFont(ofSize: 14 * textScale, weight: .medium)
         dueButton.contentTintColor = .white
         dueButton.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Set due date")
         dueButton.imagePosition = .imageLeading
@@ -403,7 +408,7 @@ class TaskDetailView: NSView {
     
     private func configureNotesSection() {
         notesLabel.stringValue = "NOTES & CONTEXT"
-        notesLabel.font = NSFont.systemFont(ofSize: 12, weight: .heavy)
+        notesLabel.font = NSFont.systemFont(ofSize: 12 * textScale, weight: .heavy)
         notesLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 0.9)
         notesLabel.translatesAutoresizingMaskIntoConstraints = false
         contentStack.addArrangedSubview(notesLabel)
@@ -435,7 +440,7 @@ class TaskDetailView: NSView {
         notesInputField.isBordered = true
         notesInputField.isBezeled = true
         notesInputField.bezelStyle = .roundedBezel
-        notesInputField.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        notesInputField.font = NSFont.systemFont(ofSize: 13 * textScale, weight: .regular)
         notesInputField.textColor = NSColor(calibratedWhite: 0.12, alpha: 1.0)
         notesInputField.backgroundColor = NSColor.white.withAlphaComponent(0.12)
         notesInputField.placeholderString = "Add a note..."
@@ -446,7 +451,7 @@ class TaskDetailView: NSView {
         notesInputButton.title = "Add"
         notesInputButton.bezelStyle = .inline
         notesInputButton.isBordered = false
-        notesInputButton.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        notesInputButton.font = NSFont.systemFont(ofSize: 12 * textScale, weight: .medium)
         notesInputButton.wantsLayer = true
         notesInputButton.layer?.cornerRadius = 8
         notesInputButton.layer?.backgroundColor = orbColor.withAlphaComponent(0.2).cgColor
@@ -530,7 +535,7 @@ class TaskDetailView: NSView {
     }
     
     private func configureMetadataLabel() {
-        metadataLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        metadataLabel.font = NSFont.systemFont(ofSize: 11 * textScale, weight: .medium)
         metadataLabel.textColor = NSColor(calibratedWhite: 0.4, alpha: 0.9)
         metadataLabel.lineBreakMode = .byWordWrapping
         metadataLabel.maximumNumberOfLines = 2
@@ -542,7 +547,7 @@ class TaskDetailView: NSView {
     
     private func makeMetaColumn(title: String, content: NSView) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        label.font = NSFont.systemFont(ofSize: 11 * textScale, weight: .semibold)
         label.textColor = NSColor(calibratedWhite: 0.28, alpha: 0.9)
         label.alignment = .left
         
@@ -608,7 +613,7 @@ class TaskDetailView: NSView {
         datePicker.datePickerStyle = .clockAndCalendar
         datePicker.target = self
         datePicker.action = #selector(handleDatePicked)
-        datePicker.font = NSFont.systemFont(ofSize: 13)
+        datePicker.font = NSFont.systemFont(ofSize: 13 * textScale)
         
         let pickerContainer = NSView()
         pickerContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -644,7 +649,7 @@ class TaskDetailView: NSView {
     private func quickDueButton(title: String) -> NSButton {
         let button = NSButton(title: title, target: nil, action: nil)
         button.bezelStyle = .inline
-        button.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        button.font = NSFont.systemFont(ofSize: 13 * textScale, weight: .semibold)
         button.isBordered = false
         button.translatesAutoresizingMaskIntoConstraints = false
         button.heightAnchor.constraint(equalToConstant: 32).isActive = true
@@ -950,7 +955,7 @@ class TaskDetailView: NSView {
         container.translatesAutoresizingMaskIntoConstraints = false
         
         let timestampLabel = NSTextField(labelWithString: formatTimestamp(note.timestamp))
-        timestampLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        timestampLabel.font = NSFont.systemFont(ofSize: 10 * textScale, weight: .medium)
         timestampLabel.textColor = NSColor(calibratedWhite: 0.4, alpha: 0.8)
         timestampLabel.isBezeled = false
         timestampLabel.drawsBackground = false
@@ -960,7 +965,7 @@ class TaskDetailView: NSView {
         
         // Add bullet point before content
         let bulletLabel = NSTextField(labelWithString: "•")
-        bulletLabel.font = NSFont.systemFont(ofSize: 14, weight: .bold)
+        bulletLabel.font = NSFont.systemFont(ofSize: 14 * textScale, weight: .bold)
         bulletLabel.textColor = orbColor.withAlphaComponent(0.8)
         bulletLabel.isBezeled = false
         bulletLabel.drawsBackground = false
@@ -969,7 +974,7 @@ class TaskDetailView: NSView {
         bulletLabel.translatesAutoresizingMaskIntoConstraints = false
         
         let contentLabel = NSTextField(labelWithString: note.content)
-        contentLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        contentLabel.font = NSFont.systemFont(ofSize: 12 * textScale, weight: .regular)
         contentLabel.textColor = NSColor(calibratedWhite: 0.15, alpha: 1.0)
         contentLabel.isBezeled = false
         contentLabel.drawsBackground = false
