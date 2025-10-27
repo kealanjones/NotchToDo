@@ -17,6 +17,7 @@
         <attribute name="notes" attributeType="String" optional="YES" usesScalarValueType="NO"/>
         <attribute name="priority" attributeType="Integer 16" optional="NO" defaultValueString="1" usesScalarValueType="YES"/>
         <attribute name="sortOrder" attributeType="Double" optional="NO" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="status" attributeType="Integer 16" optional="NO" defaultValueString="1" usesScalarValueType="YES"/>
         <attribute name="title" attributeType="String" optional="NO" usesScalarValueType="NO"/>
         <relationship name="orb" optional="NO" toMany="NO" deletionRule="Nullify" destinationEntity="OrbEntity" inverseName="tasks" inverseEntity="OrbEntity"/>
     </entity>

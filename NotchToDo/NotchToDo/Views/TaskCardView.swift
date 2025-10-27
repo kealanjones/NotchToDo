@@ -688,9 +688,13 @@ class TaskCardView: NSView, FrameUpdatable {
     }
     
     private func openTaskDetail(for index: Int) {
-        guard index < tasks.count else { return }
-        
+        guard index < tasks.count else {
+            DebugLog.log("❌ openTaskDetail: index \(index) out of range (tasks.count: \(tasks.count))", category: .tasks)
+            return
+        }
+
         let task = tasks[index]
+        DebugLog.log("✅ openTaskDetail: calling controller?.showTaskDetail for task '\(task.title)'", category: .tasks)
         controller?.showTaskDetail(for: task, orbColor: orbColor)
     }
     
@@ -1079,6 +1083,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
     override func mouseDown(with event: NSEvent) {
         let locationInView = convert(event.locationInWindow, from: nil)
+        DebugLog.log("🖱️ mouseDown at: \(locationInView), rowGeometries count: \(rowGeometries.count)", category: .tasks)
 
         // Check for Control+Click (right-click on Mac)
         if event.modifierFlags.contains(.control) {
@@ -1139,15 +1144,19 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // Check if click is on a checkbox
         if let checkboxIndex = getClickedCheckboxIndex(at: locationInView) {
+            DebugLog.log("🖱️ Checkbox clicked at index: \(checkboxIndex)", category: .tasks)
             toggleTaskCompletion(at: checkboxIndex)
             return
         }
 
         // Check if click is on a task (to open task detail)
         if let taskIndex = getClickedTaskIndex(at: locationInView) {
+            DebugLog.log("🖱️ Task clicked at index: \(taskIndex), opening detail", category: .tasks)
             openTaskDetail(for: taskIndex)
             return
         }
+
+        DebugLog.log("🖱️ Click did not match any task row", category: .tasks)
 
         // Reset fade timer on any mouse interaction (only if not pinned)
         if !isPinned {
@@ -1553,24 +1562,27 @@ class TaskCardView: NSView, FrameUpdatable {
         let iconY = dragHandleY - 18 - iconSize
         var currentX = cardRect.maxX - horizontalPadding - iconSize
 
-        // Delete button (rightmost)
+        // Delete button (rightmost) - using SF Symbol
         deleteButtonRect = CGRect(x: currentX, y: iconY, width: iconSize, height: iconSize)
         drawMinimalIconButton(in: context, rect: deleteButtonRect, isHovered: isHoveringDelete) { ctx, rect in
-            drawDeleteGlyph(in: ctx, rect: rect.insetBy(dx: 6, dy: 6), color: isHoveringDelete ? NSColor.systemRed : NSColor(calibratedWhite: 0.4, alpha: 0.8))
+            let color = isHoveringDelete ? NSColor.systemRed : NSColor(calibratedWhite: 0.4, alpha: 0.8)
+            drawSFSymbol(named: "trash", in: rect, color: color, context: ctx)
         }
         currentX -= iconSize + 12
 
-        // Pin button
+        // Pin button - using SF Symbol
         pinButtonRect = CGRect(x: currentX, y: iconY, width: iconSize, height: iconSize)
         drawMinimalIconButton(in: context, rect: pinButtonRect, isHovered: isHoveringPin) { ctx, rect in
             let color = isPinned ? orbColor : NSColor(calibratedWhite: 0.4, alpha: 0.8)
-            drawPinGlyph(in: ctx, rect: rect.insetBy(dx: 6, dy: 6), color: color)
+            let symbolName = isPinned ? "pin.fill" : "pin"
+            drawSFSymbol(named: symbolName, in: rect, color: color, context: ctx)
         }
 
-        // Close button (left)
+        // Close button (left) - using SF Symbol
         closeButtonRect = CGRect(x: cardRect.minX + horizontalPadding, y: iconY, width: iconSize, height: iconSize)
         drawMinimalIconButton(in: context, rect: closeButtonRect, isHovered: isHoveringClose) { ctx, rect in
-            drawCloseGlyph(in: ctx, rect: rect.insetBy(dx: 7, dy: 7), color: isHoveringClose ? NSColor.systemRed : NSColor(calibratedWhite: 0.4, alpha: 0.8))
+            let color = isHoveringClose ? NSColor.systemRed : NSColor(calibratedWhite: 0.4, alpha: 0.8)
+            drawSFSymbol(named: "xmark", in: rect, color: color, context: ctx)
         }
 
         // Task counters at same level as icon buttons (centered between close and pin/delete)
@@ -1902,6 +1914,30 @@ class TaskCardView: NSView, FrameUpdatable {
         context.restoreGState()
     }
 
+    private func drawSFSymbol(named symbolName: String, in rect: CGRect, color: NSColor, context: CGContext) {
+        guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) else { return }
+
+        let config = NSImage.SymbolConfiguration(pointSize: rect.height * 0.6, weight: .regular)
+        let configuredSymbol = symbol.withSymbolConfiguration(config) ?? symbol
+
+        context.saveGState()
+
+        // Center the symbol in the rect
+        let imageSize = configuredSymbol.size
+        let x = rect.midX - imageSize.width / 2
+        let y = rect.midY - imageSize.height / 2
+        let imageRect = CGRect(x: x, y: y, width: imageSize.width, height: imageSize.height)
+
+        // Draw the symbol with the specified color
+        if let cgImage = configuredSymbol.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            context.setFillColor(color.cgColor)
+            context.clip(to: imageRect, mask: cgImage)
+            context.fill(imageRect)
+        }
+
+        context.restoreGState()
+    }
+
     private func createNoiseTexture() -> CGImage? {
         let size = 128
         var pixels = [UInt8](repeating: 0, count: size * size * 4)
@@ -2041,14 +2077,14 @@ class TaskCardView: NSView, FrameUpdatable {
                     width: TaskRowMetrics.dragHitWidth,
                     height: rowRect.height
                 )
-                
+
                 rowGeometries.append(TaskRowGeometry(
                     index: index,
                     rowRect: rowRect,
                     checkboxRect: checkboxRect,
                     dragRect: dragRect
                 ))
-                
+
                 drawTaskRow(in: context, rect: rowRect, task: task, index: index, checkboxRect: checkboxRect)
             }
         }

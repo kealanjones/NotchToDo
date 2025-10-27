@@ -20,6 +20,7 @@ final class OrbPersistenceStore {
         static let notes = "notes"
         static let isCompleted = "isCompleted"
         static let priority = "priority"
+        static let status = "status"
         static let dueDate = "dueDate"
         static let orb = "orb"
     }
@@ -130,6 +131,7 @@ final class OrbPersistenceStore {
             task.setValue(snapshot.notes.isEmpty ? nil : snapshot.notes, forKey: Keys.notes)
             task.setValue(snapshot.isCompleted as NSNumber, forKey: Keys.isCompleted)
             task.setValue(Int16(snapshot.priority) as NSNumber, forKey: Keys.priority)
+            task.setValue(snapshot.status as NSNumber, forKey: Keys.status)
             task.setValue(snapshot.createdAt, forKey: Keys.createdAt)
             task.setValue(snapshot.dueDate, forKey: Keys.dueDate)
             task.setValue(snapshot.sortOrder as NSNumber, forKey: Keys.sortOrder)
@@ -218,6 +220,7 @@ final class OrbPersistenceStore {
                     notes: (task.value(forKey: Keys.notes) as? String) ?? "",
                     isCompleted: task.value(forKey: Keys.isCompleted) as? Bool ?? false,
                     priority: Int(task.value(forKey: Keys.priority) as? Int16 ?? 1),
+                    status: task.value(forKey: Keys.status) as? Int16 ?? 1,
                     createdAt: (task.value(forKey: Keys.createdAt) as? Date) ?? Date(),
                     dueDate: task.value(forKey: Keys.dueDate) as? Date,
                     sortOrder: task.value(forKey: Keys.sortOrder) as? Double ?? 0

@@ -18,6 +18,9 @@ import Cocoa
         @Published var priority: Int {
             didSet { notifyChange() }
         }
+        @Published var status: Int16 {
+            didSet { notifyChange() }
+        }
         var createdAt: Date {
             didSet { notifyChange() }
         }
@@ -33,6 +36,7 @@ import Cocoa
             details: String = "",
             deadline: Date? = nil,
             priority: Int = 1,
+            status: Int16 = 1,
             createdAt: Date = Date(),
             sortOrder: Double = 0.0
         ) {
@@ -42,6 +46,7 @@ import Cocoa
             self.details = details
             self.deadline = deadline
             self.priority = priority
+            self.status = status
             self.createdAt = createdAt
             self.sortOrder = sortOrder
         }
@@ -137,6 +142,7 @@ import Cocoa
                 details: snapshot.notes,
                 deadline: snapshot.dueDate,
                 priority: snapshot.priority,
+                status: snapshot.status,
                 createdAt: snapshot.createdAt,
                 sortOrder: snapshot.sortOrder
             )
@@ -539,6 +545,7 @@ extension NSColor {
                         notes: task.details,
                         isCompleted: task.isCompleted,
                         priority: task.priority,
+                        status: task.status,
                         createdAt: task.createdAt,
                         dueDate: task.deadline,
                         sortOrder: task.sortOrder

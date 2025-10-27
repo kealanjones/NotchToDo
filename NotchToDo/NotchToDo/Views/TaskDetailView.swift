@@ -33,18 +33,15 @@ class TaskDetailView: NSView {
     private let backdropView = NSVisualEffectView()
     private let contentStack = NSStackView()
     private let chromeLayer = CAGradientLayer()
-    private let headerGradientLayer = CAGradientLayer()
     private let dragStripView = TaskDetailDragStripView()
-    
-    private let headerBar = NSView()
-    private let orbBadge = NSView()
+
     private let titleField = NSTextField()
-    private let headerSubtitleLabel = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
     private let pinButton = NSButton()
+    private let deleteButton = NSButton()
     
     private let metaRow = NSStackView()
-    private let statusButton = NSButton()
+    private let statusControl = NSSegmentedControl(labels: ["Outstanding", "In Progress", "Complete"], trackingMode: .selectOne, target: nil, action: nil)
     private let dueButton = NSButton()
     private let clearDueButton = NSButton()
     private let priorityControl = NSSegmentedControl(labels: ["Low", "Med", "High"], trackingMode: .selectOne, target: nil, action: nil)
@@ -119,11 +116,11 @@ class TaskDetailView: NSView {
         layer?.shadowOpacity = 1.0
         layer?.shadowOffset = CGSize(width: 0, height: -2)
         layer?.shadowRadius = 12
-        
+
         configureBackdrop()
         configureDragStrip()
         configureContentStack()
-        configureHeader()
+        configureTitle()
         configureNotesSection()
         configureMetaRow()
         chromeLayer.type = .axial
@@ -131,7 +128,7 @@ class TaskDetailView: NSView {
         chromeLayer.cornerRadius = 24
         chromeLayer.masksToBounds = true
         backdropView.layer?.insertSublayer(chromeLayer, at: 0)
-        
+
         updateChromePalette()
         updateDragStripAppearance()
     }
@@ -139,7 +136,6 @@ class TaskDetailView: NSView {
     override func layout() {
         super.layout()
         chromeLayer.frame = backdropView.bounds
-        headerGradientLayer.frame = headerBar.bounds
     }
     
     override func viewDidMoveToWindow() {
@@ -147,7 +143,28 @@ class TaskDetailView: NSView {
         if let detailWindow = window as? TaskDetailWindow {
             isPinned = detailWindow.isPinned
             updatePinButtonAppearance()
+
+            // Smooth fade-in and scale animation
+            if window != nil {
+                animateAppearance()
+            }
         }
+    }
+
+    private func animateAppearance() {
+        // Start invisible and slightly scaled down
+        layer?.opacity = 0.0
+        layer?.transform = CATransform3DMakeScale(0.94, 0.94, 1.0)
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.35
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0) // Smooth ease-out
+            context.allowsImplicitAnimation = true
+
+            // Fade in and scale to normal
+            self.layer?.opacity = 1.0
+            self.layer?.transform = CATransform3DIdentity
+        }, completionHandler: nil)
     }
     
     private func configureBackdrop() {
@@ -184,9 +201,9 @@ class TaskDetailView: NSView {
     
     private func configureContentStack() {
         contentStack.orientation = .vertical
-        contentStack.spacing = 30
+        contentStack.spacing = 20
         contentStack.alignment = .leading
-        contentStack.edgeInsets = NSEdgeInsets(top: 50, left: 60, bottom: 0, right: 60)
+        contentStack.edgeInsets = NSEdgeInsets(top: 120, left: 24, bottom: 24, right: 24) // Space for drag strip + buttons + title
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         backdropView.addSubview(contentStack)
         
@@ -198,97 +215,38 @@ class TaskDetailView: NSView {
         ])
     }
     
-    private func configureHeader() {
-        headerBar.translatesAutoresizingMaskIntoConstraints = false
-        headerBar.wantsLayer = true
-        headerBar.layer?.cornerRadius = 22
-        headerBar.layer?.masksToBounds = true
-        headerGradientLayer.cornerRadius = 22
-        headerGradientLayer.masksToBounds = true
-        headerGradientLayer.opacity = 0.6
-        headerGradientLayer.startPoint = CGPoint(x: 0.0, y: 1.0)
-        headerGradientLayer.endPoint = CGPoint(x: 1.0, y: 0.0)
-        headerGradientLayer.colors = [
-            NSColor.white.withAlphaComponent(0.36).cgColor,
-            orbColor.withAlphaComponent(0.18).cgColor
-        ]
-        headerGradientLayer.locations = [NSNumber(value: 0.0), NSNumber(value: 1.0)]
-        headerBar.layer?.insertSublayer(headerGradientLayer, at: 0)
-        headerBar.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
-        headerBar.layer?.borderWidth = 0.8
-        
-        orbBadge.wantsLayer = true
-        orbBadge.layer?.cornerRadius = 7
-        orbBadge.layer?.backgroundColor = orbColor.cgColor
-        orbBadge.layer?.shadowColor = orbColor.withAlphaComponent(0.6).cgColor
-        orbBadge.layer?.shadowOpacity = 0.8
-        orbBadge.layer?.shadowOffset = .zero
-        orbBadge.layer?.shadowRadius = 6
-        orbBadge.translatesAutoresizingMaskIntoConstraints = false
-        orbBadge.widthAnchor.constraint(equalToConstant: 14).isActive = true
-        orbBadge.heightAnchor.constraint(equalToConstant: 14).isActive = true
-        
+    private func configureTitle() {
         titleField.translatesAutoresizingMaskIntoConstraints = false
         titleField.isEditable = true
         titleField.isBordered = false
         titleField.drawsBackground = false
         titleField.focusRingType = .none
-        titleField.font = NSFont.systemFont(ofSize: 27 * textScale, weight: .semibold)
-        titleField.textColor = NSColor(calibratedWhite: 0.08, alpha: 0.95)
-        titleField.alignment = .left
+        titleField.font = NSFont.systemFont(ofSize: 19 * textScale, weight: .semibold)
+        titleField.textColor = NSColor(calibratedWhite: 0.08, alpha: 1.0) // Higher contrast
+        titleField.alignment = .center
         titleField.lineBreakMode = .byTruncatingTail
         titleField.stringValue = task.title
         titleField.delegate = self
         titleField.target = self
         titleField.action = #selector(handleTitleEditingEnd)
-        
-        headerSubtitleLabel.font = NSFont.systemFont(ofSize: 13 * textScale, weight: .medium)
-        headerSubtitleLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 0.9)
-        headerSubtitleLabel.alignment = .left
-        headerSubtitleLabel.lineBreakMode = .byTruncatingTail
-        headerSubtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        
-        let textColumn = NSStackView()
-        textColumn.orientation = .vertical
-        textColumn.alignment = .leading
-        textColumn.spacing = 6
-        textColumn.translatesAutoresizingMaskIntoConstraints = false
-        textColumn.addArrangedSubview(titleField)
-        textColumn.addArrangedSubview(headerSubtitleLabel)
-        
-        let headerStack = NSStackView()
-        headerStack.orientation = .horizontal
-        headerStack.alignment = .centerY
-        headerStack.spacing = 22
-        headerStack.translatesAutoresizingMaskIntoConstraints = false
-        headerStack.addArrangedSubview(orbBadge)
-        headerStack.addArrangedSubview(textColumn)
-        let spacer = NSView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        headerStack.addArrangedSubview(spacer)
-        textColumn.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        
-        headerBar.addSubview(headerStack)
+
+        backdropView.addSubview(titleField)
+
+        // Position title below the buttons, centered
         NSLayoutConstraint.activate([
-            headerStack.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor, constant: 32),
-            headerStack.trailingAnchor.constraint(equalTo: headerBar.trailingAnchor, constant: -32),
-            headerStack.topAnchor.constraint(equalTo: headerBar.topAnchor, constant: 26),
-            headerStack.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor, constant: -26)
+            titleField.leadingAnchor.constraint(equalTo: backdropView.leadingAnchor, constant: 32),
+            titleField.trailingAnchor.constraint(equalTo: backdropView.trailingAnchor, constant: -32),
+            titleField.topAnchor.constraint(equalTo: dragStripView.topAnchor, constant: 72),
+            titleField.heightAnchor.constraint(equalToConstant: 24)
         ])
-        
-        contentStack.addArrangedSubview(headerBar)
-        // Let the header bar use the contentStack's natural padding
-        contentStack.setCustomSpacing(30, after: headerBar)
     }
 
     private func configureChromeButtons() {
-        let buttons = [closeButton, pinButton]
-        let buttonSize: CGFloat = 14
-        let horizontalInset: CGFloat = max(CGFloat(10), TaskRowMetrics.cardInset - 10)
-        let offBlack = NSColor(calibratedWhite: 0.12, alpha: 1.0)
-        
+        let buttons = [closeButton, pinButton, deleteButton]
+        let buttonSize: CGFloat = 28
+        let horizontalInset: CGFloat = 20
+        let buttonSpacing: CGFloat = 12
+
         for button in buttons {
             button.translatesAutoresizingMaskIntoConstraints = false
             button.isBordered = false
@@ -296,47 +254,68 @@ class TaskDetailView: NSView {
             button.imagePosition = .imageOnly
             button.focusRingType = .none
             button.wantsLayer = true
-            button.layer?.cornerRadius = buttonSize / 2
-            button.layer?.backgroundColor = offBlack.withAlphaComponent(0.12).cgColor
+            button.layer?.backgroundColor = NSColor.clear.cgColor // No background bubble
             button.layer?.masksToBounds = false
             button.imageScaling = .scaleProportionallyDown
             button.setContentHuggingPriority(.required, for: .horizontal)
             dragStripView.addSubview(button)
         }
-        
+
         closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close task")
-        closeButton.contentTintColor = offBlack.withAlphaComponent(0.95)
+        closeButton.contentTintColor = NSColor(calibratedWhite: 0.4, alpha: 0.8)
         closeButton.target = self
         closeButton.action = #selector(handleCloseTapped)
         closeButton.toolTip = "Close"
-        
+
         pinButton.image = NSImage(systemSymbolName: "pin", accessibilityDescription: "Pin task card")
-        pinButton.contentTintColor = offBlack.withAlphaComponent(0.95)
+        pinButton.contentTintColor = NSColor(calibratedWhite: 0.4, alpha: 0.8)
         pinButton.target = self
         pinButton.action = #selector(handlePinTapped)
         pinButton.toolTip = "Pin"
-        
+
+        deleteButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete task")
+        deleteButton.contentTintColor = NSColor(calibratedWhite: 0.4, alpha: 0.8)
+        deleteButton.target = self
+        deleteButton.action = #selector(handleDeleteTapped)
+        deleteButton.toolTip = "Delete"
+
+        // Icon buttons below drag handle
+        // Layout: Close (left) ... Pin, Delete (right)
+        let iconY: CGFloat = 28 // Below the drag handle
+
         NSLayoutConstraint.activate([
+            // Close button on left
             closeButton.leadingAnchor.constraint(equalTo: dragStripView.leadingAnchor, constant: horizontalInset),
-            closeButton.topAnchor.constraint(equalTo: dragStripView.topAnchor, constant: 4),
+            closeButton.topAnchor.constraint(equalTo: dragStripView.topAnchor, constant: iconY),
             closeButton.widthAnchor.constraint(equalToConstant: buttonSize),
-            closeButton.heightAnchor.constraint(equalTo: closeButton.widthAnchor),
-            
-            pinButton.trailingAnchor.constraint(equalTo: dragStripView.trailingAnchor, constant: -horizontalInset),
-            pinButton.topAnchor.constraint(equalTo: dragStripView.topAnchor, constant: 4),
+            closeButton.heightAnchor.constraint(equalToConstant: buttonSize),
+
+            // Delete button on right
+            deleteButton.trailingAnchor.constraint(equalTo: dragStripView.trailingAnchor, constant: -horizontalInset),
+            deleteButton.topAnchor.constraint(equalTo: dragStripView.topAnchor, constant: iconY),
+            deleteButton.widthAnchor.constraint(equalToConstant: buttonSize),
+            deleteButton.heightAnchor.constraint(equalToConstant: buttonSize),
+
+            // Pin button next to delete
+            pinButton.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -buttonSpacing),
+            pinButton.topAnchor.constraint(equalTo: dragStripView.topAnchor, constant: iconY),
             pinButton.widthAnchor.constraint(equalToConstant: buttonSize),
-            pinButton.heightAnchor.constraint(equalTo: pinButton.widthAnchor)
+            pinButton.heightAnchor.constraint(equalToConstant: buttonSize)
         ])
-        
-        updateChromeButtonsAppearance()
+
         updatePinButtonAppearance()
+    }
+
+    @objc private func handleDeleteTapped() {
+        // TODO: Implement delete functionality
+        print("Delete tapped")
     }
     
     private func configureMetaRow() {
         metaRow.orientation = .horizontal
-        metaRow.alignment = .top
-        metaRow.spacing = 20
-        metaRow.distribution = .fill
+        metaRow.alignment = .top // Align at top for label consistency
+        metaRow.spacing = 24 // Slightly more space between columns
+        metaRow.distribution = .fillEqually // Equal width columns for better visual balance
         metaRow.translatesAutoresizingMaskIntoConstraints = false
         metaRow.edgeInsets = NSEdgeInsets(top: 0, left: 30, bottom: 0, right: 30)
         contentStack.addArrangedSubview(metaRow)
@@ -348,33 +327,44 @@ class TaskDetailView: NSView {
             metaRow.bottomAnchor.constraint(equalTo: contentStack.bottomAnchor, constant: -15)
         ])
         
-        statusButton.title = ""
-        statusButton.isBordered = false
-        statusButton.wantsLayer = true
-        statusButton.layer?.cornerRadius = 14
-        statusButton.target = self
-        statusButton.action = #selector(handleStatusToggle)
-        statusButton.font = NSFont.systemFont(ofSize: 14 * textScale, weight: .semibold)
-        statusButton.contentTintColor = .white
-        statusButton.imagePosition = .imageLeading
-        statusButton.translatesAutoresizingMaskIntoConstraints = false
-        statusButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        statusButton.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        statusButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        statusControl.segmentStyle = .rounded
+        statusControl.target = self
+        statusControl.action = #selector(handleStatusChanged)
+        statusControl.translatesAutoresizingMaskIntoConstraints = false
+        statusControl.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        statusControl.setContentCompressionResistancePriority(.required, for: .horizontal)
+        statusControl.heightAnchor.constraint(equalToConstant: 28).isActive = true
+
+        // Enhanced styling for status control
+        statusControl.wantsLayer = true
+        statusControl.layer?.masksToBounds = true
+        statusControl.layer?.cornerRadius = 8
+        statusControl.layer?.borderColor = NSColor(calibratedWhite: 0.3, alpha: 1.0).cgColor
+        statusControl.layer?.borderWidth = 1.5
         
         dueButton.title = "Set due date"
         dueButton.isBordered = false
         dueButton.wantsLayer = true
-        dueButton.layer?.cornerRadius = 14
+        dueButton.layer?.cornerRadius = 8 // Match segmented control corners
         dueButton.target = self
         dueButton.action = #selector(handleDueTapped)
-        dueButton.font = NSFont.systemFont(ofSize: 14 * textScale, weight: .medium)
+        dueButton.font = NSFont.systemFont(ofSize: 13 * textScale, weight: .semibold) // Slightly smaller to fit
         dueButton.contentTintColor = .white
         dueButton.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Set due date")
         dueButton.imagePosition = .imageLeading
-        dueButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        dueButton.heightAnchor.constraint(equalToConstant: 28).isActive = true // Match segmented controls
         dueButton.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         dueButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        // Add internal padding
+        if let cell = dueButton.cell as? NSButtonCell {
+            cell.imagePosition = .imageLeading
+            cell.imageScaling = .scaleProportionallyDown
+        }
+        // Add subtle shadow
+        dueButton.layer?.shadowColor = orbColor.withAlphaComponent(0.3).cgColor
+        dueButton.layer?.shadowOpacity = 1.0
+        dueButton.layer?.shadowOffset = CGSize(width: 0, height: 1)
+        dueButton.layer?.shadowRadius = 3
         
         clearDueButton.isBordered = false
         clearDueButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear due date")
@@ -387,14 +377,22 @@ class TaskDetailView: NSView {
         clearDueButton.heightAnchor.constraint(equalToConstant: 20).isActive = true
         clearDueButton.setContentHuggingPriority(.required, for: .horizontal)
         
-        priorityControl.segmentStyle = .automatic
+        priorityControl.segmentStyle = .rounded
         priorityControl.target = self
         priorityControl.action = #selector(handlePriorityChanged)
         priorityControl.translatesAutoresizingMaskIntoConstraints = false
         priorityControl.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         priorityControl.setContentCompressionResistancePriority(.required, for: .horizontal)
+        priorityControl.heightAnchor.constraint(equalToConstant: 28).isActive = true // Reduced to fit segments
+
+        // Enhanced styling for priority control
+        priorityControl.wantsLayer = true
+        priorityControl.layer?.masksToBounds = true // Clip to bounds
+        priorityControl.layer?.cornerRadius = 8
+        priorityControl.layer?.borderColor = NSColor(calibratedWhite: 0.3, alpha: 1.0).cgColor // Higher contrast border
+        priorityControl.layer?.borderWidth = 1.5
         
-        let statusColumn = makeMetaColumn(title: "STATUS", content: statusButton)
+        let statusColumn = makeMetaColumn(title: "STATUS", content: statusControl)
         let dueHorizontal = NSStackView(views: [dueButton, clearDueButton])
         dueHorizontal.spacing = 10
         dueHorizontal.alignment = .centerY
@@ -408,56 +406,70 @@ class TaskDetailView: NSView {
     
     private func configureNotesSection() {
         notesLabel.stringValue = "NOTES & CONTEXT"
-        notesLabel.font = NSFont.systemFont(ofSize: 12 * textScale, weight: .heavy)
-        notesLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 0.9)
+        notesLabel.font = NSFont.systemFont(ofSize: 11 * textScale, weight: .bold)
+        notesLabel.textColor = NSColor(calibratedWhite: 0.15, alpha: 1.0) // Higher contrast
         notesLabel.translatesAutoresizingMaskIntoConstraints = false
         contentStack.addArrangedSubview(notesLabel)
-        contentStack.setCustomSpacing(20, after: notesLabel)
-        
+        contentStack.setCustomSpacing(16, after: notesLabel) // Tighter spacing to section
+
         // Configure notes stack view for timestamped entries
         notesStackView.orientation = .vertical
         notesStackView.alignment = .leading
-        notesStackView.spacing = 12
+        notesStackView.spacing = 10
         notesStackView.translatesAutoresizingMaskIntoConstraints = false
-        
-        // Configure scroll view
+        notesStackView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) // Allow shrinking
+        notesStackView.setHuggingPriority(.defaultLow, for: .horizontal) // Fill available width
+
+        // Configure scroll view with enhanced styling
         notesScrollView.translatesAutoresizingMaskIntoConstraints = false
         notesScrollView.borderType = .noBorder
         notesScrollView.drawsBackground = false
         notesScrollView.hasVerticalScroller = true
+        notesScrollView.hasHorizontalScroller = false // Disable horizontal scrolling
+        notesScrollView.autohidesScrollers = true
         notesScrollView.wantsLayer = true
-        notesScrollView.layer?.cornerRadius = 16
+        notesScrollView.layer?.cornerRadius = 12
         notesScrollView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
-        notesScrollView.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
-        notesScrollView.layer?.borderWidth = 1.0
+        notesScrollView.layer?.borderColor = NSColor.clear.cgColor
+        notesScrollView.layer?.borderWidth = 0
         notesScrollView.layer?.masksToBounds = true
-        notesScrollView.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        notesScrollView.heightAnchor.constraint(equalToConstant: 130).isActive = true
         
         notesScrollView.documentView = notesStackView
         
-        // Configure input field and button
+        // Configure input field with enhanced styling
         notesInputField.translatesAutoresizingMaskIntoConstraints = false
         notesInputField.isBordered = true
         notesInputField.isBezeled = true
         notesInputField.bezelStyle = .roundedBezel
         notesInputField.font = NSFont.systemFont(ofSize: 13 * textScale, weight: .regular)
-        notesInputField.textColor = NSColor(calibratedWhite: 0.12, alpha: 1.0)
-        notesInputField.backgroundColor = NSColor.white.withAlphaComponent(0.12)
-        notesInputField.placeholderString = "Add a note..."
+        notesInputField.textColor = NSColor(calibratedWhite: 0.05, alpha: 1.0) // Higher contrast
+        notesInputField.backgroundColor = NSColor.white.withAlphaComponent(0.15)
+        notesInputField.placeholderString = "Add a note... (press Enter to submit)"
         notesInputField.target = self
         notesInputField.action = #selector(handleNotesInput)
-        
+
+        // Enhanced add button with orb color
         notesInputButton.translatesAutoresizingMaskIntoConstraints = false
         notesInputButton.title = "Add"
         notesInputButton.bezelStyle = .inline
         notesInputButton.isBordered = false
-        notesInputButton.font = NSFont.systemFont(ofSize: 12 * textScale, weight: .medium)
+        notesInputButton.font = NSFont.systemFont(ofSize: 13 * textScale, weight: .semibold)
         notesInputButton.wantsLayer = true
-        notesInputButton.layer?.cornerRadius = 8
-        notesInputButton.layer?.backgroundColor = orbColor.withAlphaComponent(0.2).cgColor
-        notesInputButton.contentTintColor = orbColor
+        notesInputButton.layer?.cornerRadius = 10
+        notesInputButton.layer?.backgroundColor = orbColor.withAlphaComponent(0.2).cgColor // Lighter background
+        notesInputButton.layer?.shadowColor = orbColor.withAlphaComponent(0.3).cgColor
+        notesInputButton.layer?.shadowOpacity = 0.3
+        notesInputButton.layer?.shadowOffset = CGSize(width: 0, height: 1)
+        notesInputButton.layer?.shadowRadius = 2
+        notesInputButton.contentTintColor = NSColor.systemBlue.withAlphaComponent(0.9) // Dark blue text
         notesInputButton.target = self
         notesInputButton.action = #selector(handleAddNote)
+
+        // Add internal padding
+        if let cell = notesInputButton.cell as? NSButtonCell {
+            cell.imagePosition = .noImage
+        }
         
         let inputRow = NSStackView()
         inputRow.orientation = .horizontal
@@ -467,8 +479,9 @@ class TaskDetailView: NSView {
         inputRow.translatesAutoresizingMaskIntoConstraints = false
         inputRow.addArrangedSubview(notesInputField)
         inputRow.addArrangedSubview(notesInputButton)
-        
-        notesInputButton.widthAnchor.constraint(equalToConstant: 50).isActive = true
+
+        notesInputButton.widthAnchor.constraint(equalToConstant: 70).isActive = true // More width for padding
+        notesInputButton.heightAnchor.constraint(equalToConstant: 32).isActive = true // Explicit height
         notesInputField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         
         contentStack.addArrangedSubview(notesScrollView)
@@ -535,44 +548,39 @@ class TaskDetailView: NSView {
     }
     
     private func configureMetadataLabel() {
-        metadataLabel.font = NSFont.systemFont(ofSize: 11 * textScale, weight: .medium)
-        metadataLabel.textColor = NSColor(calibratedWhite: 0.4, alpha: 0.9)
+        metadataLabel.font = NSFont.systemFont(ofSize: 12 * textScale, weight: .medium) // Slightly larger
+        metadataLabel.textColor = NSColor(calibratedWhite: 0.2, alpha: 1.0) // Much higher contrast
         metadataLabel.lineBreakMode = .byWordWrapping
-        metadataLabel.maximumNumberOfLines = 2
+        metadataLabel.maximumNumberOfLines = 3 // More space for information
         metadataLabel.alignment = .left
         metadataLabel.translatesAutoresizingMaskIntoConstraints = false
+        metadataLabel.allowsDefaultTighteningForTruncation = false
         contentStack.addArrangedSubview(metadataLabel)
         // Let the metadata label use the contentStack's natural padding
     }
     
     private func makeMetaColumn(title: String, content: NSView) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.font = NSFont.systemFont(ofSize: 11 * textScale, weight: .semibold)
-        label.textColor = NSColor(calibratedWhite: 0.28, alpha: 0.9)
+        label.font = NSFont.systemFont(ofSize: 11 * textScale, weight: .bold) // Bolder for better hierarchy
+        label.textColor = NSColor(calibratedWhite: 0.25, alpha: 1.0) // Higher contrast
         label.alignment = .left
-        
+
         content.translatesAutoresizingMaskIntoConstraints = false
-        
+
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
+        stack.spacing = 8 // Consistent spacing between label and control
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(label)
         stack.addArrangedSubview(content)
-        
-        let wrapper = NSView()
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(stack)
-        
+
+        // Ensure content fills width
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: wrapper.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor)
+            content.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
-        
-        return wrapper
+
+        return stack
     }
     
     private func createDatePopover() -> NSPopover {
@@ -663,44 +671,47 @@ class TaskDetailView: NSView {
     }
     
     private func updateUI() {
-        updateStatusButton()
+        updateStatusControl()
         updateDueButton()
         updatePriorityControl()
         updateMetadataLabel()
-        updateHeaderSubtitle()
         updateChromePalette()
-        updateChromeButtonsAppearance()
         updatePinButtonAppearance()
         updateDragStripAppearance()
     }
     
-    private func updateHeaderSubtitle() {
-        var parts: [String] = []
-        parts.append(task.isCompleted ? "Completed" : "Active")
-        if let due = task.deadline {
-            let relative = relativeFormatter.localizedString(for: due, relativeTo: Date())
-            let absolute = dayFormatter.string(from: due)
-            parts.append("\(relative.capitalized) • \(absolute)")
-        } else {
-            parts.append("No due date")
-        }
-        let priorityIndex = priorityIndex(for: task.priority)
-        if priorityIndex >= 0 && priorityIndex < priorityLabels.count {
-            parts.append("Priority \(priorityLabels[priorityIndex])")
-        }
-        headerSubtitleLabel.stringValue = parts.joined(separator: " · ")
-    }
     
-    private func updateStatusButton() {
-        let isDone = task.isCompleted
-        statusButton.title = isDone ? "Reopen Task" : "Mark Complete"
-        statusButton.image = NSImage(systemSymbolName: isDone ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill", accessibilityDescription: nil)
-        let background = isDone ? NSColor.systemGreen.withAlphaComponent(0.35) : NSColor.white.withAlphaComponent(0.18)
-        statusButton.layer?.backgroundColor = background.cgColor
-        statusButton.layer?.borderColor = NSColor.clear.cgColor
-        statusButton.layer?.borderWidth = 0
-        statusButton.contentTintColor = isDone ? NSColor.white : NSColor(calibratedWhite: 0.1, alpha: 0.95)
-        updateHeaderSubtitle()
+    private func updateStatusControl() {
+        // Map task status to segment index
+        // 0 = Outstanding (not started)
+        // 1 = In Progress (started but not completed)
+        // 2 = Complete (completed)
+        let index = Int(task.status)
+
+        statusControl.selectedSegment = index
+        updateStatusColors(selectedIndex: index)
+    }
+
+    private func updateStatusColors(selectedIndex: Int) {
+        // Color code based on selection
+        let color: NSColor
+        switch selectedIndex {
+        case 0: // Outstanding
+            color = NSColor.systemGray
+        case 1: // In Progress
+            color = NSColor.systemOrange
+        case 2: // Complete
+            color = NSColor.systemGreen
+        default:
+            color = NSColor.systemBlue
+        }
+
+        // Apply color through border to limit it to control area only
+        statusControl.layer?.masksToBounds = true
+        statusControl.layer?.borderColor = color.withAlphaComponent(0.5).cgColor
+        statusControl.layer?.borderWidth = 1.5
+        statusControl.layer?.cornerRadius = 8
+        statusControl.layer?.backgroundColor = color.withAlphaComponent(0.08).cgColor
     }
     
     private func updateDueButton() {
@@ -708,12 +719,26 @@ class TaskDetailView: NSView {
             let relative = relativeFormatter.localizedString(for: deadline, relativeTo: Date())
             let absolute = dayFormatter.string(from: deadline)
             dueButton.title = "Due \(relative) • \(absolute)"
-            dueButton.layer?.backgroundColor = orbColor.withAlphaComponent(0.22).cgColor
+
+            // Check if overdue
+            let isOverdue = deadline < Date()
+
+            if isOverdue {
+                // Overdue state with alert color
+                dueButton.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.75).cgColor
+                dueButton.contentTintColor = NSColor.white
+                dueButton.layer?.shadowColor = NSColor.systemRed.withAlphaComponent(0.35).cgColor
+            } else {
+                // Active due date with orb color accent
+                dueButton.layer?.backgroundColor = orbColor.withAlphaComponent(0.75).cgColor
+                dueButton.contentTintColor = NSColor.white
+                dueButton.layer?.shadowColor = orbColor.withAlphaComponent(0.3).cgColor
+            }
+
             dueButton.layer?.borderColor = NSColor.clear.cgColor
             dueButton.layer?.borderWidth = 0
             clearDueButton.isHidden = false
-            clearDueButton.contentTintColor = NSColor.white.withAlphaComponent(0.7)
-            dueButton.contentTintColor = NSColor.white
+            clearDueButton.contentTintColor = NSColor.white.withAlphaComponent(0.75)
         } else {
             dueButton.title = "Set due date"
             dueButton.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
@@ -721,30 +746,53 @@ class TaskDetailView: NSView {
             dueButton.layer?.borderWidth = 0
             clearDueButton.isHidden = true
             dueButton.contentTintColor = NSColor(calibratedWhite: 0.1, alpha: 0.95)
+            dueButton.layer?.shadowColor = NSColor.black.withAlphaComponent(0.1).cgColor
         }
-        updateHeaderSubtitle()
     }
     
     private func updatePriorityControl() {
         let index = priorityIndex(for: task.priority)
         applyPrioritySelection(index)
-        updateHeaderSubtitle()
+        updatePriorityColors(selectedIndex: index)
+    }
+
+    private func updatePriorityColors(selectedIndex: Int) {
+        // Color code based on selection: Low = green, Med = orange, High = red
+        let color: NSColor
+        switch selectedIndex {
+        case 0: // Low - vivid green
+            color = NSColor(calibratedRed: 0.2, green: 0.9, blue: 0.3, alpha: 1.0)
+        case 1: // Medium - vivid orange
+            color = NSColor(calibratedRed: 1.0, green: 0.6, blue: 0.0, alpha: 1.0)
+        case 2: // High - vivid red
+            color = NSColor(calibratedRed: 1.0, green: 0.2, blue: 0.2, alpha: 1.0)
+        default:
+            color = NSColor.systemBlue
+        }
+
+        // Apply color through border to limit it to control area only
+        priorityControl.layer?.masksToBounds = true // Ensure clipping
+        priorityControl.layer?.borderColor = color.withAlphaComponent(0.5).cgColor
+        priorityControl.layer?.borderWidth = 1.5
+        priorityControl.layer?.cornerRadius = 8
+        priorityControl.layer?.backgroundColor = color.withAlphaComponent(0.08).cgColor
     }
     
     
     private func updateMetadataLabel() {
         var parts: [String] = []
-        parts.append(task.isCompleted ? "Completed" : "In progress")
+        parts.append(task.isCompleted ? "✓ Completed" : "○ In progress")
         if let due = task.deadline {
-            parts.append("Due \(dateFormatter.string(from: due))")
+            let isOverdue = due < Date()
+            parts.append(isOverdue ? "⚠ Overdue" : "📅 Due \(dateFormatter.string(from: due))")
         } else {
-            parts.append("No due date")
+            parts.append("📅 No due date")
         }
         let index = priorityControl.selectedSegment
         if index >= 0 && index < priorityLabels.count {
-            parts.append("Priority \(priorityLabels[index])")
+            parts.append("⭐ Priority \(priorityLabels[index])")
         }
-        metadataLabel.stringValue = parts.joined(separator: "   •   ")
+        metadataLabel.stringValue = parts.joined(separator: "  •  ")
     }
 
     private func updateChromePalette() {
@@ -760,45 +808,23 @@ class TaskDetailView: NSView {
             assert(locations.allSatisfy { $0 is NSNumber })
         }
 #endif
-        updateChromeButtonsAppearance()
+
+        // Update priority control border
+        priorityControl.layer?.borderColor = NSColor(calibratedWhite: 0.3, alpha: 1.0).cgColor
+
+        // Update priority colors based on current selection
+        let index = priorityIndex(for: task.priority)
+        updatePriorityColors(selectedIndex: index)
     }
     
     private func updateDragStripAppearance() {
         dragStripView.updatePrimaryColor(orbColor)
     }
-    
-    private func updateChromeButtonsAppearance() {
-        let closeFill = orbColor.withAlphaComponent(0.24)
-        closeButton.layer?.backgroundColor = closeFill.cgColor
-        closeButton.contentTintColor = orbColor.shadowed().withAlphaComponent(0.95)
-        closeButton.layer?.shadowColor = orbColor.withAlphaComponent(0.3).cgColor
-        closeButton.layer?.shadowOpacity = 0.25
-        closeButton.layer?.shadowRadius = 6
-        closeButton.layer?.shadowOffset = CGSize(width: 0, height: -1)
-        
-        pinButton.layer?.shadowColor = orbColor.withAlphaComponent(0.25).cgColor
-        pinButton.layer?.shadowOpacity = 0.22
-        pinButton.layer?.shadowRadius = 6
-        pinButton.layer?.shadowOffset = CGSize(width: 0, height: -1)
-    }
-    
+
     private func updatePinButtonAppearance() {
-        let offBlack = NSColor(calibratedWhite: 0.12, alpha: 1.0)
-        let fillColor: NSColor
-        let symbolName: String
-        let tintColor: NSColor
-        
-        if isPinned {
-            fillColor = orbColor.withAlphaComponent(0.38)
-            symbolName = "pin.fill"
-            tintColor = NSColor(calibratedWhite: 0.08, alpha: 0.95)
-        } else {
-            fillColor = orbColor.withAlphaComponent(0.18)
-            symbolName = "pin"
-            tintColor = orbColor.shadowed().withAlphaComponent(0.9)
-        }
-        
-        pinButton.layer?.backgroundColor = fillColor.cgColor
+        let symbolName = isPinned ? "pin.fill" : "pin"
+        let tintColor = isPinned ? orbColor : NSColor(calibratedWhite: 0.4, alpha: 0.8)
+
         pinButton.contentTintColor = tintColor
         pinButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Pin task card")
     }
@@ -818,9 +844,25 @@ class TaskDetailView: NSView {
         delegate?.taskDetailView(self, didTogglePin: isPinned)
     }
     
-    @objc private func handleStatusToggle() {
-        task.isCompleted.toggle()
-        updateStatusButton()
+    @objc private func handleStatusChanged() {
+        let selectedIndex = statusControl.selectedSegment
+
+        // Update task status
+        task.status = Int16(selectedIndex)
+
+        // Update task completion status based on segment
+        switch selectedIndex {
+        case 0: // Outstanding
+            task.isCompleted = false
+        case 1: // In Progress
+            task.isCompleted = false
+        case 2: // Complete
+            task.isCompleted = true
+        default:
+            break
+        }
+
+        updateStatusColors(selectedIndex: selectedIndex)
         updateMetadataLabel()
     }
     
@@ -847,7 +889,7 @@ class TaskDetailView: NSView {
         guard index >= 0 && index < priorityValues.count else { return }
         task.priority = priorityValues[index]
         updateMetadataLabel()
-        updateHeaderSubtitle()
+        updatePriorityColors(selectedIndex: index)
     }
     
     @objc private func handleDatePicked() {
@@ -953,36 +995,41 @@ class TaskDetailView: NSView {
     private func createNoteEntryView(for note: TimestampedNoteEntry) -> NSView {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        
+
         let timestampLabel = NSTextField(labelWithString: formatTimestamp(note.timestamp))
-        timestampLabel.font = NSFont.systemFont(ofSize: 10 * textScale, weight: .medium)
-        timestampLabel.textColor = NSColor(calibratedWhite: 0.4, alpha: 0.8)
+        timestampLabel.font = NSFont.systemFont(ofSize: 10 * textScale, weight: .semibold)
+        timestampLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 1.0) // Much higher contrast - dark gray
         timestampLabel.isBezeled = false
         timestampLabel.drawsBackground = false
         timestampLabel.isEditable = false
         timestampLabel.isSelectable = false
         timestampLabel.translatesAutoresizingMaskIntoConstraints = false
-        
-        // Add bullet point before content
+
+        // Larger, more prominent bullet with better color
         let bulletLabel = NSTextField(labelWithString: "•")
-        bulletLabel.font = NSFont.systemFont(ofSize: 14 * textScale, weight: .bold)
-        bulletLabel.textColor = orbColor.withAlphaComponent(0.8)
+        bulletLabel.font = NSFont.systemFont(ofSize: 16 * textScale, weight: .bold)
+        bulletLabel.textColor = NSColor(calibratedWhite: 0.25, alpha: 1.0) // Much higher contrast
         bulletLabel.isBezeled = false
         bulletLabel.drawsBackground = false
         bulletLabel.isEditable = false
         bulletLabel.isSelectable = false
         bulletLabel.translatesAutoresizingMaskIntoConstraints = false
-        
+
         let contentLabel = NSTextField(labelWithString: note.content)
-        contentLabel.font = NSFont.systemFont(ofSize: 12 * textScale, weight: .regular)
-        contentLabel.textColor = NSColor(calibratedWhite: 0.15, alpha: 1.0)
+        contentLabel.font = NSFont.systemFont(ofSize: 13 * textScale, weight: .regular)
+        contentLabel.textColor = NSColor(calibratedWhite: 0.05, alpha: 1.0)
         contentLabel.isBezeled = false
         contentLabel.drawsBackground = false
         contentLabel.isEditable = false
         contentLabel.isSelectable = true
         contentLabel.lineBreakMode = .byWordWrapping
-        contentLabel.maximumNumberOfLines = 0
+        contentLabel.usesSingleLineMode = false // Enable multi-line
+        contentLabel.cell?.wraps = true // Enable wrapping at cell level
+        contentLabel.cell?.isScrollable = false // Disable horizontal scrolling
+        contentLabel.maximumNumberOfLines = 0 // No line limit
         contentLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) // Allow shrinking
+        // Don't set preferredMaxLayoutWidth - let it use available space
         
         container.addSubview(timestampLabel)
         container.addSubview(bulletLabel)
@@ -1005,11 +1052,16 @@ class TaskDetailView: NSView {
             contentLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
         ])
         
-        // Add subtle background
+        // Subtle separator line at bottom instead of border
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
-        container.layer?.cornerRadius = 8
-        
+        container.layer?.backgroundColor = NSColor.clear.cgColor // No background
+
+        // Add thin separator line at bottom
+        let separator = CALayer()
+        separator.backgroundColor = NSColor(calibratedWhite: 0.5, alpha: 0.3).cgColor
+        separator.frame = CGRect(x: 0, y: 0, width: 1000, height: 0.5) // Width will be constrained
+        container.layer?.addSublayer(separator)
+
         return container
     }
     
@@ -1021,10 +1073,8 @@ class TaskDetailView: NSView {
     }
     
     @objc private func handleNotesInput() {
-        // Handle Enter key in input field
-        if NSEvent.modifierFlags.contains(.command) {
-            handleAddNote()
-        }
+        // Handle Enter key in input field - submit the note
+        handleAddNote()
     }
     
     @objc private func handleAddNote() {
@@ -1052,7 +1102,7 @@ extension TaskDetailView {
         window?.makeFirstResponder(nil)
         titleField.delegate = nil
         titleField.target = nil
-        statusButton.target = nil
+        statusControl.target = nil
         dueButton.target = nil
         clearDueButton.target = nil
         priorityControl.target = nil
@@ -1065,7 +1115,11 @@ extension TaskDetailView {
 
     // MARK: - Keyboard Shortcuts
     func toggleTaskCompletion() {
-        handleStatusToggle()
+        // Cycle through states: Outstanding -> In Progress -> Complete -> In Progress -> ...
+        let currentIndex = statusControl.selectedSegment
+        let nextIndex = (currentIndex + 1) % 3
+        statusControl.selectedSegment = nextIndex
+        handleStatusChanged()
     }
 
     func requestClose() {
@@ -1130,34 +1184,57 @@ final class TaskDetailDragStripView: NSView {
     private let topBorder = CALayer()
     private let bottomBorder = CALayer()
     private var primaryColor: NSColor = .systemBlue
-    
+    private var isHoveringDragHandle = false
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupLayers()
     }
-    
+
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupLayers()
     }
-    
+
     private func setupLayers() {
         wantsLayer = true
         layer?.masksToBounds = false
-        
+
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 1.0)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 0.0)
         gradientLayer.locations = glassGradientLocations.map { NSNumber(value: Double($0)) }
         layer?.addSublayer(gradientLayer)
-        
-        topBorder.backgroundColor = NSColor.white.withAlphaComponent(0.35).cgColor
-        bottomBorder.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
+
+        // No visible borders - match task card style
+        topBorder.backgroundColor = NSColor.clear.cgColor
+        bottomBorder.backgroundColor = NSColor.clear.cgColor
         layer?.addSublayer(topBorder)
         layer?.addSublayer(bottomBorder)
-        
+
         updateAppearance()
     }
-    
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        // Draw drag handle pill at top center
+        let dragHandleWidth: CGFloat = 48
+        let dragHandleHeight: CGFloat = 5
+        let topPadding: CGFloat = 12
+        let dragHandleY = bounds.maxY - topPadding - dragHandleHeight
+        let dragHandleRect = CGRect(
+            x: bounds.midX - dragHandleWidth / 2,
+            y: dragHandleY,
+            width: dragHandleWidth,
+            height: dragHandleHeight
+        )
+
+        let dragHandlePath = NSBezierPath(roundedRect: dragHandleRect, xRadius: dragHandleHeight / 2, yRadius: dragHandleHeight / 2)
+        let dragOpacity: CGFloat = isHoveringDragHandle ? 0.25 : 0.15
+        NSColor(calibratedWhite: 0.3, alpha: dragOpacity).setFill()
+        dragHandlePath.fill()
+    }
+
     override func layout() {
         super.layout()
         gradientLayer.frame = bounds

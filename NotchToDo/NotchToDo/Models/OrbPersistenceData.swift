@@ -16,6 +16,7 @@ struct TaskSnapshot {
     var notes: String
     var isCompleted: Bool
     var priority: Int
+    var status: Int16
     var createdAt: Date
     var dueDate: Date?
     var sortOrder: Double
