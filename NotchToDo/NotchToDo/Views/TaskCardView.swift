@@ -1512,18 +1512,90 @@ class TaskCardView: NSView, FrameUpdatable {
     }
     
     private func drawGlassBackground(in context: CGContext, cardRect: CGRect) {
-        // Let the NSVisualEffectView (.hudWindow material) handle the frosted glass background
-        // Just add a subtle border for definition
         let cornerRadius: CGFloat = 24
         let borderPath = NSBezierPath(roundedRect: cardRect, xRadius: cornerRadius, yRadius: cornerRadius)
-
+        
         context.saveGState()
-        // Very subtle border to define edges
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.15).cgColor)
-        context.setLineWidth(1.0)
+        
+        // 1. Depth shadow - creates floating effect
+        context.setShadow(offset: CGSize(width: 0, height: -8), blur: 24, color: NSColor.black.withAlphaComponent(0.15).cgColor)
+        borderPath.addClip()
+        
+        // 2. Outer highlight rim - simulates light refraction at edges
+        context.saveGState()
+        let highlightPath = NSBezierPath(roundedRect: cardRect, xRadius: cornerRadius, yRadius: cornerRadius)
+        let highlightGradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                NSColor.white.withAlphaComponent(0.25).cgColor,
+                NSColor.white.withAlphaComponent(0.08).cgColor,
+                NSColor.clear.cgColor
+            ] as CFArray,
+            locations: [0.0, 0.15, 0.5]
+        )
+        
+        // Top highlight (light source from above)
+        if let gradient = highlightGradient {
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: cardRect.midX, y: cardRect.maxY),
+                end: CGPoint(x: cardRect.midX, y: cardRect.maxY - 40),
+                options: []
+            )
+        }
+        context.restoreGState()
+        
+        // 3. Inner depth shadow - creates inset feeling
+        context.saveGState()
+        let innerShadowPath = NSBezierPath(roundedRect: cardRect.insetBy(dx: 1, dy: 1), xRadius: cornerRadius - 1, yRadius: cornerRadius - 1)
+        context.setBlendMode(.multiply)
+        context.setFillColor(NSColor.black.withAlphaComponent(0.04).cgColor)
+        innerShadowPath.fill()
+        context.restoreGState()
+        
+        // 4. Subtle orb color tint at edges - enhances glass effect
+        context.saveGState()
+        let tintGradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                orbColor.withAlphaComponent(0.06).cgColor,
+                orbColor.withAlphaComponent(0.02).cgColor,
+                NSColor.clear.cgColor
+            ] as CFArray,
+            locations: [0.0, 0.3, 1.0]
+        )
+        if let gradient = tintGradient {
+            context.drawRadialGradient(
+                gradient,
+                startCenter: CGPoint(x: cardRect.midX, y: cardRect.maxY - 20),
+                startRadius: 0,
+                endCenter: CGPoint(x: cardRect.midX, y: cardRect.maxY - 20),
+                endRadius: 100,
+                options: []
+            )
+        }
+        context.restoreGState()
+        
+        // 5. Refined border with multiple layers
+        context.saveGState()
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        
+        // Outer bright edge
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.25).cgColor)
+        context.setLineWidth(1.5)
         borderPath.stroke()
+        
+        // Inner subtle edge for depth
+        let innerBorderPath = NSBezierPath(roundedRect: cardRect.insetBy(dx: 0.5, dy: 0.5), xRadius: cornerRadius - 0.5, yRadius: cornerRadius - 0.5)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.08).cgColor)
+        context.setLineWidth(0.5)
+        innerBorderPath.stroke()
+        
+        context.restoreGState()
+        
         context.restoreGState()
     }
+
     
     @discardableResult
     private func drawHeaderControls(in context: CGContext, cardRect: CGRect) -> CGFloat {
@@ -1606,7 +1678,7 @@ class TaskCardView: NSView, FrameUpdatable {
         // Title below buttons
         var currentY = iconY - 16
         let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 19 * textScale, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 21 * textScale, weight: .bold),  // Larger, bolder for hierarchy
             .foregroundColor: titleColor,
             .paragraphStyle: titleParagraph
         ]
@@ -1637,17 +1709,40 @@ class TaskCardView: NSView, FrameUpdatable {
     }
 
     private func drawMinimalIconButton(in context: CGContext, rect: CGRect, isHovered: Bool, icon: (CGContext, CGRect) -> Void) {
-        // Only show background on hover (widget style)
+        // Enhanced hover state with better visual feedback
         if isHovered {
             context.saveGState()
-            let bgPath = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-            context.setFillColor(NSColor(calibratedWhite: 0.0, alpha: 0.08).cgColor)
+            let bgPath = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+            
+            // Subtle glow effect on hover
+            context.setShadow(offset: .zero, blur: 8, color: orbColor.withAlphaComponent(0.25).cgColor)
+            
+            // Background with orb color tint
+            let bgColor = orbColor.withAlphaComponent(0.15)
+            context.setFillColor(bgColor.cgColor)
             bgPath.fill()
+            
+            context.restoreGState()
+            
+            // Subtle border on hover
+            context.saveGState()
+            context.setShadow(offset: .zero, blur: 0, color: nil)
+            context.setStrokeColor(orbColor.withAlphaComponent(0.3).cgColor)
+            context.setLineWidth(1.0)
+            bgPath.stroke()
             context.restoreGState()
         }
 
-        // Draw icon
+        // Draw icon with enhanced visibility
+        context.saveGState()
+        if isHovered {
+            // Slight scale increase on hover for better feedback
+            context.translateBy(x: rect.midX, y: rect.midY)
+            context.scaleBy(x: 1.08, y: 1.08)
+            context.translateBy(x: -rect.midX, y: -rect.midY)
+        }
         icon(context, rect)
+        context.restoreGState()
     }
 
     private func drawMinimalSearchBox(in context: CGContext, cardRect: CGRect, topY: CGFloat) {
@@ -2248,7 +2343,7 @@ class TaskCardView: NSView, FrameUpdatable {
         // Additional hint
         let hint = "You can also drag and drop items here"
         let hintAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11 * textScale, weight: .regular),
+            .font: NSFont.systemFont(ofSize: 12 * textScale, weight: .medium),  // Improved readability
             .foregroundColor: NSColor(calibratedWhite: 0.35, alpha: 0.75),
             .paragraphStyle: style
         ]
@@ -2283,7 +2378,7 @@ class TaskCardView: NSView, FrameUpdatable {
 
         let hint = "Try a different search term"
         let hintAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11 * textScale, weight: .regular),
+            .font: NSFont.systemFont(ofSize: 12 * textScale, weight: .medium),  // Improved readability
             .foregroundColor: NSColor(calibratedWhite: 0.35, alpha: 0.7),
             .paragraphStyle: style
         ]
@@ -2384,12 +2479,12 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // --- TOP SECTION: TITLE ---
         let titleRect = CGRect(x: contentX, y: topSectionY, width: contentWidth, height: 22)
-        let titleFont = NSFont.systemFont(ofSize: 15 * textScale, weight: task.isCompleted ? .regular : .semibold)
+        let titleFont = NSFont.systemFont(ofSize: 16 * textScale, weight: task.isCompleted ? .medium : .bold)  // Enhanced hierarchy
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let titleColor = task.isCompleted ?
-            NSColor(calibratedWhite: 0.4, alpha: animatedOpacity) :
-            NSColor(calibratedWhite: 0.1, alpha: animatedOpacity)
+            NSColor(calibratedWhite: 0.45, alpha: animatedOpacity) :  // Better contrast for completed
+            NSColor(calibratedWhite: 0.08, alpha: animatedOpacity)     // Enhanced contrast for active
         let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: titleFont,
             .foregroundColor: titleColor,
@@ -2421,13 +2516,13 @@ class TaskCardView: NSView, FrameUpdatable {
 
         // --- BOTTOM SECTION: METADATA (with clear visual separation) ---
         var metadataX = contentX
-        let metadataFont = NSFont.systemFont(ofSize: 11.5 * textScale, weight: .medium)
+        let metadataFont = NSFont.systemFont(ofSize: 12.5 * textScale, weight: .medium)  // Improved readability
         let metadataColor = NSColor(calibratedWhite: 0.5, alpha: animatedOpacity)
 
         // Note count (instead of showing snippet)
-        let noteLines = task.details.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        if !noteLines.isEmpty {
-            let noteText = noteLines.count == 1 ? "1 note" : "\(noteLines.count) notes"
+        let noteCount = task.noteCount
+        if noteCount > 0 {
+            let noteText = noteCount == 1 ? "1 note" : "\(noteCount) notes"
             let noteAttributes: [NSAttributedString.Key: Any] = [
                 .font: metadataFont,
                 .foregroundColor: metadataColor
@@ -2631,15 +2726,15 @@ class TaskCardView: NSView, FrameUpdatable {
 
 
 enum TaskRowMetrics {
-    // STACKED BLOCK design with clear visual sections
-    static let rowHeight: CGFloat = 72  // Taller for stacked sections
-    static let rowSpacing: CGFloat = 10  // Moderate space between blocks
-    static let listInset: CGFloat = 28  // Clean insets
-    static let rowVerticalPadding: CGFloat = 16  // Padding within each block
-    static let rowHorizontalPadding: CGFloat = 20  // Horizontal space
-    static let checkboxLeadingInset: CGFloat = 20  // Checkbox on left
-    static let contentSpacing: CGFloat = 14  // Space between checkbox and content
-    static let checkboxSize: CGFloat = 22  // Nice visible size
+    // STACKED BLOCK design with clear visual sections - Enhanced for better hierarchy
+    static let rowHeight: CGFloat = 76  // Slightly taller for better breathing room
+    static let rowSpacing: CGFloat = 12  // More generous spacing between blocks
+    static let listInset: CGFloat = 32  // Increased insets for better separation
+    static let rowVerticalPadding: CGFloat = 18  // Enhanced padding within each block
+    static let rowHorizontalPadding: CGFloat = 24  // More horizontal space for readability
+    static let checkboxLeadingInset: CGFloat = 24  // Increased for better alignment
+    static let contentSpacing: CGFloat = 16  // More space between checkbox and content
+    static let checkboxSize: CGFloat = 24  // Slightly larger for better visibility
     static let dragHitWidth: CGFloat = 44
     static let chipHeight: CGFloat = 20  // Chip size
     static let chipHorizontalPadding: CGFloat = 10

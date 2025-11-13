@@ -3,9 +3,18 @@ import Foundation
 protocol SpeechRecognizer {
     func start() throws
     func stop()
+    func prepareForSession(id: UUID)
+    func beginExternalSilenceHold()
+    func endExternalSilenceHold()
     var onPartial: ((String) -> Void)? { get set }
     var onFinal: ((String) -> Void)? { get set }
     var onError: ((String) -> Void)? { get set }
+}
+
+extension SpeechRecognizer {
+    func prepareForSession(id: UUID) {}
+    func beginExternalSilenceHold() {}
+    func endExternalSilenceHold() {}
 }
 
 class MockSpeechRecognizer: SpeechRecognizer {
@@ -15,6 +24,10 @@ class MockSpeechRecognizer: SpeechRecognizer {
 
     private var isRunning = false
     private var timer: Timer?
+    
+    func prepareForSession(id: UUID) {
+        // Mock recognizer does not track sessions
+    }
     
     func start() throws {
         guard !isRunning else { return }
@@ -46,4 +59,3 @@ class MockSpeechRecognizer: SpeechRecognizer {
         timer = nil
     }
 }
-

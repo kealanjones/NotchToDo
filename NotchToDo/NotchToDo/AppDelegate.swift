@@ -1,6 +1,8 @@
 import Cocoa
 import SwiftUI
 import AppKit
+import ApplicationServices
+import _Concurrency
 
 // MARK: - Onboarding Step Model
 
@@ -431,13 +433,27 @@ private struct ClarificationPending {
     let pendingTitle: String
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, AuthViewControllerDelegate {
     private var statusItem: NSStatusItem?
     private var overlayController: NotchOverlayController?
     private var wakeWordEngine: WakeWordEngine?
     private var speechRecognizer: SpeechRecognizer?
     private var intentRouter: IntentRouter?
     private var onboardingWindowController: OnboardingWindowController?
+    private var authWindowController: AuthWindowController?
+
+    private var currentVoiceSessionID: UUID?
+    private var isSpaceHoldActive = false
+    private var didHandleSpaceHoldForCurrentPress = false
+    private var spaceKeyEventTap: CFMachPort?
+    private var spaceKeyEventTapSource: CFRunLoopSource?
+    private var shouldCaptureSpaceGlobally = false
+    private var supabaseService: SupabaseService?
+    private var supabaseSyncManager: SupabaseSyncManager?
+    private var supabaseAuthManager: SupabaseAuthManager?
+    private var supabaseStatusMenuItem: NSMenuItem?
+    private var hasPromptedForAccessibilityPermission = false
+    private var hasShownAccessibilityWarning = false
 
     // Flag to switch between real and mock implementations
     private let useRealVoice = true // Set to false to use mock implementations
@@ -458,16 +474,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupNLU()
         setupTestShortcuts()
         setupDefaultPreferences()
+        setupURLHandling()
+        setupSupabaseSync()
         checkAndShowOnboarding()
     }
 
     private func checkAndShowOnboarding() {
-        // Show onboarding on first launch
+        // Check if we're using a developer token (skip auth flow for development)
+        let hasDevToken = SupabaseEnvironment.developerAccessToken() != nil
+        
+        // Check if user is authenticated
+        let isAuthenticated = supabaseAuthManager?.currentSession != nil
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        if !hasCompletedOnboarding {
-            // Delay slightly so the app can finish launching
+        
+        if !isAuthenticated && !hasDevToken && !hasCompletedOnboarding {
+            // Show auth window on first launch if not authenticated and not using dev token
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.showOnboarding()
+                self?.showAuthWindow()
+            }
+        } else if isAuthenticated && !hasCompletedOnboarding {
+            // User authenticated but hasn't completed onboarding - load data and show tutorial
+            overlayController?.loadUserData()
+            let hasSeenTutorial = UserDefaults.standard.bool(forKey: "hasSeenTutorial")
+            if !hasSeenTutorial {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.showOnboarding()
+                }
+            }
+        } else if hasCompletedOnboarding && isAuthenticated {
+            // User has completed onboarding and is authenticated - load their data
+            overlayController?.loadUserData()
+        } else if hasCompletedOnboarding && !isAuthenticated && !hasDevToken {
+            // User completed onboarding but is not authenticated - show auth window
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showAuthWindow()
             }
         }
     }
@@ -481,9 +521,122 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(true, forKey: "HasLaunchedBefore")
         }
     }
+
+    private func setupSupabaseSync() {
+        guard let configuration = SupabaseEnvironment.configuration() else {
+            DebugLog.log("Supabase sync disabled: missing configuration", category: .sync)
+            return
+        }
+
+        let service = SupabaseService(configuration: configuration)
+        let syncManager = SupabaseSyncManager(service: service)
+        let authManager = SupabaseAuthManager(service: service)
+        syncManager.authManager = authManager
+
+        let devToken = SupabaseEnvironment.developerAccessToken()
+        if let devToken = devToken {
+            authManager.bootstrapWithDeveloperToken(devToken)
+        }
+
+        if let session = authManager.currentSession {
+            syncManager.updateAccessToken(session.accessToken)
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .supabaseAuthSessionChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let session = notification.object as? SupabaseAuthManager.Session
+            self?.supabaseSyncManager?.updateAccessToken(session?.accessToken)
+            if session != nil {
+                // User authenticated - load their data
+                self?.overlayController?.loadUserData()
+                self?.supabaseSyncManager?.requestImmediateSync(reason: "Auth session changed")
+            } else {
+                // Session cleared - clear local data
+                self?.overlayController?.clearLocalData()
+            }
+        }
+        syncManager.stateChangeHandler = { [weak self] state in
+            switch state {
+            case .idle:
+                DebugLog.log("Supabase sync idle", category: .sync)
+            case .syncing:
+                DebugLog.log("Supabase sync running", category: .sync)
+            case .paused:
+                DebugLog.log("Supabase sync paused", category: .sync)
+            case .error(let message):
+                DebugLog.log("Supabase sync error: \(message)", category: .sync)
+            }
+            DispatchQueue.main.async {
+                guard let item = self?.supabaseStatusMenuItem else { return }
+                let title: String
+                switch state {
+                case .idle: title = "Supabase: Idle"
+                case .syncing: title = "Supabase: Syncing…"
+                case .paused: title = "Supabase: Paused"
+                case .error: title = "Supabase: Error"
+                }
+                item.title = title
+            }
+        }
+
+        supabaseService = service
+        supabaseSyncManager = syncManager
+        supabaseAuthManager = authManager
+
+        // Only start syncing if user is authenticated
+        if authManager.currentSession != nil || devToken != nil {
+            syncManager.scheduleInitialSync()
+            syncManager.requestImmediateSync(reason: "App bootstrap")
+        } else {
+            DebugLog.log("Skipping initial sync: no authenticated session", category: .sync)
+        }
+
+        // Listen for pull completion to refresh UI
+        NotificationCenter.default.addObserver(
+            forName: .supabaseDataDidPull,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.overlayController?.reloadFromPersistence()
+            // Invalidate any open task card windows to force redraw with latest data
+            if let windows = self?.overlayController?.taskCardWindows.values {
+                for window in windows {
+                    window.contentView?.needsDisplay = true
+                }
+            }
+        }
+    }
+
+    private func setupURLHandling() {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleIncomingURL(_:withReply:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
+
+    @objc private func handleIncomingURL(_ event: NSAppleEventDescriptor, withReply _: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: urlString) else {
+            return
+        }
+
+        if supabaseAuthManager?.handleOAuthRedirect(url: url) == true {
+            DebugLog.log("Processed Supabase OAuth callback", category: .sync)
+            supabaseSyncManager?.requestImmediateSync(reason: "OAuth redirect callback")
+        }
+    }
     
     private func setupTestShortcuts() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if self.handleSpaceHoldKeyDown(event) {
+                return nil
+            }
+
             // Cmd+Shift+T - Test compact preview
             if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 15 {
                 self.overlayController?.compactPreview.testPresent()
@@ -520,7 +673,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Esc - Cancel voice capture or hide semi-circle
             if event.keyCode == 53 { // Escape key
                 if self.overlayController?.isSpeechCaptureActive() == true {
+                    self.releaseSpaceHoldIfNeeded()
                     self.overlayController?.cancelSpeechCapture()
+                    self.speechRecognizer?.stop()
+                    self.currentVoiceSessionID = nil
+                    self.restartWakeWord(after: 0.6)
                 } else if self.overlayController?.isSemiCircleVisible == true {
                     self.overlayController?.hideSemiCircle()
                 }
@@ -541,6 +698,250 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             return event
         }
+
+        NSEvent.addLocalMonitorForEvents(matching: .keyUp) { event in
+            if self.handleSpaceHoldKeyUp(event) {
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func handleSpaceHoldKeyDown(_ event: NSEvent) -> Bool {
+        handleSpaceHoldKeyDown(
+            keyCode: event.keyCode,
+            modifierFlags: event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        )
+    }
+
+    private func handleSpaceHoldKeyDown(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        guard keyCode == 49 else { return false }
+        let flags = modifierFlags
+        if flags.contains(.command) || flags.contains(.option) || flags.contains(.control) {
+            return false
+        }
+
+        let sessionActive = currentVoiceSessionID != nil
+        guard sessionActive else { return false }
+
+        if !shouldCaptureSpaceGlobally {
+            activateGlobalSpaceCapture()
+        }
+
+        let bubbleActive = overlayController?.isSpeechCaptureActive() == true
+
+        if didHandleSpaceHoldForCurrentPress {
+            if !isSpaceHoldActive {
+                isSpaceHoldActive = true
+                speechRecognizer?.beginExternalSilenceHold()
+                if bubbleActive {
+                    overlayController?.setExternalSilenceHoldActive(true)
+                }
+            }
+            return true
+        }
+
+        didHandleSpaceHoldForCurrentPress = true
+
+        if !isSpaceHoldActive {
+            isSpaceHoldActive = true
+            speechRecognizer?.beginExternalSilenceHold()
+            if bubbleActive {
+                overlayController?.setExternalSilenceHoldActive(true)
+            }
+        }
+        return true
+    }
+
+    private func handleSpaceHoldKeyUp(_ event: NSEvent) -> Bool {
+        handleSpaceHoldKeyUp(
+            keyCode: event.keyCode,
+            modifierFlags: event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        )
+    }
+
+    private func handleSpaceHoldKeyUp(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        guard keyCode == 49 else { return false }
+        let flags = modifierFlags
+        if flags.contains(.command) || flags.contains(.option) || flags.contains(.control) {
+            return false
+        }
+        guard didHandleSpaceHoldForCurrentPress else { return false }
+
+        if isSpaceHoldActive {
+            isSpaceHoldActive = false
+            speechRecognizer?.endExternalSilenceHold()
+            overlayController?.setExternalSilenceHoldActive(false)
+        }
+        didHandleSpaceHoldForCurrentPress = false
+        return true
+    }
+
+    private func releaseSpaceHoldIfNeeded() {
+        if isSpaceHoldActive {
+            isSpaceHoldActive = false
+            speechRecognizer?.endExternalSilenceHold()
+            overlayController?.setExternalSilenceHoldActive(false)
+        }
+    }
+
+    private func activateGlobalSpaceCapture(promptIfNeeded: Bool = true) {
+        if !shouldCaptureSpaceGlobally {
+            if !promptIfNeeded && !AXIsProcessTrusted() {
+                return
+            }
+
+            guard ensureAccessibilityPermission(promptIfNeeded: promptIfNeeded) else {
+                DebugLog.log("⚠️ Accessibility permission not granted; space hold cannot block other apps", category: .app)
+                return
+            }
+
+            shouldCaptureSpaceGlobally = true
+        }
+
+        ensureSpaceKeyEventTapActive()
+    }
+
+    private func deactivateGlobalSpaceCapture() {
+        releaseSpaceHoldIfNeeded()
+        didHandleSpaceHoldForCurrentPress = false
+    }
+
+    private func ensureAccessibilityPermission(promptIfNeeded: Bool) -> Bool {
+        if AXIsProcessTrusted() {
+            return true
+        }
+        if promptIfNeeded && !hasPromptedForAccessibilityPermission {
+            let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+            hasPromptedForAccessibilityPermission = true
+        }
+        if AXIsProcessTrusted() {
+            return true
+        }
+        if !promptIfNeeded && !hasShownAccessibilityWarning {
+            hasShownAccessibilityWarning = true
+            DispatchQueue.main.async {
+                self.presentAccessibilityWarning()
+            }
+        }
+        return false
+    }
+
+    private func presentAccessibilityWarning() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Enable Accessibility Access"
+        alert.informativeText = "To keep recordings active while the space bar is held, please allow NotchToDo under System Settings → Privacy & Security → Accessibility."
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Later")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    private static let spaceKeyEventTapCallback: CGEventTapCallBack = { proxy, type, event, userInfo in
+        guard let userInfo else {
+            return Unmanaged.passUnretained(event)
+        }
+        let delegate = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
+        return delegate.handleSpaceKeyEventTap(proxy: proxy, type: type, event: event)
+    }
+
+    private func ensureSpaceKeyEventTapActive() {
+        if spaceKeyEventTap == nil {
+            let keyDownMask = CGEventMask(1 << Int(CGEventType.keyDown.rawValue))
+            let keyUpMask = CGEventMask(1 << Int(CGEventType.keyUp.rawValue))
+            let eventMask = keyDownMask | keyUpMask
+            guard let tap = CGEvent.tapCreate(
+                tap: .cghidEventTap,
+                place: .headInsertEventTap,
+                options: .defaultTap,
+                eventsOfInterest: eventMask,
+                callback: AppDelegate.spaceKeyEventTapCallback,
+                userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+            ) else {
+                DebugLog.log("❌ Failed to install global space key event tap", category: .app)
+                shouldCaptureSpaceGlobally = false
+                return
+            }
+            spaceKeyEventTap = tap
+            let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+            spaceKeyEventTapSource = source
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+
+        if let tap = spaceKeyEventTap {
+            CGEvent.tapEnable(tap: tap, enable: true)
+        }
+        if spaceKeyEventTap == nil {
+            shouldCaptureSpaceGlobally = false
+            ensureAccessibilityPermission(promptIfNeeded: false)
+        }
+    }
+
+    private func teardownSpaceKeyEventTap() {
+        if let tap = spaceKeyEventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let source = spaceKeyEventTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        spaceKeyEventTapSource = nil
+        spaceKeyEventTap = nil
+        shouldCaptureSpaceGlobally = false
+    }
+
+    private func handleSpaceKeyEventTap(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = spaceKeyEventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        guard shouldCaptureSpaceGlobally else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let sessionActive = currentVoiceSessionID != nil || (overlayController?.isSpeechCaptureActive() ?? false)
+        let shouldProcessEvent = sessionActive || didHandleSpaceHoldForCurrentPress || isSpaceHoldActive
+        if !shouldProcessEvent {
+            return Unmanaged.passUnretained(event)
+        }
+
+        guard type == .keyDown || type == .keyUp else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        let handled: Bool
+        if let nsEvent = NSEvent(cgEvent: event) {
+            switch type {
+            case .keyDown:
+                handled = handleSpaceHoldKeyDown(nsEvent)
+            case .keyUp:
+                handled = handleSpaceHoldKeyUp(nsEvent)
+            default:
+                handled = false
+            }
+        } else {
+            let keyCodeValue = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+            let flagsRaw = UInt(event.flags.rawValue)
+            let modifierFlags = NSEvent.ModifierFlags(rawValue: flagsRaw).intersection(.deviceIndependentFlagsMask)
+            switch type {
+            case .keyDown:
+                handled = handleSpaceHoldKeyDown(keyCode: keyCodeValue, modifierFlags: modifierFlags)
+            case .keyUp:
+                handled = handleSpaceHoldKeyUp(keyCode: keyCodeValue, modifierFlags: modifierFlags)
+            default:
+                handled = false
+            }
+        }
+
+        return handled ? nil : Unmanaged.passUnretained(event)
     }
     
     private func setupStatusBar() {
@@ -567,6 +968,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func setupOverlay() {
         overlayController = NotchOverlayController(persistenceController: persistenceController)
+        overlayController?.speechFailureHandler = { [weak self] message in
+            guard let self else { return }
+            DebugLog.log("Voice session failure surfaced: \(message)", category: .speech)
+            self.handleSpeechError(message)
+        }
+        overlayController?.speechCaptureVisibilityHandler = { [weak self] isVisible in
+            guard let self else { return }
+            if isVisible {
+                let shouldPrompt = !AXIsProcessTrusted()
+                self.activateGlobalSpaceCapture(promptIfNeeded: shouldPrompt)
+            } else {
+                self.deactivateGlobalSpaceCapture()
+                if self.currentVoiceSessionID == nil {
+                    self.restartWakeWord(after: 0.6)
+                }
+            }
+        }
     }
     
     private func setupAudioEngines() {
@@ -669,6 +1087,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.removeAllItems()
         menu.addItem(makeMenuItem(title: "Show Walkthrough…", action: #selector(showOnboarding)))
         menu.addItem(makeMenuItem(title: "Keyboard Shortcuts…", action: #selector(showKeyboardShortcuts)))
+        // Supabase status + controls
+        let status = NSMenuItem(title: "Supabase: Idle", action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        supabaseStatusMenuItem = status
+        menu.addItem(status)
+        menu.addItem(makeMenuItem(title: "Sync Now", action: #selector(syncNow)))
+        let signInItem = makeMenuItem(title: "Supabase Sign In…", action: #selector(promptSupabaseSignIn))
+        menu.addItem(signInItem)
+        let signOutItem = makeMenuItem(title: "Supabase Sign Out", action: #selector(handleSupabaseSignOut))
+        signOutItem.isEnabled = supabaseAuthManager?.currentSession != nil
+        menu.addItem(signOutItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(makeMenuItem(title: "Simulate Wake Word", action: #selector(simulateWakeWord)))
         menu.addItem(makeMenuItem(title: "Simulate Transcript", action: #selector(simulateTranscript)))
@@ -819,29 +1248,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func handleWakeWordTriggered() {
-        // Trigger notch trace activation first
         overlayController?.setState(.wake)
-        // Stop wake word listening to free the audio input for dictation
         wakeWordEngine?.stop()
+        let sessionID = UUID()
+        currentVoiceSessionID = sessionID
+        activateGlobalSpaceCapture(promptIfNeeded: false)
+        DebugLog.log("🔈 Wake word triggered new session: \(sessionID.uuidString.prefix(6))", category: .speech)
+        speechRecognizer?.prepareForSession(id: sessionID)
         overlayController?.activateNotchTrace { [weak self] in
             guard let self else { return }
-            self.overlayController?.beginSpeechCaptureSession()
-            try? self.speechRecognizer?.start()
+            self.overlayController?.beginSpeechCaptureSession(sessionID: sessionID)
+            do {
+                try self.speechRecognizer?.start()
+            } catch {
+                DebugLog.log("Failed to start recognizer: \(error)", category: .speech)
+                self.handleSpeechError("Could not start speech recognition")
+            }
         }
     }
     
     private func handlePartialTranscript(_ partial: String) {
+        DebugLog.log("Partial transcript received: \(partial)", category: .speech)
         overlayController?.updateSpeechCapture(partialTranscript: partial)
     }
 
     private func handleSpeechError(_ errorMessage: String) {
+        DebugLog.log("Voice session error: \(errorMessage)", category: .speech)
+        releaseSpaceHoldIfNeeded()
+        speechRecognizer?.stop()
         overlayController?.setState(.error(errorMessage))
         overlayController?.showSpeechError(errorMessage)
+        currentVoiceSessionID = nil
         restartWakeWord(after: 2.0)
     }
     
     private func handleFinalTranscript(_ final: String) {
+        releaseSpaceHoldIfNeeded()
         speechRecognizer?.stop()
+        DebugLog.log("Final transcript: \(final)", category: .speech)
         let trimmed = final.trimmingCharacters(in: .whitespacesAndNewlines)
         if handlePendingClarificationIfNeeded(with: trimmed) { return }
         
@@ -855,7 +1299,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         switch effect {
-        case .createTask(let title, _):
+        case .createTask(let title):
             overlayController?.finalizeSpeechCapture(with: final, resolvedTaskTitle: title)
         case .showOverlay:
             overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: "Opening Notch…") { [weak self] in
@@ -871,6 +1315,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: nil, completion: nil)
         }
+        currentVoiceSessionID = nil
         restartWakeWord(after: 0.6)
     }
     
@@ -921,7 +1366,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         wakeWordEngine?.stop()
+        releaseSpaceHoldIfNeeded()
+        deactivateGlobalSpaceCapture()
         speechRecognizer?.stop()
+        teardownSpaceKeyEventTap()
     }
 }
 
@@ -980,6 +1428,105 @@ extension AppDelegate {
         handleFinalTranscript("add buy milk")
     }
 
+    @objc private func syncNow() {
+        supabaseSyncManager?.forceFullPullOnce()
+        supabaseSyncManager?.requestImmediateSync(reason: "Manual debug menu (full pull)")
+    }
+
+    @objc private func promptSupabaseSignIn() {
+        guard let authManager = supabaseAuthManager else {
+            let alert = NSAlert()
+            alert.messageText = "Supabase Not Configured"
+            alert.informativeText = "Provide Supabase credentials in Info.plist before attempting to sign in."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Supabase Sign In"
+        alert.informativeText = "Enter your Supabase email and password."
+        alert.alertStyle = .informational
+
+        let emailField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        emailField.placeholderString = "name@example.com"
+        let passwordField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+
+        let stack = NSStackView(frame: NSRect(x: 0, y: 0, width: 260, height: 56))
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(emailField)
+        stack.addArrangedSubview(passwordField)
+        emailField.widthAnchor.constraint(equalToConstant: 260).isActive = true
+        passwordField.widthAnchor.constraint(equalToConstant: 260).isActive = true
+
+        alert.accessoryView = stack
+        alert.addButton(withTitle: "Sign In")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let email = emailField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let password = passwordField.stringValue
+        guard !email.isEmpty, !password.isEmpty else {
+            let errorAlert = NSAlert()
+            errorAlert.messageText = "Missing Credentials"
+            errorAlert.informativeText = "Email and password are required."
+            errorAlert.alertStyle = .warning
+            errorAlert.runModal()
+            return
+        }
+
+        _Concurrency.Task { [weak self] in
+            do {
+                try await authManager.signIn(email: email, password: password)
+                await MainActor.run {
+                    self?.showInfoAlert(title: "Signed In", message: "Supabase session established.")
+                    if let menu = self?.debugMenu {
+                        self?.rebuildDebugMenu(menu)
+                    }
+                    self?.supabaseSyncManager?.requestImmediateSync(reason: "Manual sign in")
+                }
+            } catch {
+                await MainActor.run {
+                    self?.showErrorAlert(title: "Sign In Failed", error: error)
+                }
+            }
+        }
+    }
+
+    @objc private func handleSupabaseSignOut() {
+        guard let authManager = supabaseAuthManager else { return }
+
+        // Clear auth session (tokens in Keychain)
+        authManager.clearSession()
+
+        // Stop sync manager and clear sync state
+        supabaseSyncManager?.updateAccessToken(nil)
+
+        // Clear last pull timestamp to prevent stale data on next login
+        UserDefaults.standard.removeObject(forKey: "SupabaseLastSuccessfulPullAt")
+
+        // Clear all local data (Core Data + in-memory orbs)
+        overlayController?.clearLocalData()
+
+        // Clear onboarding state so auth window shows on next launch
+        UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.set(false, forKey: "hasSeenTutorial")
+
+        rebuildDebugMenu(debugMenu)
+        DebugLog.log("✅ Signed out: cleared session, sync state, and local data", category: .sync)
+        showInfoAlert(title: "Signed Out", message: "Supabase session cleared.")
+
+        // Show auth window immediately
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.showAuthWindow()
+        }
+    }
+
     @objc private func toggleDebugCategory(_ sender: NSMenuItem) {
         guard let category = sender.representedObject as? DebugCategory else { return }
         let newState = sender.state != .on
@@ -991,6 +1538,7 @@ extension AppDelegate {
     @objc private func resetUIState() {
         pendingClarification = nil
         overlayController?.debugResetUIState()
+        releaseSpaceHoldIfNeeded()
         speechRecognizer?.stop()
         DebugLog.log("UI state reset via debug menu", category: .app)
     }
@@ -1071,6 +1619,20 @@ extension AppDelegate {
         alert.runModal()
     }
 
+    @objc func showAuthWindow() {
+        // Close existing auth window if present
+        authWindowController?.close()
+        
+        // Create and show new auth window
+        authWindowController = AuthWindowController()
+        if let authVC = authWindowController?.window?.contentViewController as? AuthViewController {
+            authVC.delegate = self
+        }
+        authWindowController?.showWindow(nil)
+        authWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
     @objc func showOnboarding() {
         // Close existing onboarding window if present
         onboardingWindowController?.close()
@@ -1118,6 +1680,76 @@ extension AppDelegate {
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+    
+    private func showInfoAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func showErrorAlert(title: String, error: Error) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = String(error.localizedDescription)
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+}
+
+// MARK: - Auth View Controller Delegate
+extension AppDelegate {
+    func authViewController(_ controller: AuthViewController, signInWithEmail email: String, password: String) async throws {
+        guard let authManager = supabaseAuthManager else {
+            throw NSError(domain: "NotchToDo", code: -1, userInfo: [NSLocalizedDescriptionKey: "Supabase not configured"])
+        }
+        try await authManager.signIn(email: email, password: password)
+        if let session = authManager.currentSession {
+            supabaseSyncManager?.updateAccessToken(session.accessToken)
+            supabaseSyncManager?.requestImmediateSync(reason: "After sign in")
+        }
+    }
+    
+    func authViewController(_ controller: AuthViewController, signUpWithEmail email: String, password: String) async throws {
+        guard let authManager = supabaseAuthManager else {
+            throw NSError(domain: "NotchToDo", code: -1, userInfo: [NSLocalizedDescriptionKey: "Supabase not configured"])
+        }
+        try await authManager.signUp(email: email, password: password)
+        if let session = authManager.currentSession {
+            supabaseSyncManager?.updateAccessToken(session.accessToken)
+            supabaseSyncManager?.requestImmediateSync(reason: "After sign up")
+        }
+    }
+    
+    func authViewControllerDidAuthenticate(_ controller: AuthViewController) {
+        authWindowController?.close()
+        authWindowController = nil
+        
+        // Load user's data after authentication
+        overlayController?.loadUserData()
+        
+        // Mark onboarding as completed and show tutorial if needed
+        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        let hasSeenTutorial = UserDefaults.standard.bool(forKey: "hasSeenTutorial")
+        if !hasSeenTutorial {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showOnboarding()
+            }
+        }
+    }
+    
+    func authViewControllerDidSkip(_ controller: AuthViewController) {
+        authWindowController?.close()
+        authWindowController = nil
+        
+        // Load local data when skipping auth (offline mode)
+        overlayController?.loadUserData()
+        
+        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
     }
 }
 

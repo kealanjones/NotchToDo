@@ -24,9 +24,10 @@ class RealSpeechRecognizer: SpeechRecognizer {
     private var recordingStartedAt: CFTimeInterval = CACurrentMediaTime()
     private var lastDetectedSpeechAt: CFTimeInterval = CACurrentMediaTime()
     private var isEnding = false
-    private let silenceToEndSeconds: CFTimeInterval = 1.2
+    private let silenceToEndSeconds: CFTimeInterval = 2.5
     private let maxRecordingSeconds: CFTimeInterval = 10.0  // Maximum 10 seconds recording
     private let minSpeechRMS: Float = 0.01 // ~-40dB; adjust if needed
+    private var externalSilenceHoldActive = false
     
     init(locale: Locale = Locale(identifier: "en-US")) {
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
@@ -108,6 +109,7 @@ class RealSpeechRecognizer: SpeechRecognizer {
         // Reset all state flags
         isRunning = false
         isEnding = false
+        externalSilenceHoldActive = false
 
         // Release lock before audio operations (they can take time and block)
         stateLock.unlock()
@@ -150,48 +152,58 @@ class RealSpeechRecognizer: SpeechRecognizer {
             guard let self = self else { return }
             
             var isFinal = false
-            
+
             if let result = result {
                 let transcription = result.bestTranscription.formattedString
                 DebugLog.log("Speech result: '\(transcription)' (final: \(result.isFinal))", category: .speech)
-                
+
                 isFinal = result.isFinal
-                
+
                 if isFinal {
                     self.onFinal?(transcription)
                 } else {
                     self.onPartial?(transcription)
                 }
             }
-            
-            if error != nil || isFinal {
-                DebugLog.log("Speech recognition ended: error=\(error?.localizedDescription ?? "none"), isFinal=\(isFinal)", category: .speech)
 
-                // Perform cleanup synchronously on main thread
+            if let error = error {
+                DebugLog.log("Speech recognition error: \(error.localizedDescription)", category: .speech)
+
                 DispatchQueue.main.async {
                     self.stateLock.lock()
-
-                    // Stop audio engine
                     if self.audioEngine.isRunning {
                         self.audioEngine.stop()
                     }
                     inputNode.removeTap(onBus: 0)
-
-                    // Clean up all state
                     self.recognitionRequest = nil
                     self.recognitionTask = nil
                     self.isRunning = false
                     self.isEnding = false
-
+                    self.externalSilenceHoldActive = false
                     DebugLog.log("✅ Recognition cleanup complete (session #\(currentSessionID))", category: .speech)
-
                     self.stateLock.unlock()
                 }
 
-                // If we got an error but no final result, still send the last partial as final
-                if error != nil && !isFinal, let lastTranscript = result?.bestTranscription.formattedString {
-                    DebugLog.log("Sending error recovery final result: '\(lastTranscript)'", category: .speech)
-                    self.onFinal?(lastTranscript)
+                self.onError?(error.localizedDescription)
+                return
+            }
+
+            if isFinal {
+                DebugLog.log("Speech recognition ended with final result", category: .speech)
+
+                DispatchQueue.main.async {
+                    self.stateLock.lock()
+                    if self.audioEngine.isRunning {
+                        self.audioEngine.stop()
+                    }
+                    inputNode.removeTap(onBus: 0)
+                    self.recognitionRequest = nil
+                    self.recognitionTask = nil
+                    self.isRunning = false
+                    self.isEnding = false
+                    self.externalSilenceHoldActive = false
+                    DebugLog.log("✅ Recognition cleanup complete (session #\(currentSessionID))", category: .speech)
+                    self.stateLock.unlock()
                 }
             }
         }
@@ -257,6 +269,7 @@ class RealSpeechRecognizer: SpeechRecognizer {
         isEnding = false
         recordingStartedAt = CACurrentMediaTime()
         lastDetectedSpeechAt = CACurrentMediaTime()
+        externalSilenceHoldActive = false
         stateLock.unlock()
 
         DebugLog.log("Recording session initialized - isRunning=\(isRunning), isEnding=\(isEnding)", category: .speech)
@@ -304,6 +317,7 @@ class RealSpeechRecognizer: SpeechRecognizer {
         // Reset all state flags
         isRunning = false
         isEnding = false
+        externalSilenceHoldActive = false
 
         DebugLog.log("✅ Speech recognition stopped and cleaned up completely", category: .speech)
     }
@@ -316,6 +330,7 @@ class RealSpeechRecognizer: SpeechRecognizer {
         let currentlyEnding = isEnding
         let speechTime = lastDetectedSpeechAt
         let startTime = recordingStartedAt
+        let silenceHoldActive = externalSilenceHoldActive
         stateLock.unlock()
 
         guard currentlyRunning, !currentlyEnding else {
@@ -340,27 +355,65 @@ class RealSpeechRecognizer: SpeechRecognizer {
 
         // Check for max recording duration first (hard timeout)
         if totalRecordingTime >= maxRecordingSeconds {
-            stateLock.lock()
-            isEnding = true
-            stateLock.unlock()
-            DebugLog.log("⏱️ Ending due to max duration (\(String(format: "%.2f", totalRecordingTime))s)", category: .speech)
-            recognitionRequest?.endAudio()
-            return
+            if !silenceHoldActive {
+                stateLock.lock()
+                isEnding = true
+                stateLock.unlock()
+                DebugLog.log("⏱️ Ending due to max duration (\(String(format: "%.2f", totalRecordingTime))s)", category: .speech)
+                recognitionRequest?.endAudio()
+                return
+            } else if timeInterval % 10 == 0 {
+                DebugLog.log("⏱️ Max duration exceeded but hold active (\(String(format: "%.1f", totalRecordingTime))s)", category: .speech)
+            }
         }
 
         // Check for silence
-        if sinceSpeech >= silenceToEndSeconds {
+        if !silenceHoldActive && sinceSpeech >= silenceToEndSeconds {
             stateLock.lock()
             isEnding = true
             stateLock.unlock()
             DebugLog.log("🤫 Ending due to silence (\(String(format: "%.2f", sinceSpeech))s)", category: .speech)
             recognitionRequest?.endAudio()
             return
+        } else if silenceHoldActive && sinceSpeech >= silenceToEndSeconds {
+            let holdInterval = Int(sinceSpeech * 10)
+            if holdInterval % 10 == 0 {
+                DebugLog.log("⏸️ Silence detected but hold active (\(String(format: "%.2f", sinceSpeech))s)", category: .speech)
+            }
         }
 
         // Continue polling
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.pollForEndConditions()
+        }
+    }
+    
+    // MARK: - External Silence Hold
+    
+    func beginExternalSilenceHold() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard isRunning else { return }
+        if !externalSilenceHoldActive {
+            externalSilenceHoldActive = true
+            DebugLog.log("✋ External silence hold engaged", category: .speech)
+        }
+    }
+    
+    func endExternalSilenceHold() {
+        var shouldEvaluate = false
+        stateLock.lock()
+        if externalSilenceHoldActive {
+            externalSilenceHoldActive = false
+            shouldEvaluate = isRunning && !isEnding
+            DebugLog.log("👂 External silence hold released", category: .speech)
+        }
+        stateLock.unlock()
+        
+        if shouldEvaluate {
+            DispatchQueue.main.async { [weak self] in
+                self?.pollForEndConditions()
+            }
         }
     }
     
@@ -425,4 +478,3 @@ private extension AVAudioPCMBuffer {
         return sqrtf(sum)
     }
 }
-

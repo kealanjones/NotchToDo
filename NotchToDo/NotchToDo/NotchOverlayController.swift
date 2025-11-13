@@ -13,35 +13,31 @@ extension NSScreen {
     }
 }
 
-class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
+class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCaptureCoordinatorDelegate {
     private let persistenceController: PersistenceController
     private let orbStore: OrbPersistenceStore
     internal let orbManager: OrbManager  // Changed to internal for TaskCardView access
-    private var notchIndicatorWindow: NSWindow?
-    private var semiCircleWindow: NSWindow?
-    private var semiCircleView: SemiCircleWithOrbsView? // Added
+    internal var notchIndicatorWindow: NSWindow?
+    internal var semiCircleWindow: NSWindow?
+    internal var semiCircleView: SemiCircleWithOrbsView? // Added
     internal var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
-    private var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
-    private var taskDetailWindows: [UUID: NSWindow] = [:] // Track task detail windows by task ID
-    private var currentListenState: ListenState = .idle
+    internal var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
+    internal var taskDetailWindows: [UUID: NSWindow] = [:] // Track task detail windows by task ID
+    internal var currentListenState: ListenState = .idle
     var isSemiCircleVisible = false // Added
-    private lazy var wordEmbedding: NLEmbedding? = NLEmbedding.wordEmbedding(for: .english)
-    private var orbEmbeddingCache: [UUID: [Double]] = [:]
-    private let embeddingStopWords: Set<String> = ["the", "a", "an", "to", "into", "my", "for", "and", "please", "could", "you", "me", "can", "would", "notch", "hey", "ok", "okay", "add", "create", "make", "start"]
     
-    // Speech capture bubble
-    private var speechBubbleWindow: NSWindow?
-    private var speechBubbleView: SpeechCaptureBubbleView?
-    private var speechClassificationWorkItem: DispatchWorkItem?
-    private var pendingTranscript: String?
-    private var pendingTaskTitle: String?
-    private var pendingBubbleTargetOrbId: UUID?
+    // Speech capture coordination
     let compactPreview = NotchCompactPreviewController()
+    private lazy var speechCoordinator = SpeechCaptureCoordinator(delegate: self)
+    private lazy var windowManager = OverlayWindowManager(controller: self)
+    var speechFailureHandler: ((String) -> Void)?
+    var speechCaptureVisibilityHandler: ((Bool) -> Void)?
     
         // Auto-fade timer system
     private var fadeTimer: Timer?
     private let fadeDelay: TimeInterval = 10.0
     private var isFaded: Bool = false
+    private var isAutoFadeSuspended = false
     private var orbRattleTimer: Timer?
     
     // Task drag visualization
@@ -57,13 +53,13 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     init(persistenceController: PersistenceController = .shared) {
         self.persistenceController = persistenceController
         self.orbStore = OrbPersistenceStore(persistenceController: persistenceController)
-        self.orbManager = OrbManager(includeSampleData: true)
-        loadOrbState()
+        self.orbManager = OrbManager(includeSampleData: false) // Don't load sample data
+        // Don't load orb state until authenticated
         orbManager.onChange = { [weak self] in
             self?.scheduleOrbSave()
         }
-        setupNotchIndicator()
-        setupSemiCircle()
+        windowManager.setupNotchIndicator()
+        windowManager.setupSemiCircle()
         setupNotificationObservers()
         refreshOrbEmbeddingCache()
     }
@@ -82,88 +78,59 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         }
     }
 
+    // Expose a safe public reload for external callers
+    func reloadFromPersistence() {
+        loadOrbState()
+    }
+    
+    // Load data when user authenticates
+    func loadUserData() {
+        loadOrbState()
+        refreshOrbEmbeddingCache()
+    }
+    
+    // Clear all local data (on sign-out)
+    func clearLocalData() {
+        // Clear orbs and tasks from memory
+        orbManager.applySnapshots([])
+        
+        // Delete all Core Data records
+        do {
+            try orbStore.deleteAllData()
+            DebugLog.log("✅ Deleted all Core Data records", category: .persistence)
+        } catch {
+            DebugLog.log("❌ Failed to delete Core Data: \(error)", category: .persistence)
+        }
+        
+        // Close all open windows
+        taskCardWindows.values.forEach { $0.close() }
+        taskCardWindows.removeAll()
+        taskDetailWindows.values.forEach { $0.close() }
+        taskDetailWindows.removeAll()
+        currentOpenOrb = nil
+        
+        // Hide semi-circle
+        hideSemiCircle()
+        
+        // Clear custom sizes
+        customCardSizes.removeAll()
+    }
+
     private func scheduleOrbSave() {
         let snapshots = orbManager.makeSnapshots()
         orbStore.scheduleSave(orbs: snapshots)
     }
-    
-        private func setupNotchIndicator() {
-            // Create notch indicator window
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 100, height: 50),
-                styleMask: [.borderless],
-                backing: .buffered,
-                defer: false
-            )
-            
-            window.isOpaque = false
-            window.backgroundColor = NSColor.clear
-        window.hasShadow = false
-        window.level = .statusBar
-            window.ignoresMouseEvents = false
-            window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-            window.isMovable = false
-            window.acceptsMouseMovedEvents = true
-            
-            // Ensure no black elements show through
-            window.contentView?.wantsLayer = true
-            window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
-            
-            // Create notch indicator view with actual notch info
-            let notchView = NotchIndicatorView()
-            if let screen = NSScreen.main {
-                notchView.notchInfo = getNotchInfo(for: screen)
-            }
-            window.contentView = notchView
-            
-            self.notchIndicatorWindow = window
-            positionNotchIndicator(window)
-            // Don't show immediately - only when wake word is detected
+
+    // Persist immediately and nudge sync so remote reflects edits quickly
+    private func persistEditsImmediately() {
+        let snapshots = orbManager.makeSnapshots()
+        orbStore.saveImmediately(orbs: snapshots)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NotificationCenter.default.post(name: .supabaseOutboxDidChange, object: nil)
         }
-    
-    private func positionNotchIndicator(_ window: NSWindow) {
-        guard let screen = NSScreen.main else { return }
-        
-        let screenFrame = screen.frame
-        let notchInfo = getNotchInfo(for: screen)
-        
-        // Try different centering approaches
-        // Approach 1: Use screen center directly
-        let x1 = screenFrame.midX - notchInfo.width / 2
-        let y1 = screenFrame.maxY - notchInfo.height
-        
-        // Approach 2: Try with a small offset
-        let x2 = screenFrame.midX - notchInfo.width / 2 + 10
-        let y2 = screenFrame.maxY - notchInfo.height
-        
-        // Approach 3: Try with negative offset
-        let x3 = screenFrame.midX - notchInfo.width / 2 - 10
-        let y3 = screenFrame.maxY - notchInfo.height
-        
-        // Use approach 1 with 20px left offset, then shift right by 0.5px to compensate for 1px width reduction from left
-        let x = x1 - 20 + 0.5
-        let y = y1
-        
-        DebugLog.log("🔍 Centering Options:", category: .app)
-        DebugLog.log("Approach 1 (center): X=\(x1), Y=\(y1)", category: .app)
-        DebugLog.log("Approach 2 (+10px): X=\(x2), Y=\(y2)", category: .app)
-        DebugLog.log("Approach 3 (-10px): X=\(x3), Y=\(y3)", category: .app)
-        
-        DebugLog.log("🔍 Window Positioning:", category: .app)
-        DebugLog.log("Calculated X: \(x)", category: .app)
-        DebugLog.log("Calculated Y: \(y)", category: .app)
-        DebugLog.log("Notch center X: \(notchInfo.centerX)", category: .app)
-        DebugLog.log("Notch width: \(notchInfo.width)", category: .app)
-        DebugLog.log("Screen max Y: \(screenFrame.maxY)", category: .app)
-        
-        // Set the window to match notch dimensions
-        let windowRect = NSRect(x: x, y: y, width: notchInfo.width + 20, height: notchInfo.height + 20)
-        window.setFrame(windowRect, display: true)
-        
-        DebugLog.log("Final window rect: \(windowRect)", category: .app)
     }
     
-    func toggleOverlay() {
+        func toggleOverlay() {
         if isSemiCircleVisible {
             hideSemiCircle()
         } else {
@@ -172,16 +139,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     func speechBubbleCenter(relativeTo view: NSView) -> CGPoint? {
-        guard let bubbleWindow = speechBubbleWindow, bubbleWindow.isVisible,
-              let targetWindow = view.window else { return nil }
-        let screenPoint = CGPoint(x: bubbleWindow.frame.midX, y: bubbleWindow.frame.midY)
-        let screenRect = NSRect(origin: screenPoint, size: .zero)
-        let windowPoint = targetWindow.convertFromScreen(screenRect).origin
-        return view.convert(windowPoint, from: nil)
+        speechCoordinator.speechBubbleCenter(relativeTo: view)
     }
     
     func bubbleTargetOrbId() -> UUID? {
-        return pendingBubbleTargetOrbId
+        speechCoordinator.bubbleTargetOrbId()
     }
     
     func setState(_ state: ListenState) {
@@ -202,7 +164,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             // Calculate project progress
             let progress = orb.tasks.isEmpty ? 0.0 : CGFloat(orb.tasks.filter { $0.isCompleted }.count) / CGFloat(orb.tasks.count)
             notchView.updateContext(orbColor: orb.color, progress: progress)
-        } else {
+            } else {
             // Clear context when no orb is active
             notchView.updateContext(orbColor: nil, progress: 0.0)
         }
@@ -213,7 +175,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         addTask(title, to: targetOrb)
     }
     
-    private func resolveTargetOrbForNewTask() -> ProjectOrb {
+    internal func resolveTargetOrbForNewTask() -> ProjectOrb {
         if let openOrb = currentOpenOrb {
             return openOrb
         } else if let firstOrb = orbManager.orbs.first {
@@ -253,142 +215,82 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         // Reset fade timer when a task is added
         resetFadeTimer()
     }
-    
-    // MARK: - Speech Capture Bubble
-    
-    func beginSpeechCaptureSession() {
-        pendingTranscript = nil
-        pendingTaskTitle = nil
-        speechClassificationWorkItem?.cancel()
-        ensureSpeechBubbleWindow()
-        speechBubbleView?.resetForNewCapture()
-        speechBubbleView?.applyPopAnimation()
-        setState(.listening)
-        pendingBubbleTargetOrbId = nil
-        presentSpeechBubble()
-        AudioFeedback.shared.play(.startListening, volume: 0.5)
 
-        // Reset fade timer when recording starts
-        resetFadeTimer()
+    func refreshOrbEmbeddingCache() {
+        speechCoordinator.refreshOrbEmbeddingCache()
     }
-    
+
+    func primeEmbedding(for orb: ProjectOrb) {
+        speechCoordinator.primeEmbedding(for: orb)
+    }
+
+    func beginSpeechCaptureSession(sessionID: UUID, wakePhrase: String? = nil) {
+        speechCoordinator.beginSession(sessionID: sessionID, wakePhrase: wakePhrase)
+    }
+
+    func beginSpeechCaptureSession() {
+        beginSpeechCaptureSession(sessionID: UUID())
+    }
+
     func updateSpeechCapture(partialTranscript: String) {
-        pendingTranscript = partialTranscript
-        ensureSpeechBubbleWindow()
-        if speechBubbleWindow?.isVisible != true {
-            presentSpeechBubble()
-        }
-        setState(.transcribing)
-        speechBubbleView?.setStatus("Recording…")
-        speechBubbleView?.setThinking(false)
-        speechBubbleView?.updateTranscript(partialTranscript, isFinal: false)
+        speechCoordinator.updatePartialTranscript(partialTranscript)
     }
-    
+
     func finalizeSpeechCapture(with transcript: String, resolvedTaskTitle: String? = nil) {
-        let displayText = resolvedTaskTitle ?? transcript
-        pendingTranscript = displayText
-        pendingTaskTitle = resolvedTaskTitle ?? transcript
-        ensureSpeechBubbleWindow()
-        if speechBubbleWindow?.isVisible != true {
-            presentSpeechBubble()
-        }
-        setState(.transcribing)
-        speechBubbleView?.setStatus("Understanding…")
-        speechBubbleView?.setThinking(true)
-        speechBubbleView?.updateTranscript(displayText, isFinal: true)
-        AudioFeedback.shared.play(.success, volume: 0.6)
-        
-        speechClassificationWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.completeTranscriptRouting()
-        }
-        speechClassificationWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
+        speechCoordinator.finalizeTranscript(transcript, resolvedTaskTitle: resolvedTaskTitle)
     }
-    
+
     func finalizeSpeechCaptureForCommand(transcript: String, status: String?, completion: (() -> Void)? = nil) {
-        pendingTranscript = transcript
-        pendingTaskTitle = nil
-        ensureSpeechBubbleWindow()
-        if speechBubbleWindow?.isVisible != true {
-            presentSpeechBubble()
-        }
-        setState(.transcribing)
-        speechBubbleView?.setThinking(true)
-        speechBubbleView?.setStatus(status ?? "Working…")
-        speechBubbleView?.updateTranscript(transcript, isFinal: true)
-        speechBubbleView?.setClarificationAccent(false)
-        speechClassificationWorkItem?.cancel()
-        let finishDelay: TimeInterval = 0.9
-        DispatchQueue.main.asyncAfter(deadline: .now() + finishDelay) { [weak self] in
-            guard let self else { return }
-            self.speechBubbleView?.setThinking(false)
-            self.speechBubbleView?.setStatus(nil)
-            self.pendingTranscript = nil
-            self.pendingTaskTitle = nil
-            self.setState(.idle)
-            self.dismissSpeechBubble(after: 0.15) {
-                completion?()
-            }
-        }
+        speechCoordinator.finalizeCommand(transcript: transcript, status: status, completion: completion)
     }
-    
+
     func cancelSpeechCapture() {
-        pendingTranscript = nil
-        pendingTaskTitle = nil
-        speechClassificationWorkItem?.cancel()
-        setState(.idle)
-        pendingBubbleTargetOrbId = nil
-        dismissSpeechBubble()
+        speechCoordinator.cancelSession()
     }
-    
+
     func revealOverlayForVoice(completion: (() -> Void)? = nil) {
-        ensureSemiCircleVisible {
-            completion?()
-        }
+        speechCoordinator.revealOverlayForVoice(completion: completion)
     }
-    
+
     func showClarificationPrompt(for title: String) {
-        ensureSpeechBubbleWindow()
-        if speechBubbleWindow?.isVisible != true {
-            presentSpeechBubble()
-        }
-        setState(.transcribing)
-        speechBubbleView?.setThinking(false)
-        speechBubbleView?.setClarificationAccent(true)
-        speechBubbleView?.updateTranscript("Add \"\(title)\" as a task or new orb?", isFinal: false)
-        speechBubbleView?.setStatus("Say 'Notch confirm task' or 'Notch confirm project'")
+        speechCoordinator.showClarificationPrompt(for: title)
     }
-    
+
     func remindClarification(for title: String) {
-        speechBubbleView?.setStatus("Confirm task or project for \"\(title)\"")
-        speechBubbleView?.setClarificationAccent(true)
+        speechCoordinator.remindClarification(for: title)
     }
-    
+
     func dismissClarificationPrompt() {
-        speechBubbleView?.setClarificationAccent(false)
-        speechBubbleView?.setStatus(nil)
-        dismissSpeechBubble(after: 0.1)
+        speechCoordinator.dismissClarificationPrompt()
     }
 
     func showSpeechError(_ errorMessage: String) {
-        ensureSpeechBubbleWindow()
-        if speechBubbleWindow?.isVisible != true {
-            presentSpeechBubble()
-        }
-        speechBubbleView?.updateTranscript("Error", isFinal: true)
-        speechBubbleView?.setStatus(errorMessage)
-        speechBubbleView?.setThinking(false)
-
-        // Auto-dismiss after showing error
-        dismissSpeechBubble(after: 3.0)
+        speechCoordinator.showSpeechError(errorMessage)
     }
 
-    // MARK: - Keyboard Shortcut Helpers
+    func speechCaptureCoordinator(_ coordinator: SpeechCaptureCoordinator, didFailWith message: String) {
+        speechFailureHandler?(message)
+    }
+
+    func speechCaptureBubbleDidAppear() {
+        speechCaptureVisibilityHandler?(true)
+    }
+
+    func speechCaptureBubbleDidDisappear() {
+        speechCaptureVisibilityHandler?(false)
+    }
+
     func isSpeechCaptureActive() -> Bool {
-        return speechBubbleWindow?.isVisible ?? false
+        speechCoordinator.isSpeechCaptureActive()
+    }
+    
+    func setExternalSilenceHoldActive(_ active: Bool) {
+        speechCoordinator.setExternalSilenceHoldActive(active)
     }
 
+    // MARK: - Speech Capture Bubble
+
+// MARK: - Keyboard Shortcut Helpers
     func switchToOrb(at index: Int) {
         guard index >= 0 && index < orbManager.orbs.count else {
             DebugLog.log("⌨️ Cannot switch to orb at index \(index) - out of bounds", category: .app)
@@ -408,459 +310,6 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         AudioFeedback.shared.play(.wake, volume: 0.3)
     }
     
-    private func ensureSpeechBubbleWindow() {
-        guard speechBubbleWindow == nil else { return }
-        let bubbleView = SpeechCaptureBubbleView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
-        let window = NSWindow(
-            contentRect: bubbleView.bounds,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.level = .floating
-        window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        window.isMovable = false
-        window.isReleasedWhenClosed = false
-        window.contentView = bubbleView
-        
-        speechBubbleWindow = window
-        speechBubbleView = bubbleView
-    }
-    
-    private func presentSpeechBubble() {
-        guard let window = speechBubbleWindow else { return }
-        positionSpeechBubbleWindow()
-        let finalOrigin = window.frame.origin
-        var startOrigin = finalOrigin
-        startOrigin.y += 18
-        window.setFrameOrigin(startOrigin)
-        window.alphaValue = 0.0
-        window.orderFrontRegardless()
-        
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.26
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.8, 0.2, 1.0)
-            window.animator().alphaValue = 1.0
-            window.animator().setFrameOrigin(finalOrigin)
-        }
-    }
-    
-    private func positionSpeechBubbleWindow(animated: Bool = false) {
-        guard let window = speechBubbleWindow else { return }
-        
-        let anchor = anchorRectForSpeechBubble()
-        var origin = NSPoint(x: anchor.midX - window.frame.width / 2, y: anchor.maxY)
-        
-        if isSemiCircleVisible, let semiCircleFrame = semiCircleWindow?.frame {
-            origin.y = semiCircleFrame.minY - window.frame.height - 24
-        } else if let screen = NSScreen.main {
-            let top = screen.frame.maxY
-            let middle = screen.frame.midY
-            let blendFactor: CGFloat = 0.55 // place a bit lower than previous one-third positioning
-            let centerY = top - (top - middle) * blendFactor
-            origin.y = centerY - window.frame.height / 2.0
-            origin.x = screen.frame.midX - window.frame.width / 2.0
-        } else {
-            origin.y = anchor.maxY - window.frame.height - 40
-        }
-        
-        if let screen = NSScreen.main {
-            let frame = screen.frame
-            let minX = frame.minX + 20
-            let maxX = frame.maxX - window.frame.width - 20
-            origin.x = min(max(origin.x, minX), maxX)
-            origin.y = min(frame.maxY - window.frame.height - 20, origin.y)
-        }
-        
-        if animated {
-            window.animator().setFrameOrigin(origin)
-        } else {
-            window.setFrameOrigin(origin)
-        }
-    }
-    
-    private func anchorRectForSpeechBubble() -> NSRect {
-        if let semiCircleWindow, semiCircleWindow.isVisible {
-            return semiCircleWindow.frame
-        }
-        if let notchIndicatorWindow {
-            return notchIndicatorWindow.frame
-        }
-        if let screen = NSScreen.main {
-            let frame = screen.frame
-            return NSRect(x: frame.midX - 1, y: frame.maxY - 200, width: 2, height: 2)
-        }
-        return NSRect(x: 0, y: 0, width: 2, height: 2)
-    }
-    
-    private func completeTranscriptRouting() {
-        guard let displayText = pendingTranscript, !displayText.isEmpty else {
-            setState(.idle)
-            dismissSpeechBubble(after: 0.05)
-            return
-        }
-        
-        let taskTitle = pendingTaskTitle ?? displayText
-        
-        speechBubbleView?.setThinking(false)
-        
-        let targetOrb = classifyOrb(for: taskTitle)
-        pendingBubbleTargetOrbId = targetOrb.id
-        speechBubbleView?.setStatus("Sorting into \(targetOrb.name)…")
-        speechBubbleView?.setGlowColor(targetOrb.color, animated: true)
-        speechBubbleView?.applyPopAnimation()
-        
-        let repositionDelay: TimeInterval = 0.45
-        let semiCircleRevealDelay: TimeInterval = 0.45
-        let dropDelay: TimeInterval = 0.45
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + repositionDelay) { [weak self] in
-            guard let self else { return }
-            self.prepareBubbleForOrbAnimation(targetOrb: targetOrb) { [weak self] in
-                guard let self else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + semiCircleRevealDelay) { [weak self] in
-                    guard let self else { return }
-                    self.ensureSemiCircleVisible {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + dropDelay) { [weak self] in
-                            guard let self else { return }
-                            self.animateSpeechBubble(into: targetOrb, with: taskTitle)
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private func ensureSemiCircleVisible(completion: @escaping () -> Void) {
-        if isSemiCircleVisible {
-            completion()
-        } else {
-            showSemiCircle {
-                completion()
-            }
-        }
-    }
-    
-    private func prepareBubbleForOrbAnimation(targetOrb: ProjectOrb, completion: @escaping () -> Void) {
-        guard let window = speechBubbleWindow else {
-            completion()
-            return
-        }
-        
-        guard let anchorPoint = orbScreenPosition(for: targetOrb) ?? bubbleFallbackPoint() else {
-            completion()
-            return
-        }
-        
-        let originX = anchorPoint.x - window.frame.width / 2
-        var originY: CGFloat
-        if let semiCircleFrame = semiCircleWindow?.frame {
-            originY = semiCircleFrame.minY - window.frame.height - 28
-        } else {
-            originY = anchorPoint.y - window.frame.height / 2 - 120
-        }
-        
-        var origin = NSPoint(x: originX, y: originY)
-        
-        if let screen = NSScreen.main {
-            let frame = screen.frame
-            origin.x = max(frame.minX + 20, min(origin.x, frame.maxX - window.frame.width - 20))
-            origin.y = max(frame.minY + 40, min(origin.y, frame.maxY - window.frame.height - 40))
-        }
-        
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 0.8, 0.2, 1.0)
-            window.animator().setFrameOrigin(origin)
-        } completionHandler: {
-            completion()
-        }
-    }
-    
-    private func classifyOrb(for transcript: String) -> ProjectOrb {
-        guard !orbManager.orbs.isEmpty else {
-            return resolveTargetOrbForNewTask()
-        }
-        
-        let normalized = transcript.lowercased()
-        
-        for orb in orbManager.orbs {
-            let name = orb.name.lowercased()
-            if normalized.contains(name) {
-                return orb
-            }
-        }
-        
-        if let embedding = wordEmbedding,
-           let queryVector = sentenceVector(for: normalized, embedding: embedding, skipStopWords: true),
-           let bestByEmbedding = bestOrbByEmbedding(for: queryVector) {
-            return bestByEmbedding
-        }
-        
-        var bestMatch: (orb: ProjectOrb, score: Double)?
-        
-        for orb in orbManager.orbs {
-            let name = orb.name.lowercased()
-            var score: Double = 0
-            let components = name.split { !$0.isLetter }
-            for component in components {
-                let token = String(component)
-                if normalized.contains(token) {
-                    score += 1.5
-                } else if token.count >= 4 {
-                    let prefix = String(token.prefix(3))
-                    if normalized.contains(prefix) {
-                        score += 0.5
-                    }
-                }
-            }
-            
-            if let currentBest = bestMatch {
-                if score > currentBest.score {
-                    bestMatch = (orb, score)
-                }
-            } else {
-                bestMatch = (orb, score)
-            }
-        }
-        
-        if let best = bestMatch, best.score > 0.1 {
-            return best.orb
-        }
-        
-        if let minimumTasksOrb = orbManager.orbs.min(by: { lhs, rhs in
-            if lhs.taskCount == rhs.taskCount {
-                return lhs.name < rhs.name
-            }
-            return lhs.taskCount < rhs.taskCount
-        }) {
-            return minimumTasksOrb
-        }
-        
-        return resolveTargetOrbForNewTask()
-    }
-    
-    private func bestOrbByEmbedding(for queryVector: [Double]) -> ProjectOrb? {
-        var bestCandidate: (orb: ProjectOrb, score: Double)?
-        
-        for orb in orbManager.orbs {
-            guard let orbVector = vectorForOrbEmbedding(orb),
-                  let similarity = cosineSimilarity(between: queryVector, and: orbVector) else {
-                continue
-            }
-            
-            let workloadBoost = min(0.08, log(Double(max(orb.taskCount, 1))) * 0.03)
-            let compositeScore = similarity + workloadBoost
-            
-            if let current = bestCandidate {
-                if compositeScore > current.score {
-                    bestCandidate = (orb, compositeScore)
-                }
-            } else {
-                bestCandidate = (orb, compositeScore)
-            }
-        }
-        
-        guard let finalCandidate = bestCandidate, finalCandidate.score > 0.12 else {
-            return nil
-        }
-        return finalCandidate.orb
-    }
-    
-    private func vectorForOrbEmbedding(_ orb: ProjectOrb) -> [Double]? {
-        if let cached = orbEmbeddingCache[orb.id] {
-            return cached
-        }
-        guard let embedding = wordEmbedding,
-              let vector = sentenceVector(for: orb.name.lowercased(), embedding: embedding, skipStopWords: false) else {
-            return nil
-        }
-        orbEmbeddingCache[orb.id] = vector
-        return vector
-    }
-    
-    private func sentenceVector(for text: String, embedding: NLEmbedding, skipStopWords: Bool) -> [Double]? {
-        let rawTokens = text.split { !$0.isLetter }.map { String($0).lowercased() }
-        let filteredTokens: [String]
-        if skipStopWords {
-            filteredTokens = rawTokens.filter { !$0.isEmpty && !embeddingStopWords.contains($0) }
-        } else {
-            filteredTokens = rawTokens.filter { !$0.isEmpty }
-        }
-        
-        guard !filteredTokens.isEmpty else { return nil }
-        
-        var running: [Double] = []
-        var count = 0
-        
-        for token in filteredTokens {
-            guard let vector = embedding.vector(for: token) else { continue }
-            if running.isEmpty {
-                running = vector
-            } else if running.count == vector.count {
-                for index in running.indices {
-                    running[index] += vector[index]
-                }
-            } else {
-                continue
-            }
-            count += 1
-        }
-        
-        guard count > 0 else { return nil }
-        
-        let divisor = Double(count)
-        for index in running.indices {
-            running[index] /= divisor
-        }
-        
-        return running
-    }
-    
-    private func cosineSimilarity(between lhs: [Double], and rhs: [Double]) -> Double? {
-        guard lhs.count == rhs.count else { return nil }
-        
-        var dot: Double = 0
-        var lhsMagnitude: Double = 0
-        var rhsMagnitude: Double = 0
-        
-        for index in 0..<lhs.count {
-            let l = lhs[index]
-            let r = rhs[index]
-            dot += l * r
-            lhsMagnitude += l * l
-            rhsMagnitude += r * r
-        }
-        
-        guard lhsMagnitude > 0.0001, rhsMagnitude > 0.0001 else { return nil }
-        return dot / (sqrt(lhsMagnitude) * sqrt(rhsMagnitude))
-    }
-    
-    private func refreshOrbEmbeddingCache() {
-        orbEmbeddingCache.removeAll()
-        guard let embedding = wordEmbedding else { return }
-        for orb in orbManager.orbs {
-            if let vector = sentenceVector(for: orb.name.lowercased(), embedding: embedding, skipStopWords: false) {
-                orbEmbeddingCache[orb.id] = vector
-            }
-        }
-    }
-    
-    private func primeEmbedding(for orb: ProjectOrb) {
-        guard let embedding = wordEmbedding,
-              let vector = sentenceVector(for: orb.name.lowercased(), embedding: embedding, skipStopWords: false) else { return }
-        orbEmbeddingCache[orb.id] = vector
-    }
-    
-    private func animateSpeechBubble(into orb: ProjectOrb, with taskTitle: String) {
-        guard let window = speechBubbleWindow else {
-            pendingBubbleTargetOrbId = nil
-            addTask(taskTitle, to: orb)
-            pendingTranscript = nil
-            pendingTaskTitle = nil
-            setState(.idle)
-            return
-        }
-
-        guard let targetPoint = orbScreenPosition(for: orb) else {
-            pendingBubbleTargetOrbId = nil
-            dismissSpeechBubble()
-            addTask(taskTitle, to: orb)
-            pendingTranscript = nil
-            pendingTaskTitle = nil
-            setState(.idle)
-            return
-        }
-        
-        let startFrame = window.frame
-        let targetSize = NSSize(width: 46, height: 46)
-        let targetOrigin = NSPoint(
-            x: targetPoint.x - targetSize.width / 2,
-            y: targetPoint.y - targetSize.height / 2
-        )
-        let targetFrame = NSRect(origin: targetOrigin, size: targetSize)
-        
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.45
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.45, 0.1, 0.7, 1.0)
-            window.animator().setFrame(targetFrame, display: true)
-            window.animator().alphaValue = 0.0
-        } completionHandler: { [weak self] in
-            guard let self else { return }
-            orb.applyImpulse(CGPoint(x: 0, y: 3.5))
-            self.pendingBubbleTargetOrbId = nil
-            self.addTask(taskTitle, to: orb)
-            AudioFeedback.shared.play(.dropIntoOrb, volume: 0.55)
-            // Show compact preview near notch
-            self.compactPreview.present(
-                orbColor: orb.color,
-                title: orb.name,
-                subtitle: taskTitle
-            )
-            self.pendingTranscript = nil
-            self.pendingTaskTitle = nil
-            self.setState(.idle)
-            self.dismissSpeechBubble {
-                window.setFrame(startFrame, display: false)
-                window.alphaValue = 1.0
-            }
-        }
-    }
-    
-    private func orbScreenPosition(for orb: ProjectOrb) -> CGPoint? {
-        guard let semiCircleView, let semiCircleWindow else { return nil }
-        let centerX = semiCircleView.bounds.midX
-        let centerY = semiCircleView.bounds.maxY - 10
-        let radius = min(semiCircleView.bounds.width, semiCircleView.bounds.height) / 2 + 18.5
-        
-        var x = centerX + radius * cos(orb.angle)
-        var y = centerY + radius * sin(orb.angle)
-        x += orb.physicsDisplacement.x
-        y += orb.physicsDisplacement.y + orb.hoverVerticalOffset
-        
-        let viewPoint = CGPoint(x: x, y: y)
-        let windowPoint = semiCircleView.convert(viewPoint, to: nil)
-        let screenPoint = semiCircleWindow.convertToScreen(NSRect(origin: windowPoint, size: .zero)).origin
-        return screenPoint
-    }
-    
-    private func bubbleFallbackPoint() -> CGPoint? {
-        if let screen = NSScreen.main {
-            let frame = screen.frame
-            return CGPoint(x: frame.midX, y: frame.maxY - 200)
-        }
-        return nil
-    }
-    
-    private func dismissSpeechBubble(after delay: TimeInterval = 0.0, completion: (() -> Void)? = nil) {
-        guard let window = speechBubbleWindow else {
-            completion?()
-            return
-        }
-        
-        let fadeOut = {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
-                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                window.animator().alphaValue = 0.0
-            } completionHandler: {
-                self.pendingBubbleTargetOrbId = nil
-                window.orderOut(nil)
-                completion?()
-            }
-        }
-        
-        if delay > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: fadeOut)
-        } else {
-            fadeOut()
-        }
-    }
-    
     func activateNotchTrace(completion: (() -> Void)? = nil) {
         // Show notch indicator and start trace
         if let window = notchIndicatorWindow {
@@ -878,10 +327,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     func debugResetUIState() {
-        speechClassificationWorkItem?.cancel()
-        pendingTranscript = nil
-        pendingTaskTitle = nil
-        pendingBubbleTargetOrbId = nil
+        speechCoordinator.resetUIState()
         draggedTaskWindow?.orderOut(nil)
         draggedTaskWindow = nil
         draggedTaskView = nil
@@ -894,8 +340,6 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         }
         taskCardWindows.removeAll()
         currentOpenOrb = nil
-        speechBubbleWindow?.orderOut(nil)
-        speechBubbleView?.resetForNewCapture()
         isSemiCircleVisible = false
 
         // Show notch base rim when resetting
@@ -913,7 +357,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     
     func hideSemiCircle() {
         guard let window = semiCircleWindow else { return }
-
+        
         // Mark as not visible
         isSemiCircleVisible = false
 
@@ -922,7 +366,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             notchView.isSemiCircleVisible = false
             notchView.needsDisplay = true
         }
-
+        
         // Hide orbs first
         orbManager.hideOrbs()
         semiCircleView?.setAnimationsActive(false)
@@ -1103,8 +547,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             // Calculate orb center for exit animation
             guard NSScreen.main != nil,
                   let semiCircleWindow = semiCircleWindow else {
-                window.orderOut(nil)
-                taskCardWindows.removeValue(forKey: orb.id)
+            window.orderOut(nil)
+            taskCardWindows.removeValue(forKey: orb.id)
                 return
             }
             
@@ -1214,7 +658,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
 
         // Set the task detail view reference for keyboard shortcuts
         window.taskDetailView = taskDetailView
-
+        
         window.contentView = taskDetailView
         window.contentView?.wantsLayer = true
         window.contentView?.layer?.cornerRadius = 24
@@ -1403,6 +847,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         if let detailView = window.contentView as? TaskDetailView {
             detailView.prepareForClose()
         }
+
+        // Ensure any pending edits are flushed and synced before hiding
+        persistEditsImmediately()
         
         window.makeFirstResponder(nil)
         window.orderOut(nil)
@@ -1417,6 +864,10 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             window.isPinned = isPinned
         }
         DebugLog.log("📌 Task detail pin state changed: \(isPinned ? "pinned" : "unpinned")", category: .tasks)
+    }
+
+    func persistEditsNow(for taskId: UUID) {
+        persistEditsImmediately()
     }
     
     // MARK: - Task Drag and Drop Between Cards
@@ -1509,7 +960,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             let sourceMidY = sourceCard.window?.frame.midY ?? targetCard.window?.frame.midY ?? 0
             let targetMidY = targetCard.window?.frame.midY ?? sourceMidY
             targetCard.animateTaskDrop(transferredTask, verticalTravel: sourceMidY - targetMidY)
-
+            
             // Update orb task counters
             source.syncTaskCount()
             target.syncTaskCount()
@@ -1610,8 +1061,17 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
 
         return hasInteractions
     }
-
+    
     func resetFadeTimer() {
+        if isAutoFadeSuspended {
+            DebugLog.log("🛑 resetFadeTimer() ignored - auto fade suspended", category: .app)
+            if isFaded {
+                DebugLog.log("🔄 Auto fade suspended while faded - showing elements", category: .app)
+                showAllElements()
+            }
+            return
+        }
+
         // Cancel existing timer
         fadeTimer?.invalidate()
         fadeTimer = nil
@@ -1633,6 +1093,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
     }
     
     func resetFadeTimerWithoutShowing() {
+        if isAutoFadeSuspended {
+            DebugLog.log("🛑 resetFadeTimerWithoutShowing() ignored - auto fade suspended", category: .app)
+            return
+        }
+
         // Cancel existing timer
         fadeTimer?.invalidate()
         fadeTimer = nil
@@ -1653,8 +1118,32 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         DebugLog.log("🎯 Fade timer reset (without showing) - will fade in \(fadeDelay) seconds", category: .app)
     }
+
+    func suspendAutoFade() {
+        guard !isAutoFadeSuspended else { return }
+        DebugLog.log("🛑 Suspending auto fade", category: .app)
+        isAutoFadeSuspended = true
+        fadeTimer?.invalidate()
+        fadeTimer = nil
+        if isFaded {
+            DebugLog.log("🔄 Auto fade suspended while faded - showing elements immediately", category: .app)
+            showAllElements()
+        }
+    }
+
+    func resumeAutoFade() {
+        guard isAutoFadeSuspended else { return }
+        DebugLog.log("▶️ Resuming auto fade", category: .app)
+        isAutoFadeSuspended = false
+        resetFadeTimer()
+    }
     
     private func fadeAllElements() {
+        if isAutoFadeSuspended {
+            DebugLog.log("🛑 fadeAllElements() skipped - auto fade suspended", category: .app)
+            return
+        }
+        
         guard !isFaded else { return }
 
         // Don't fade if user is actively interacting with any elements
@@ -1667,7 +1156,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             }
             return
         }
-
+        
         isFaded = true
         DebugLog.log("🎯 Auto-fading all elements after \(fadeDelay) seconds of inactivity", category: .app)
         
@@ -1720,7 +1209,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             // Update the task card windows to only include pinned ones
             self.taskCardWindows = pinnedCards
             self.currentOpenOrb = self.taskCardWindows.isEmpty ? nil : self.orbManager.orbs.first { self.taskCardWindows[$0.id] != nil }
-
+            
             self.isSemiCircleVisible = false
 
             // Show notch base rim when fading
@@ -1769,7 +1258,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
                     DebugLog.log("🔄 Window cannot become key, but will still receive mouse events", category: .app)
                 }
             }
-
+            
             isSemiCircleVisible = true
 
             // Hide notch base rim when showing all elements
@@ -1950,58 +1439,6 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         center.add(request, withCompletionHandler: nil)
     }
     
-    private func setupSemiCircle() {
-        DebugLog.log("🎯 setupSemiCircle() called", category: .app)
-        
-        // Create semi-circle window - smaller size
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 327, height: 168), // 10 pixels bigger
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        
-        window.isOpaque = false
-        window.backgroundColor = NSColor.clear
-        window.hasShadow = false
-        window.level = .statusBar
-        window.ignoresMouseEvents = false // Fixed: Allow mouse events
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        window.isMovable = false
-        window.acceptsMouseMovedEvents = true // Fixed: Accept mouse moved events
-        
-        // Ensure the window can become key
-        window.hidesOnDeactivate = false
-        
-        DebugLog.log("🎯 Semi-circle window created with frame: \(window.frame)", category: .app)
-        DebugLog.log("🎯 Window level: \(window.level.rawValue)", category: .app)
-        DebugLog.log("🎯 Window ignoresMouseEvents: \(window.ignoresMouseEvents)", category: .app)
-        DebugLog.log("🎯 Window acceptsMouseMovedEvents: \(window.acceptsMouseMovedEvents)", category: .app)
-        
-        // Ensure no black elements show through
-        window.contentView?.wantsLayer = true
-        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
-        
-        // Create semi-circle view with orbs
-        let semiCircleView = SemiCircleWithOrbsView(orbManager: orbManager, controller: self)
-        window.contentView = semiCircleView
-        
-        DebugLog.log("🎯 Semi-circle view created and set as content view", category: .app)
-        
-        self.semiCircleWindow = window
-        self.semiCircleView = semiCircleView // Store reference
-        positionSemiCircle(window)
-        
-        // Set up mouse tracking immediately after view is created
-        DispatchQueue.main.async {
-            semiCircleView.setupMouseTracking()
-            DebugLog.log("🖱️ Mouse tracking setup attempted in setupSemiCircle", category: .app)
-        }
-        
-        DebugLog.log("🎯 Semi-circle setup complete - window stored: \(self.semiCircleWindow != nil)", category: .app)
-    }
-    
-    
     private func setupNotificationObservers() {
         // Remove any existing observers first to avoid duplicates
         NotificationCenter.default.removeObserver(self, name: NSNotification.Name("OrbClicked"), object: nil)
@@ -2099,26 +1536,15 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         DebugLog.log("🎯 showTaskCard() completed", category: .app)
     }
     
-    private func positionSemiCircle(_ window: NSWindow) {
-        guard let screen = NSScreen.main else { return }
-        
-        let screenFrame = screen.frame
-        // Position semi-circle to overlap the notch in the menu bar area
-        let x = screenFrame.midX - window.frame.width / 2
-        let y = screenFrame.maxY - window.frame.height + 10 // Position to overlap notch in menu bar
-        
-        window.setFrameOrigin(NSPoint(x: x, y: y))
-    }
-    
-    private func showSemiCircle(completion: (() -> Void)? = nil) {
-        guard let window = semiCircleWindow else {
+    internal func showSemiCircle(completion: (() -> Void)? = nil) {
+        guard let window = semiCircleWindow else { 
             DebugLog.log("🚨 ERROR: semiCircleWindow is nil!", category: .app)
             completion?()
-            return
+            return 
         }
-
+        
         if isSemiCircleVisible {
-            positionSemiCircle(window)
+            windowManager.positionSemiCircle(window)
             window.alphaValue = 1.0
             window.orderFront(nil)
             // Re-animate orbs when re-showing an already visible semi-circle
@@ -2137,9 +1563,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
             }
             semiCircleView?.setAnimationsActive(true)
             resetFadeTimerWithoutShowing()
-            return
+            return 
         }
-
+        
         DebugLog.log("🎯 showSemiCircle() called", category: .app)
         DebugLog.log("🎯 Window frame: \(window.frame)", category: .app)
         DebugLog.log("🎯 Window level: \(window.level.rawValue)", category: .app)
@@ -2147,9 +1573,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
 
         // Reset orbs to invisible before first show animation
         orbManager.hideOrbs()
-
+        
         // Ensure window is positioned correctly before animation
-        positionSemiCircle(window)
+        windowManager.positionSemiCircle(window)
         
         // Start with semi-circle hidden and scaled down from center top
         let finalFrame = window.frame
@@ -2178,7 +1604,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         
         DebugLog.log("🎯 Window made key and ordered front", category: .app)
         DebugLog.log("🎯 Window isVisible after makeKeyAndOrderFront: \(window.isVisible)", category: .app)
-
+        
         // Mark as visible
         isSemiCircleVisible = true
         semiCircleView?.setAnimationsActive(true)
@@ -2203,8 +1629,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
                 DebugLog.log("🔄 About to show orbs - isFaded: \(self.isFaded)", category: .app)
                 self.orbManager.showOrbs {
                     DebugLog.log("🔄 Orbs shown", category: .app)
-                    // Force redraw of the semi-circle view
-                    self.semiCircleView?.needsDisplay = true
+                // Force redraw of the semi-circle view
+                self.semiCircleView?.needsDisplay = true
                     completion?()
                 }
                 
@@ -2220,7 +1646,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate {
         }
     }
     
-    private func getNotchInfo(for screen: NSScreen) -> (width: CGFloat, height: CGFloat, centerX: CGFloat, safeAreaTop: CGFloat) {
+    internal func getNotchInfo(for screen: NSScreen) -> (width: CGFloat, height: CGFloat, centerX: CGFloat, safeAreaTop: CGFloat) {
         let screenFrame = screen.frame
         let safeAreaInsets = screen.safeAreaInsets
         let safeAreaTop = safeAreaInsets.top
@@ -2316,1055 +1742,7 @@ class SemiCircleView: NSView {
 }
 
     // MARK: - Semi-Circle with Orbs View
-    class SemiCircleWithOrbsView: NSView, FrameUpdatable {
-        private let orbManager: OrbManager
-        internal weak var controller: NotchOverlayController?
-        private var hoveredOrbId: UUID? = nil
-        private var mouseTrackingArea: NSTrackingArea?
-        private var animationsActive = false
-        private var isTickerRegistered = false
-
-        // Text size scale factor
-        private var textScale: CGFloat {
-            return TextSizePreference.scaleFactor
-        }
-
-        // Base orb size - smaller when there are 3 or fewer orbs
-        private var baseOrbSize: CGFloat {
-            let orbCount = orbManager.orbs.count
-            return orbCount <= 3 ? 34.0 : 40.0
-        }
-
-        // Drag and drop functionality
-        private var isDragging: Bool = false
-        private var draggedOrb: ProjectOrb? = nil
-        private var dragStartLocation: NSPoint = NSPoint.zero
-        private var dragCurrentLocation: NSPoint = NSPoint.zero
-        private let maxDragDistance: CGFloat = 35.0
-        private var dragShakeOffset: CGPoint = .zero
-        private var currentDragStrain: CGFloat = 0.0 // 0 to 1, used for continuous shake
-
-        // Return animation
-        private var isReturning: Bool = false
-        private var returnStartLocation: NSPoint = NSPoint.zero
-        private var returnProgress: CGFloat = 0.0
-        private var returnAnimationTimer: Timer?
-
-        // Smooth hover animation properties
-        private var currentHoverScale: Double = 1.0
-        private var targetHoverScale: Double = 1.0
-        
-        // Hover tooltip properties
-        private var hoveredOrbForTooltip: ProjectOrb? = nil
-        private var tooltipAnimationPhase: Double = 0.0
-        private var previousBubblePoint: CGPoint?
-        private var bubbleVelocity: CGPoint = .zero
-        private var bubblePresence: CGFloat = 0.0
-        
-        init(orbManager: OrbManager, controller: NotchOverlayController) {
-            self.orbManager = orbManager
-            self.controller = controller
-            super.init(frame: NSRect.zero)
-
-            // Enable mouse events
-            self.wantsLayer = true
-
-            // Observe text size changes
-            NotificationCenter.default.addObserver(
-                forName: .textSizeDidChange,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.needsDisplay = true
-            }
-        }
-
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
-        deinit {
-            NotificationCenter.default.removeObserver(self, name: .textSizeDidChange, object: nil)
-            returnAnimationTimer?.invalidate()
-        }
-        
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            if window != nil {
-                DispatchQueue.main.async {
-                    self.setupMouseTracking()
-                }
-            }
-        }
-        
-        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-            return true
-        }
-        
-        override var acceptsFirstResponder: Bool {
-            return true
-        }
-        
-        func setupMouseTracking() {
-            // Remove existing tracking area first
-            if let existingArea = mouseTrackingArea {
-                removeTrackingArea(existingArea)
-            }
-            
-            // Create tracking area for mouse events with correct options
-            mouseTrackingArea = NSTrackingArea(
-                rect: bounds,
-                options: [.activeInActiveApp, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
-                owner: self,
-                userInfo: nil
-            )
-            addTrackingArea(mouseTrackingArea!)
-        }
-        
-        func setAnimationsActive(_ isActive: Bool) {
-            animationsActive = isActive
-            updateTickerSubscription()
-            
-            if !isActive {
-                hoveredOrbId = nil
-                hoveredOrbForTooltip = nil
-                targetHoverScale = 1.0
-                currentHoverScale = 1.0
-                tooltipAnimationPhase = 0.0
-                previousBubblePoint = nil
-                bubbleVelocity = .zero
-                bubblePresence = 0.0
-            }
-        }
-        
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            
-            if let trackingArea = mouseTrackingArea {
-                removeTrackingArea(trackingArea)
-            }
-            
-            mouseTrackingArea = NSTrackingArea(
-                rect: bounds,
-                options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved],
-                owner: self,
-                userInfo: nil
-            )
-            addTrackingArea(mouseTrackingArea!)
-        }
-        
-        override func setFrameSize(_ newSize: NSSize) {
-            super.setFrameSize(newSize)
-            // Set up mouse tracking when frame is properly sized
-            if newSize.width > 0 && newSize.height > 0 {
-                DispatchQueue.main.async {
-                    self.setupMouseTracking()
-                }
-            }
-        }
-        
-        private func semiCircleGeometry() -> (center: CGPoint, radius: CGFloat) {
-            let centerX = bounds.midX
-            let centerY = bounds.maxY - 10
-            let radius = min(bounds.width, bounds.height) / 2 + 18.5
-            return (CGPoint(x: centerX, y: centerY), radius)
-        }
-        
-        private func basePosition(for orb: ProjectOrb) -> CGPoint {
-            let geometry = semiCircleGeometry()
-            let x = geometry.center.x + geometry.radius * CGFloat(cos(orb.angle))
-            let y = geometry.center.y + geometry.radius * CGFloat(sin(orb.angle))
-            return CGPoint(x: x, y: y)
-        }
-        
-        private func currentPosition(for orb: ProjectOrb) -> CGPoint {
-            var point = basePosition(for: orb)
-            point.x += orb.physicsDisplacement.x
-            point.y += orb.physicsDisplacement.y + orb.hoverVerticalOffset
-            return point
-        }
-        
-        override func mouseMoved(with event: NSEvent) {
-            let mouseLocation = convert(event.locationInWindow, from: nil)
-            checkOrbHover(at: mouseLocation)
-        }
-        
-        override func mouseEntered(with event: NSEvent) {
-        }
-        
-        override func mouseExited(with event: NSEvent) {
-            // Mouse left the view, clear hover
-            if hoveredOrbId != nil {
-                hoveredOrbId = nil
-                hoveredOrbForTooltip = nil
-                targetHoverScale = 1.0
-                needsDisplay = true
-            }
-        }
-        
-        override func mouseDown(with event: NSEvent) {
-            let mouseLocation = convert(event.locationInWindow, from: nil)
-            DebugLog.log("🖱️ Mouse DOWN at: \(mouseLocation)", category: .app)
-            
-            // Check if we clicked on an orb
-            if let clickedOrb = findOrbAt(location: mouseLocation) {
-                DebugLog.log("🖱️ Clicked on orb: \(clickedOrb.name)", category: .app)
-                startDragOperation(orb: clickedOrb, at: mouseLocation)
-            }
-        }
-        
-        override func mouseUp(with event: NSEvent) {
-            let mouseLocation = convert(event.locationInWindow, from: nil)
-            DebugLog.log("🖱️ Mouse UP at: \(mouseLocation)", category: .app)
-            
-            if isDragging {
-                endDragOperation(at: mouseLocation)
-            }
-        }
-        
-        override func mouseDragged(with event: NSEvent) {
-            let mouseLocation = convert(event.locationInWindow, from: nil)
-            
-            if isDragging {
-                updateDragOperation(to: mouseLocation)
-            }
-        }
-        
-        
-        private func getClickedOrb(at location: NSPoint) -> ProjectOrb? {
-            let centerX = bounds.midX
-            let centerY = bounds.maxY - 10
-            let radius = min(bounds.width, bounds.height) / 2 + 18.5
-            
-            DebugLog.log("🖱️ Checking for clicked orb at location: \(location)", category: .app)
-            DebugLog.log("🖱️ Center: (\(centerX), \(centerY)), Radius: \(radius)", category: .app)
-            DebugLog.log("🖱️ Total orbs: \(orbManager.orbs.count)", category: .app)
-            
-            for (index, orb) in orbManager.orbs.enumerated() {
-                DebugLog.log("🖱️ Orb \(index): \(orb.name), visible: \(orb.isVisible), animationScale: \(orb.animationScale)", category: .app)
-                
-                // Only check if orb is visible - remove animationScale check for now
-                guard orb.isVisible else { 
-                    DebugLog.log("🖱️ Orb \(index) not visible, skipping", category: .app)
-                    continue 
-                }
-                
-                let angle = orb.angle
-                let baseX = centerX + radius * cos(angle)
-                let baseY = centerY + radius * sin(angle)
-                
-                // Add physics displacement to get the actual current position
-                let orbX = baseX + orb.physicsDisplacement.x
-                let orbY = baseY + orb.physicsDisplacement.y + orb.hoverVerticalOffset
-                // Use a minimum scale if animationScale is 0
-                let effectiveScale = max(orb.animationScale, 0.1)
-                let orbRadius = 15.0 * orb.scale * effectiveScale
-                
-                let distance = sqrt(pow(location.x - orbX, 2) + pow(location.y - orbY, 2))
-                
-                DebugLog.log("🖱️ Orb \(index) at (\(orbX), \(orbY)), radius: \(orbRadius), distance: \(distance)", category: .app)
-                
-                if distance <= orbRadius {
-                    DebugLog.log("🖱️ Found clicked orb at index \(index): \(orb.name)", category: .app)
-                    return orb
-                }
-            }
-            
-            return nil
-        }
-        
-        private func findOrbAt(location: NSPoint) -> ProjectOrb? {
-            return getClickedOrb(at: location)
-        }
-        
-        // MARK: - Drag and Drop Operations
-        
-        private func startDragOperation(orb: ProjectOrb, at location: NSPoint) {
-            DebugLog.log("🚀 Starting drag operation for orb: \(orb.name)", category: .app)
-            isDragging = true
-            draggedOrb = orb
-            dragStartLocation = location
-            dragCurrentLocation = location
-            
-            // Reset auto-fade timer on drag start
-            controller?.resetFadeTimer()
-            
-            needsDisplay = true
-        }
-        
-        private func updateDragOperation(to location: NSPoint) {
-            // Calculate distance from start
-            let dx = location.x - dragStartLocation.x
-            let dy = location.y - dragStartLocation.y
-            let distance = sqrt(dx * dx + dy * dy)
-
-            // Constrain to max distance
-            if distance > maxDragDistance {
-                let angle = atan2(dy, dx)
-                dragCurrentLocation.x = dragStartLocation.x + cos(angle) * maxDragDistance
-                dragCurrentLocation.y = dragStartLocation.y + sin(angle) * maxDragDistance
-
-                // Store strain for continuous shake animation
-                currentDragStrain = 1.0
-            } else {
-                dragCurrentLocation = location
-
-                // Gentle shake starts at 80% of max distance
-                let strainThreshold: CGFloat = 0.8
-                if distance > maxDragDistance * strainThreshold {
-                    let normalizedStrain = (distance - maxDragDistance * strainThreshold) / (maxDragDistance * (1.0 - strainThreshold))
-                    currentDragStrain = normalizedStrain
-                } else {
-                    currentDragStrain = 0.0
-                }
-            }
-
-            needsDisplay = true
-        }
-        
-        private func endDragOperation(at location: NSPoint) {
-            DebugLog.log("🚀 Ending drag operation at: \(location)", category: .app)
-
-            // Check if orb was dragged far enough from original position
-            let dragDistance = sqrt(pow(location.x - dragStartLocation.x, 2) + pow(location.y - dragStartLocation.y, 2))
-            let threshold: CGFloat = 30.0 // Minimum drag distance to trigger drop
-
-            if dragDistance > threshold {
-                DebugLog.log("🚀 Orb dragged far enough, opening task list", category: .tasks)
-                // Open task list for the dragged orb
-                if let orb = draggedOrb {
-                    NotificationCenter.default.post(name: NSNotification.Name("OrbClicked"), object: orb)
-                }
-            } else {
-                DebugLog.log("🚀 Orb not dragged far enough, treating as click", category: .app)
-                // Treat as regular click
-                if let orb = draggedOrb {
-                    NotificationCenter.default.post(name: NSNotification.Name("OrbClicked"), object: orb)
-                }
-            }
-
-            // Start smooth return animation
-            isDragging = false
-            dragShakeOffset = .zero
-            currentDragStrain = 0.0
-            startReturnAnimation()
-        }
-
-        private func startReturnAnimation() {
-            guard draggedOrb != nil else { return }
-
-            isReturning = true
-            returnStartLocation = dragCurrentLocation
-            returnProgress = 0.0
-
-            returnAnimationTimer?.invalidate()
-
-            let startTime = CACurrentMediaTime()
-            let duration: TimeInterval = 0.7 // Duration of return animation (slower)
-
-            returnAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
-                guard let self = self else {
-                    timer.invalidate()
-                    return
-                }
-
-                let elapsed = CACurrentMediaTime() - startTime
-                let progress = min(elapsed / duration, 1.0)
-
-                // Smooth ease-out cubic for gentle return
-                let eased: CGFloat = 1.0 - pow(1.0 - progress, 3.0)
-
-                self.returnProgress = eased
-
-                // Interpolate position
-                let dx = self.dragStartLocation.x - self.returnStartLocation.x
-                let dy = self.dragStartLocation.y - self.returnStartLocation.y
-                self.dragCurrentLocation.x = self.returnStartLocation.x + dx * eased
-                self.dragCurrentLocation.y = self.returnStartLocation.y + dy * eased
-
-                self.needsDisplay = true
-
-                if progress >= 1.0 {
-                    timer.invalidate()
-                    self.returnAnimationTimer = nil
-                    self.isReturning = false
-                    self.draggedOrb = nil
-                    self.dragStartLocation = NSPoint.zero
-                    self.dragCurrentLocation = NSPoint.zero
-                    self.needsDisplay = true
-                }
-            }
-        }
-        
-        private func checkOrbHover(at location: NSPoint) {
-            // Check hover state for all orbs and apply physics interactions
-            var newHoveredOrbId: UUID? = nil
-            var newHoveredOrb: ProjectOrb? = nil
-            
-            for orb in orbManager.orbs {
-                guard orb.isVisible && orb.animationScale > 0 else { 
-                    continue 
-                }
-                
-                // Calculate positions
-                let basePoint = basePosition(for: orb)
-                let currentPoint = currentPosition(for: orb)
-                let currentX = currentPoint.x
-                let currentY = currentPoint.y
-
-                let size = baseOrbSize * orb.scale * orb.animationScale
-                
-                // Check if mouse is within orb bounds (using current position with physics)
-                let orbRect = NSRect(x: currentX - size/2.0 - 10.0, y: currentY - size/2.0 - 10.0, width: size + 20.0, height: size + 20.0)
-                
-                if orbRect.contains(location) {
-                    newHoveredOrbId = orb.id
-                    newHoveredOrb = orb
-                    break
-                }
-                
-                // Apply physics interaction based on mouse proximity (using base position)
-                applyPhysicsInteraction(to: orb, at: location, baseX: basePoint.x, baseY: basePoint.y)
-            }
-            
-            // Update hover state if it changed
-            if newHoveredOrbId != hoveredOrbId {
-                hoveredOrbId = newHoveredOrbId
-                hoveredOrbForTooltip = newHoveredOrb
-                
-                // Start smooth hover animation
-                targetHoverScale = (newHoveredOrbId != nil) ? 1.15 : 1.0
-                if newHoveredOrb != nil {
-                    tooltipAnimationPhase = 0.0
-                }
-            }
-            
-            // Reset auto-fade timer when hovering over any orb
-            if newHoveredOrbId != nil {
-                controller?.resetFadeTimer()
-            }
-        }
-        
-        // MARK: - Physics Interaction Methods
-        
-        /// Apply magnetic attraction physics to an orb based on mouse proximity
-        private func applyPhysicsInteraction(to orb: ProjectOrb, at mouseLocation: NSPoint, baseX: CGFloat, baseY: CGFloat) {
-            // Calculate distance from mouse to orb center
-            let distance = sqrt(pow(mouseLocation.x - baseX, 2) + pow(mouseLocation.y - baseY, 2))
-            
-            // Define interaction range (in points)
-            let interactionRange: CGFloat = 50.0 // Orbs react when mouse is within 50 points
-            
-            if distance < interactionRange {
-                // Calculate direction vector from orb to mouse
-                let directionX = mouseLocation.x - baseX
-                let directionY = mouseLocation.y - baseY
-                
-                // Normalize the direction vector
-                let normalizedX = directionX / distance
-                let normalizedY = directionY / distance
-                
-                // Calculate force strength based on proximity (closer = stronger)
-                let proximityStrength = 1.0 - (distance / interactionRange) // 0.0 at edge, 1.0 at center
-                let maxTargetOffset: CGFloat = 32.0 // Increased significantly for more noticeable magnetic pull
-                let targetDistance = maxTargetOffset * proximityStrength
-                let target = CGPoint(
-                    x: normalizedX * targetDistance,
-                    y: normalizedY * targetDistance
-                )
-                orb.setSpringTarget(target)
-
-                let impulseStrength: CGFloat = proximityStrength * 0.9
-                let impulse = CGPoint(
-                    x: normalizedX * impulseStrength * 0.45, // Increased significantly for stronger attraction
-                    y: normalizedY * impulseStrength * 0.45
-                )
-                orb.applyImpulse(impulse)
-            } else if (abs(orb.springTargetDisplacement.x) > 0.05 || abs(orb.springTargetDisplacement.y) > 0.05) && orb.bubbleInfluence < 0.05 {
-                orb.setSpringTarget(.zero)
-            }
-        }
-        
-        private func applyBubbleInfluence(
-            to orb: ProjectOrb,
-            basePosition: CGPoint,
-            bubblePosition: CGPoint,
-            deltaTime: CFTimeInterval,
-            bubbleSpeed: CGFloat,
-            isTarget: Bool,
-            skipInteraction: Bool
-        ) {
-            let smoothing = min(CGFloat(1.0), CGFloat(deltaTime) * 5.0)
-            guard !skipInteraction else {
-                orb.bubbleInfluence += (0.0 - orb.bubbleInfluence) * smoothing
-                orb.bubbleInfluence = min(max(orb.bubbleInfluence, 0.0), 1.0)
-                return
-            }
-            let influenceRadius: CGFloat = isTarget ? 260.0 : 200.0
-            let dx = bubblePosition.x - basePosition.x
-            let dy = bubblePosition.y - basePosition.y
-            let distance = sqrt(dx * dx + dy * dy)
-            let presence = bubblePresence
-            if distance < influenceRadius && presence > 0.01 {
-                let invDist = 1.0 / max(distance, 0.0001)
-                let normalizedX = dx * invDist
-                let normalizedY = dy * invDist
-                let proximity = max(0.0, 1.0 - (distance / influenceRadius))
-                let leanMagnitude = proximity * presence * (isTarget ? 20.0 : 7.0)
-                let verticalScale: CGFloat = isTarget ? 0.95 : 0.6
-                let bubbleVector = CGPoint(
-                    x: normalizedX * leanMagnitude,
-                    y: normalizedY * leanMagnitude * verticalScale
-                )
-                var combinedTarget = orb.springTargetDisplacement
-                combinedTarget.x += (bubbleVector.x - combinedTarget.x) * smoothing
-                combinedTarget.y += (bubbleVector.y - combinedTarget.y) * smoothing
-                orb.setSpringTarget(combinedTarget)
-                let baseInfluence = proximity * presence
-                let targetInfluence = isTarget ? baseInfluence : baseInfluence * 0.18
-                orb.bubbleInfluence += (targetInfluence - orb.bubbleInfluence) * smoothing
-                let normalizedSpeed = min(max(bubbleSpeed / 500.0, 0.0), 1.0)
-                if isTarget && normalizedSpeed > 0.1 && proximity > 0.45 {
-                    let wobbleImpulse = CGPoint(
-                        x: normalizedX * normalizedSpeed * 0.55,
-                        y: normalizedY * normalizedSpeed * 0.75
-                    )
-                    orb.applyImpulse(wobbleImpulse)
-                }
-            } else {
-                orb.bubbleInfluence += (0.0 - orb.bubbleInfluence) * smoothing
-            }
-            orb.bubbleInfluence = min(max(orb.bubbleInfluence, 0.0), 1.0)
-        }
-        
-        private func updateTickerSubscription() {
-            let shouldObserve = animationsActive
-            if shouldObserve && !isTickerRegistered {
-                FrameTicker.shared.addObserver(self)
-                isTickerRegistered = true
-            } else if !shouldObserve && isTickerRegistered {
-                FrameTicker.shared.removeObserver(self)
-                isTickerRegistered = false
-            }
-        }
-        
-        func frameTick(deltaTime: CFTimeInterval) {
-            guard animationsActive else { return }
-
-            // Performance: Skip physics updates if semi-circle is not visible
-            guard controller?.isSemiCircleVisible == true else { return }
-
-            let bubblePoint = controller?.speechBubbleCenter(relativeTo: self)
-            let bubbleTargetId = controller?.bubbleTargetOrbId()
-            if let bubblePoint = bubblePoint {
-                if let previous = previousBubblePoint {
-                    let dx = bubblePoint.x - previous.x
-                    let dy = bubblePoint.y - previous.y
-                    let invDt = deltaTime > 0 ? (1.0 / deltaTime) : 0.0
-                    bubbleVelocity = CGPoint(x: dx * CGFloat(invDt), y: dy * CGFloat(invDt))
-                } else {
-                    bubbleVelocity = .zero
-                }
-                previousBubblePoint = bubblePoint
-                let smoothing = min(CGFloat(1.0), CGFloat(deltaTime) * 5.0)
-                bubblePresence += (1.0 - bubblePresence) * smoothing
-            } else {
-                previousBubblePoint = nil
-                bubbleVelocity = .zero
-                let smoothing = min(CGFloat(1.0), CGFloat(deltaTime) * 4.0)
-                bubblePresence += (0.0 - bubblePresence) * smoothing
-            }
-            bubblePresence = min(max(bubblePresence, 0.0), 1.0)
-            let bubbleSpeed = hypot(bubbleVelocity.x, bubbleVelocity.y)
-            
-            for orb in orbManager.orbs {
-                let phaseIncrement = deltaTime * 1.35 * orb.animationSpeed
-                orb.animationPhase += phaseIncrement
-                orb.updatePhysics(deltaTime: deltaTime)
-                orb.updateHover(deltaTime: deltaTime)
-                let basePos = basePosition(for: orb)
-                let isHovered = (hoveredOrbId == orb.id)
-                let isDraggedOrb = (isDragging || isReturning) && draggedOrb?.id == orb.id
-                if let bubblePoint = bubblePoint, bubblePresence > 0.01, !isDraggedOrb {
-                    applyBubbleInfluence(
-                        to: orb,
-                        basePosition: basePos,
-                        bubblePosition: bubblePoint,
-                        deltaTime: deltaTime,
-                        bubbleSpeed: bubbleSpeed,
-                        isTarget: bubbleTargetId == orb.id,
-                        skipInteraction: isHovered
-                    )
-                } else {
-                    let smoothing = min(CGFloat(1.0), CGFloat(deltaTime) * 4.0)
-                    orb.bubbleInfluence += (0.0 - orb.bubbleInfluence) * smoothing
-                    orb.bubbleInfluence = min(max(orb.bubbleInfluence, 0.0), 1.0)
-                    if orb.bubbleInfluence < 0.05 {
-                        let relaxRate = min(CGFloat(1.0), CGFloat(deltaTime) * 3.2)
-                        var combined = orb.springTargetDisplacement
-                        combined.x += (0.0 - combined.x) * relaxRate
-                        combined.y += (0.0 - combined.y) * relaxRate
-                        orb.setSpringTarget(combined)
-                    }
-                }
-                
-                if orb.badgePulse > 0 {
-                    let decay = max(0.0, orb.badgePulse - deltaTime * 0.8)
-                    orb.badgePulse = decay
-                    orb.badgeRipplePhase += deltaTime * 4.2
-                } else {
-                    orb.badgePulse = 0
-                    orb.badgeRipplePhase = 0
-                }
-            }
-            
-            let difference = targetHoverScale - currentHoverScale
-            if abs(difference) > 0.001 {
-                let smoothingRate = min(1.0, deltaTime * 9.0)
-                currentHoverScale += difference * smoothingRate
-            } else {
-                currentHoverScale = targetHoverScale
-            }
-            
-            if hoveredOrbForTooltip != nil {
-                tooltipAnimationPhase = min(1.0, tooltipAnimationPhase + deltaTime * 3.0)
-            } else {
-                tooltipAnimationPhase = max(0.0, tooltipAnimationPhase - deltaTime * 4.0)
-            }
-
-            // Update drag shake continuously when under strain
-            if isDragging && currentDragStrain > 0.0 {
-                // Smaller and quicker shake
-                let shakeAmount: CGFloat = 0.5 + currentDragStrain * 0.8 // 0.5-1.3px shake (was 2-5px)
-                let shakeSpeed = 50.0 + currentDragStrain * 30.0 // Faster shake (was 30-50)
-                let shakePhase = CACurrentMediaTime() * shakeSpeed
-                dragShakeOffset.x = cos(shakePhase) * shakeAmount
-                dragShakeOffset.y = sin(shakePhase * 1.3) * shakeAmount // Different frequency for y
-            } else {
-                dragShakeOffset = .zero
-            }
-
-            needsDisplay = true
-        }
-        
-        override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
-        // Clear background
-        context.clear(dirtyRect)
-        
-        // Draw semi-circle background
-        drawSemiCircle(in: context)
-        
-        // Draw orbs around the rim
-        drawOrbs(in: context)
-    }
-    
-    private func drawSemiCircle(in context: CGContext) {
-        let centerX = bounds.midX
-        let centerY = bounds.maxY - 10 // Move center up so arc starts from top
-        let radius = min(bounds.width, bounds.height) / 2 + 18.5 // 10 pixels bigger radius
-        
-        let path = CGMutablePath()
-        path.addArc(center: CGPoint(x: centerX, y: centerY), 
-                   radius: radius, 
-                   startAngle: 0, // Start at 0 degrees
-                   endAngle: 2 * .pi, // Full circle (360 degrees)
-                   clockwise: false)
-        path.closeSubpath()
-        
-        // Fill with black
-        context.setFillColor(NSColor.black.cgColor)
-        context.addPath(path)
-        context.fillPath()
-        
-        // Add subtle shadow
-        context.setShadow(offset: CGSize(width: 0, height: -5), blur: 10, color: NSColor.black.withAlphaComponent(0.3).cgColor)
-        context.addPath(path)
-        context.fillPath()
-        
-    }
-    
-        private func drawOrbs(in context: CGContext) {
-        
-        guard orbManager.isVisible else { 
-            DebugLog.log("🎯 Orbs not visible, skipping draw", category: .app)
-            return 
-        }
-
-        let bubbleTargetId = controller?.bubbleTargetOrbId()
-        
-        for (index, orb) in orbManager.orbs.enumerated() {
-
-            // Skip drawing the dragged orb in its original position during drag or return
-            if (isDragging || isReturning) && draggedOrb?.id == orb.id {
-                continue
-            }
-            
-            // Calculate current position with physics and hover offsets
-            let currentPoint = currentPosition(for: orb)
-            let x = Double(currentPoint.x)
-            let y = Double(currentPoint.y)
-            let baseSize = baseOrbSize * orb.scale
-            let animatedSize = baseSize * orb.animationScale // Apply growth animation
-
-            let displacementMagnitude = hypot(Double(orb.springTargetDisplacement.x), Double(orb.springTargetDisplacement.y))
-            let normalizedDisplacement = min(1.0, displacementMagnitude / max(orb.maxDisplacement, 0.001))
-            let isBubbleTarget = (bubbleTargetId == orb.id)
-            let displacementGain = isBubbleTarget ? 0.3 : 0.12
-            let glowIntensity = isBubbleTarget ? 0.85 : 0.25
-            let bubbleGlowScale = 1.0 + Double(orb.bubbleInfluence) * glowIntensity
-            let attractionScale = (1.0 + normalizedDisplacement * displacementGain) * bubbleGlowScale
-            
-            // Apply smooth hover effect only to the hovered orb
-            let isHovered = (hoveredOrbId == orb.id)
-            let hoverBase = isHovered ? currentHoverScale : 1.0
-            let hoverScale = hoverBase * attractionScale
-            let finalSize = animatedSize * hoverScale
-            
-            // Only draw if orb is visible and has some scale
-            if orb.isVisible && orb.animationScale > 0 {
-                drawModernOrb(
-                    context: context,
-                    orb: orb,
-                    x: x,
-                    y: y,
-                    size: finalSize,
-                    scale: orb.scale * orb.animationScale * hoverScale,
-                    animationPhase: orb.animationPhase,
-                    orbIndex: index,
-                    isHovered: isHovered,
-                    magneticStrength: attractionScale
-                )
-            }
-        }
-        
-        // Draw dragged orb at cursor position if dragging or returning
-        if (isDragging || isReturning), let orb = draggedOrb {
-            let baseSize = baseOrbSize * orb.scale
-            let animatedSize = baseSize * orb.animationScale
-            let scaleFactor = isDragging ? 1.2 : (1.2 - (returnProgress * 0.2)) // Scale back to normal during return
-            let finalSize = animatedSize * scaleFactor
-
-            // Apply shake offset during drag
-            let drawX = Double(dragCurrentLocation.x + dragShakeOffset.x)
-            let drawY = Double(dragCurrentLocation.y + dragShakeOffset.y)
-
-            drawModernOrb(
-                context: context,
-                orb: orb,
-                x: drawX,
-                y: drawY,
-                size: finalSize,
-                scale: orb.scale * orb.animationScale * scaleFactor,
-                animationPhase: orb.animationPhase,
-                orbIndex: 999,
-                isHovered: false,
-                magneticStrength: 1.0
-            )
-        }
-        
-        // Draw tooltip for hovered orb
-        if let hoveredOrb = hoveredOrbForTooltip, tooltipAnimationPhase > 0 {
-            drawTooltip(context: context, for: hoveredOrb)
-        }
-    }
-    
-    private func drawTooltip(context: CGContext, for orb: ProjectOrb) {
-        let currentPoint = currentPosition(for: orb)
-        let x = Double(currentPoint.x)
-        let y = Double(currentPoint.y)
-        let size = baseOrbSize * orb.scale * orb.animationScale
-        
-        // Position tooltip below the orb
-        let tooltipY = y - size/2 - 25
-        let tooltipWidth: CGFloat = 120
-        let tooltipHeight: CGFloat = 24
-        let tooltipX = x - tooltipWidth/2
-        
-        // Create tooltip rectangle with rounded corners
-        let tooltipRect = NSRect(x: tooltipX, y: tooltipY, width: tooltipWidth, height: tooltipHeight)
-        let tooltipPath = NSBezierPath(roundedRect: tooltipRect, xRadius: 8, yRadius: 8)
-        
-        // Apply fade animation
-        let alpha = tooltipAnimationPhase * 0.9 // Slightly transparent even at full opacity
-        
-        // Draw subtle black background with slight transparency
-        context.saveGState()
-        context.setFillColor(NSColor.black.withAlphaComponent(alpha * 0.8).cgColor)
-        tooltipPath.fill()
-        
-        // Draw subtle border
-        context.setStrokeColor(NSColor.white.withAlphaComponent(alpha * 0.3).cgColor)
-        context.setLineWidth(0.5)
-        tooltipPath.stroke()
-        context.restoreGState()
-        
-        // Draw project name text
-        let textRect = tooltipRect.insetBy(dx: 8, dy: 4)
-        let font = NSFont(name: "SF Pro Text", size: 12 * textScale) ?? NSFont.systemFont(ofSize: 12 * textScale)
-        let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor.white.withAlphaComponent(alpha),
-            .paragraphStyle: {
-                let style = NSMutableParagraphStyle()
-                style.alignment = .center
-                return style
-            }()
-        ]
-        
-        orb.name.draw(in: textRect, withAttributes: textAttributes)
-    }
-    
-    private func drawModernOrb(context: CGContext, orb: ProjectOrb, x: Double, y: Double, size: Double, scale: Double, animationPhase: Double, orbIndex: Int, isHovered: Bool, magneticStrength: Double) {
-        let color = orb.color
-        let taskCount = orb.taskCount
-        // Each orb now has its own independent animation phase with additional variance
-        let orbPhase = animationPhase
-        let orbIndexFloat = Double(orbIndex)
-        
-        // Create different animation frequencies for each orb
-        let slowPhase = orbPhase * 0.3 + orbIndexFloat * 1.2
-        let fastPhase = orbPhase * 1.8 + orbIndexFloat * 0.7
-        let mediumPhase = orbPhase * 0.8 + orbIndexFloat * 2.1
-        let orbRect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
-        
-        // 1. Outer liquid glass glow - soft, diffused, enhanced on hover
-        context.saveGState()
-        let hoverContribution = isHovered ? currentHoverScale : 1.0
-        let combinedGlowMultiplier = max(1.0, hoverContribution * magneticStrength)
-        let glowSize = size * 1.8 * combinedGlowMultiplier
-        // Enhanced glow intensity on hover
-        let baseGlowIntensity = isHovered ? 0.3 + (hoverContribution - 1.0) * 0.2 : 0.25
-        let glowIntensity = baseGlowIntensity * magneticStrength
-        if let glowGradient = GradientCache.shared.gradient(
-            colors: [
-                color.withAlphaComponent(1.0),
-                color.withAlphaComponent(0.3),
-                NSColor.clear
-            ],
-            locations: [0.0, 0.6, 1.0]
-        ) {
-            context.setAlpha(glowIntensity)
-            context.drawRadialGradient(
-                glowGradient,
-                startCenter: CGPoint(x: x, y: y),
-                startRadius: 0,
-                endCenter: CGPoint(x: x, y: y),
-                endRadius: glowSize/2,
-                options: []
-            )
-        }
-        context.restoreGState()
-        
-        // 1.5. Additional soft white glow on hover
-        if isHovered {
-            context.saveGState()
-            let whiteGlowSize = size * 1.6 * (1.0 + (hoverContribution - 1.0) * 0.2) * max(1.0, magneticStrength)
-            let whiteGlowIntensity = (0.7 + (hoverContribution - 1.0) * 0.4) * magneticStrength
-            
-            if let whiteGlowGradient = GradientCache.shared.gradient(
-                colors: [
-                    NSColor.white.withAlphaComponent(1.0),
-                    NSColor.white.withAlphaComponent(0.6),
-                    NSColor.white.withAlphaComponent(0.2),
-                    NSColor.clear
-                ],
-                locations: [0.0, 0.4, 0.8, 1.0]
-            ) {
-                context.setAlpha(whiteGlowIntensity)
-                context.drawRadialGradient(
-                    whiteGlowGradient,
-                    startCenter: CGPoint(x: x, y: y),
-                    startRadius: 0,
-                    endCenter: CGPoint(x: x, y: y),
-                    endRadius: whiteGlowSize/2,
-                    options: []
-                )
-            }
-            context.restoreGState()
-        }
-        
-        // 2. Main liquid glass orb with glass morphism effect
-        context.saveGState()
-        context.addEllipse(in: orbRect)
-        context.clip()
-        
-        // Glass background with subtle color variation
-        if let glassGradient = GradientCache.shared.gradient(
-            colors: [
-                color.withAlphaComponent(0.25),
-                color.withAlphaComponent(0.15),
-                color.withAlphaComponent(0.1)
-            ],
-            locations: [0.0, 0.5, 1.0]
-        ) {
-            context.drawLinearGradient(
-                glassGradient,
-                start: CGPoint(x: orbRect.minX, y: orbRect.minY),
-                end: CGPoint(x: orbRect.maxX, y: orbRect.maxY),
-                options: []
-            )
-        }
-        context.restoreGState()
-        
-        // 3. Liquid glass highlight - flowing and dynamic
-        let highlightSize = size * 0.6
-        let highlightRect = CGRect(x: x - highlightSize/2, y: y - highlightSize/2, width: highlightSize, height: highlightSize)
-        
-        context.saveGState()
-        context.addEllipse(in: highlightRect)
-        context.clip()
-        
-        // Enhanced flowing highlight position with hover responsiveness and varied animation
-        let hoverFlowMultiplier = isHovered ? 1.0 + (currentHoverScale - 1.0) * 0.5 : 1.0
-        let flowX = cos(slowPhase) * size * 0.1 * hoverFlowMultiplier
-        let flowY = sin(mediumPhase) * size * 0.1 * hoverFlowMultiplier
-        
-        // Enhanced highlight intensity on hover
-        let highlightIntensity = isHovered ? 0.8 + (currentHoverScale - 1.0) * 0.2 : 0.8
-        if let highlightGradient = GradientCache.shared.gradient(
-            colors: [
-                NSColor.white.withAlphaComponent(1.0),
-                NSColor.white.withAlphaComponent(0.5),
-                NSColor.white.withAlphaComponent(0.125),
-                NSColor.clear
-            ],
-            locations: [0.0, 0.3, 0.7, 1.0]
-        ) {
-            context.setAlpha(highlightIntensity)
-            context.drawRadialGradient(
-                highlightGradient,
-                startCenter: CGPoint(x: highlightRect.midX - size * 0.15 + flowX, y: highlightRect.midY - size * 0.15 + flowY),
-                startRadius: 0,
-                endCenter: CGPoint(x: highlightRect.midX + flowX, y: highlightRect.midY + flowY),
-                endRadius: highlightSize/2,
-                options: []
-            )
-        }
-        context.restoreGState()
-        
-        // 4. Liquid glass border - subtle and flowing
-            context.saveGState()
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.6).cgColor)
-        context.setLineWidth(1.5)
-        context.addEllipse(in: orbRect.insetBy(dx: 0.75, dy: 0.75))
-            context.strokePath()
-            context.restoreGState()
-        
-        // 5. Internal liquid flow - subtle moving particles with varied animation
-        for i in 0..<3 {
-            let particlePhase = fastPhase + Double(i) * 1.5
-            let particleRadius = size * 0.2 + sin(particlePhase * 0.5) * size * 0.05
-            let particleX = x + cos(particlePhase * 0.4) * particleRadius
-            let particleY = y + sin(particlePhase * 0.3) * particleRadius
-            let particleSize = 2.0 + sin(particlePhase * 0.8) * 1.0
-            let particleAlpha = 0.4 + sin(particlePhase * 0.6) * 0.2
-            
-            context.saveGState()
-            context.setFillColor(NSColor.white.withAlphaComponent(particleAlpha).cgColor)
-            context.addEllipse(in: CGRect(x: particleX - particleSize/2, y: particleY - particleSize/2, width: particleSize, height: particleSize))
-            context.fillPath()
-            context.restoreGState()
-        }
-        
-        // 6. Task count badge with responsive flourish
-        if taskCount > 0 {
-            let baseBadgeSize = 18.0 * scale
-            let pulse = max(0.0, min(1.0, orb.badgePulse))
-            let direction = orb.badgePulseDirection >= 0 ? 1.0 : -0.85
-            let easedPulse = pow(pulse, 0.55)
-            let badgeScale = max(0.6, 1.0 + 0.4 * easedPulse * direction)
-            let badgeSize = baseBadgeSize * badgeScale
-            let badgeCenter = CGPoint(x: x + size/3, y: y - size/3)
-            let badgeRect = CGRect(
-                x: badgeCenter.x - badgeSize/2,
-                y: badgeCenter.y - badgeSize/2,
-                width: badgeSize,
-                height: badgeSize
-            )
-
-            if pulse > 0.02 {
-                let rippleScale = 1.9 + 0.55 * sin(orb.badgeRipplePhase * 2.3)
-                let rippleSize = baseBadgeSize * rippleScale
-                let rippleRect = CGRect(
-                    x: badgeCenter.x - rippleSize/2,
-                    y: badgeCenter.y - rippleSize/2,
-                    width: rippleSize,
-                    height: rippleSize
-                )
-                context.saveGState()
-                context.setShadow(offset: .zero, blur: 26, color: color.withAlphaComponent(0.28 * pulse + 0.08).cgColor)
-                context.setStrokeColor(color.withAlphaComponent(0.42 * pulse + 0.2).cgColor)
-                context.setLineWidth(1.8)
-                context.addEllipse(in: rippleRect)
-                context.strokePath()
-                context.restoreGState()
-            }
-
-            // Glass morphism badge background
-            context.saveGState()
-            context.addEllipse(in: badgeRect)
-            context.clip()
-            
-            if let badgeGradient = GradientCache.shared.gradient(
-                colors: [
-                    NSColor.black.withAlphaComponent(0.72 - 0.15 * pulse),
-                    color.withAlphaComponent(0.42 * pulse + 0.25),
-                    NSColor.black.withAlphaComponent(0.28)
-                ],
-                locations: [0.0, 0.55, 1.0]
-            ) {
-                context.drawLinearGradient(
-                    badgeGradient,
-                    start: CGPoint(x: badgeRect.minX, y: badgeRect.minY),
-                    end: CGPoint(x: badgeRect.maxX, y: badgeRect.maxY),
-                    options: []
-                )
-            }
-            context.restoreGState()
-            
-            // Badge border with pulse-driven brightness
-            context.saveGState()
-            let borderAlpha = 0.3 + 0.45 * pulse
-            context.setStrokeColor(NSColor.white.withAlphaComponent(borderAlpha).cgColor)
-            context.setLineWidth(0.8)
-            context.addEllipse(in: badgeRect.insetBy(dx: 0.2, dy: 0.2))
-            context.strokePath()
-            context.restoreGState()
-            
-            // Badge text with subtle glow
-            let text = "\(taskCount)" as NSString
-            // Badge counter gets slightly larger boost in Large mode (1.45x vs 1.3x for other text)
-            let badgeTextScale = TextSizePreference.current == .large ? 1.45 : textScale
-            let fontSize = (10 * scale * badgeTextScale) + CGFloat(easedPulse) * 0.9
-            let font = NSFont(name: "SF Pro Display", size: fontSize) ?? NSFont.systemFont(ofSize: fontSize, weight: .heavy)
-            let textAttributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: NSColor.white.withAlphaComponent(0.98),
-                .strokeColor: color.withAlphaComponent(0.24 * pulse + 0.18),
-                .strokeWidth: -0.7,
-                .shadow: {
-                    let shadow = NSShadow()
-                    shadow.shadowColor = NSColor.white.withAlphaComponent(0.55 * pulse)
-                    shadow.shadowBlurRadius = 6 * pulse + 1
-                    return shadow
-                }()
-            ]
-            let textSize = text.size(withAttributes: textAttributes)
-            let textRect = CGRect(
-                x: badgeRect.midX - textSize.width/2,
-                y: badgeRect.midY - textSize.height/2,
-                width: textSize.width,
-                height: textSize.height
-            )
-            text.draw(in: textRect, withAttributes: textAttributes)
-        }
-    }
-}
-
+// Implementation moved to `Views/SemiCircleWithOrbsView.swift`.
 
 // MARK: - TaskCardWindow
 class TaskCardWindow: NSWindow {
@@ -3383,26 +1761,26 @@ class TaskDetailWindow: NSWindow {
     weak var taskDetailView: TaskDetailView?
 
     override var canBecomeKey: Bool {
-        return true
-    }
-
+            return true
+        }
+        
     override var canBecomeMain: Bool {
-        return true
-    }
-
+            return true
+        }
+        
     override func keyDown(with event: NSEvent) {
         // Space - Toggle task complete
         if event.keyCode == 49 && !event.modifierFlags.contains(.command) { // Space key
             taskDetailView?.toggleTaskCompletion()
-            return
-        }
-
+                    return 
+                }
+                
         // Cmd+W or Esc - Close window
         if (event.modifierFlags.contains(.command) && event.keyCode == 13) || event.keyCode == 53 {
             taskDetailView?.requestClose()
-            return
+            return 
         }
-
+        
         super.keyDown(with: event)
     }
 }

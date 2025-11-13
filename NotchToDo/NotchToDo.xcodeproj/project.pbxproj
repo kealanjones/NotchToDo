@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		71347F2081894941A8C922AD /* TextSizePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89F59308ABA5458EAB88E186 /* TextSizePreference.swift */; };
 		A1234567890123456789012A /* NotchToDoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789012B /* NotchToDoApp.swift */; };
 		A1234567890123456789012C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789012D /* AppDelegate.swift */; };
 		A1234567890123456789013C /* NotchOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789013D /* NotchOverlayController.swift */; };
@@ -26,18 +27,45 @@
 		B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018B /* RealSpeechRecognizer.swift */; };
 		B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789018D /* RealWakeWordEngine.swift */; };
 		B2234567890123456789018A /* AudioFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2234567890123456789018B /* AudioFeedback.swift */; };
-		71347F2081894941A8C922AD /* TextSizePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89F59308ABA5458EAB88E186 /* TextSizePreference.swift */; };
-
 		B3234567890123456789018A /* NotchCompactPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3234567890123456789018B /* NotchCompactPreview.swift */; };
 		C2AA00112233445566778899 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556677 /* PersistenceController.swift */; };
 		C2AA0011223344556677889A /* OrbPersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556678 /* OrbPersistenceStore.swift */; };
 		C2AA0011223344556677889B /* NotchDataModel.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */; };
 		C2AA0011223344556677889D /* Models/OrbPersistenceData.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556682 /* Models/OrbPersistenceData.swift */; };
 		C2D3E4F5A67890B1C2D3E4F5 /* DebugLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789017D /* DebugLogger.swift */; };
+		D1E2F3A50123456789ABCDEF /* SpeechCaptureCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E2F3A40123456789ABCDEF /* SpeechCaptureCoordinator.swift */; };
+		D1E2F3B50123456789ABCDEF /* OverlayWindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E2F3B40123456789ABCDEF /* OverlayWindowManager.swift */; };
+		D1E2F3C50123456789ABCDEF /* Views/SemiCircleWithOrbsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E2F3C40123456789ABCDEF /* Views/SemiCircleWithOrbsView.swift */; };
+		D4F1C2B60000000000000001 /* IntentRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F1C2B40000000000000002 /* IntentRouterTests.swift */; };
+		E0AAA1112222333344445556 /* OrbEntity+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344445555 /* OrbEntity+CoreDataProperties.swift */; };
+		E0AAA1112222333344446666 /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344446665 /* SupabaseService.swift */; };
+		E0AAA1112222333344447776 /* SupabaseEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344447775 /* SupabaseEnvironment.swift */; };
+		E0AAA1112222333344448886 /* SupabaseSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344448885 /* SupabaseSyncManager.swift */; };
+		E0AAA1112222333344449996 /* SyncOutboxItem+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344449995 /* SyncOutboxItem+CoreDataProperties.swift */; };
+		E0AAA1112222333344450006 /* SyncOutboxOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450005 /* SyncOutboxOperation.swift */; };
+        E0AAA1112222333344450016 /* SupabaseNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450015 /* SupabaseNotifications.swift */; };
+        E0AAA1112222333344450026 /* Utilities/KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450025 /* Utilities/KeychainHelper.swift */; };
+        E0AAA1112222333344450036 /* SupabaseAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450035 /* SupabaseAuthManager.swift */; };
+        E0AAA1112222333344450076 /* SupabaseOutboxPayloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450075 /* SupabaseOutboxPayloads.swift */; };
+		E0AAA1112222333344450086 /* AuthWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450085 /* AuthWindowController.swift */; };
+		E0AAA1112222333344450046 /* OrbEntity+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450045 /* OrbEntity+CoreDataClass.swift */; };
+		E0AAA1112222333344450056 /* TaskEntity+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450055 /* TaskEntity+CoreDataClass.swift */; };
+		E0AAA1112222333344450066 /* SyncOutboxItem+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450065 /* SyncOutboxItem+CoreDataClass.swift */; };
 		E24B3C482EA785A40071EB1C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E24B3C472EA785A40071EB1C /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		D4F1C2BE0000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1234567890123456789016D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1234567890123456789015F;
+			remoteInfo = NotchToDo;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		89F59308ABA5458EAB88E186 /* TextSizePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSizePreference.swift; sourceTree = "<group>"; };
 		A1234567890123456789012B /* NotchToDoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchToDoApp.swift; sourceTree = "<group>"; };
 		A1234567890123456789012D /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A1234567890123456789013D /* NotchOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchOverlayController.swift; sourceTree = "<group>"; };
@@ -61,18 +89,42 @@
 		B1234567890123456789018B /* RealSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealSpeechRecognizer.swift; sourceTree = "<group>"; };
 		B1234567890123456789018D /* RealWakeWordEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealWakeWordEngine.swift; sourceTree = "<group>"; };
 		B2234567890123456789018B /* AudioFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFeedback.swift; sourceTree = "<group>"; };
-		89F59308ABA5458EAB88E186 /* TextSizePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSizePreference.swift; sourceTree = "<group>"; };
-
 		B3234567890123456789018B /* NotchCompactPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchCompactPreview.swift; sourceTree = "<group>"; };
 		C2AA00990011223344556677 /* PersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceController.swift; sourceTree = "<group>"; };
 		C2AA00990011223344556678 /* OrbPersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPersistenceStore.swift; sourceTree = "<group>"; };
 		C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodeld; path = NotchDataModel.xcdatamodeld; sourceTree = "<group>"; };
 		C2AA00990011223344556682 /* Models/OrbPersistenceData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/OrbPersistenceData.swift; sourceTree = "<group>"; };
+		D1E2F3A40123456789ABCDEF /* SpeechCaptureCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCaptureCoordinator.swift; sourceTree = "<group>"; };
+		D1E2F3B40123456789ABCDEF /* OverlayWindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindowManager.swift; sourceTree = "<group>"; };
+		D1E2F3C40123456789ABCDEF /* Views/SemiCircleWithOrbsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/SemiCircleWithOrbsView.swift; sourceTree = "<group>"; };
+		D4F1C2B30000000000000001 /* NotchToDoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotchToDoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4F1C2B40000000000000002 /* IntentRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentRouterTests.swift; sourceTree = "<group>"; };
+		E0AAA1112222333344445555 /* OrbEntity+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OrbEntity+CoreDataProperties.swift"; sourceTree = "<group>"; };
+		E0AAA1112222333344446665 /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
+		E0AAA1112222333344447775 /* SupabaseEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseEnvironment.swift; sourceTree = "<group>"; };
+		E0AAA1112222333344448885 /* SupabaseSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseSyncManager.swift; sourceTree = "<group>"; };
+		E0AAA1112222333344449995 /* SyncOutboxItem+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SyncOutboxItem+CoreDataProperties.swift"; sourceTree = "<group>"; };
+		E0AAA1112222333344450005 /* SyncOutboxOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncOutboxOperation.swift; sourceTree = "<group>"; };
+		E0AAA1112222333344450015 /* SupabaseNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseNotifications.swift; sourceTree = "<group>"; };
+		E0AAA1112222333344450025 /* Utilities/KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities/KeychainHelper.swift; sourceTree = "<group>"; };
+        E0AAA1112222333344450035 /* SupabaseAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthManager.swift; sourceTree = "<group>"; };
+        E0AAA1112222333344450075 /* SupabaseOutboxPayloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseOutboxPayloads.swift; sourceTree = "<group>"; };
+		E0AAA1112222333344450085 /* AuthWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthWindowController.swift; sourceTree = "<group>"; };
+		E0AAA1112222333344450045 /* OrbEntity+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OrbEntity+CoreDataClass.swift"; sourceTree = "<group>"; };
+		E0AAA1112222333344450055 /* TaskEntity+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TaskEntity+CoreDataClass.swift"; sourceTree = "<group>"; };
+		E0AAA1112222333344450065 /* SyncOutboxItem+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SyncOutboxItem+CoreDataClass.swift"; sourceTree = "<group>"; };
 		E24B3C472EA785A40071EB1C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A1234567890123456789015B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F1C2B80000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -86,6 +138,7 @@
 			isa = PBXGroup;
 			children = (
 				A1234567890123456789015D /* NotchToDo */,
+				D4F1C2B40000000000000003 /* NotchToDoTests */,
 				A1234567890123456789015E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -111,14 +164,19 @@
 				A1234567890123456789014B /* MockSpeechRecognizer.swift */,
 				B2234567890123456789018B /* AudioFeedback.swift */,
 				89F59308ABA5458EAB88E186 /* TextSizePreference.swift */,
-
+				E0AAA1112222333344450025 /* Utilities/KeychainHelper.swift */,
+				D1E2F3A40123456789ABCDEF /* SpeechCaptureCoordinator.swift */,
+				D1E2F3B40123456789ABCDEF /* OverlayWindowManager.swift */,
 				B1234567890123456789018B /* RealSpeechRecognizer.swift */,
 				B1234567890123456789018D /* RealWakeWordEngine.swift */,
 				B3234567890123456789018B /* NotchCompactPreview.swift */,
 				A1234567890123456789017D /* DebugLogger.swift */,
 				A12345678901234567890179 /* IntentClassification.swift */,
+				D1E2F3C40123456789ABCDEF /* Views/SemiCircleWithOrbsView.swift */,
 				A1234567890123456789014D /* IntentRouter.swift */,
 				C2AA00990011223344556680 /* Persistence */,
+				E0AAA1112222333344449990 /* Supabase */,
+				E0AAA1112222333344450080 /* Auth */,
 				C2AA00990011223344556679 /* NotchDataModel.xcdatamodeld */,
 				A1234567890123456789014E /* NotchToDo.entitlements */,
 				A1234567890123456789014F /* Info.plist */,
@@ -130,6 +188,7 @@
 			isa = PBXGroup;
 			children = (
 				A1234567890123456789015A /* NotchToDo.app */,
+				D4F1C2B30000000000000001 /* NotchToDoTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -139,8 +198,43 @@
 			children = (
 				C2AA00990011223344556677 /* PersistenceController.swift */,
 				C2AA00990011223344556678 /* OrbPersistenceStore.swift */,
+				E0AAA1112222333344450045 /* OrbEntity+CoreDataClass.swift */,
+				E0AAA1112222333344450055 /* TaskEntity+CoreDataClass.swift */,
+				E0AAA1112222333344445555 /* OrbEntity+CoreDataProperties.swift */,
 			);
 			path = Persistence;
+			sourceTree = "<group>";
+		};
+		D4F1C2B40000000000000003 /* NotchToDoTests */ = {
+			isa = PBXGroup;
+			children = (
+				D4F1C2B40000000000000002 /* IntentRouterTests.swift */,
+			);
+			path = NotchToDoTests;
+			sourceTree = "<group>";
+		};
+		E0AAA1112222333344449990 /* Supabase */ = {
+			isa = PBXGroup;
+			children = (
+                E0AAA1112222333344446665 /* SupabaseService.swift */,
+                E0AAA1112222333344447775 /* SupabaseEnvironment.swift */,
+                E0AAA1112222333344448885 /* SupabaseSyncManager.swift */,
+                E0AAA1112222333344450075 /* SupabaseOutboxPayloads.swift */,
+                E0AAA1112222333344450065 /* SyncOutboxItem+CoreDataClass.swift */,
+                E0AAA1112222333344449995 /* SyncOutboxItem+CoreDataProperties.swift */,
+				E0AAA1112222333344450005 /* SyncOutboxOperation.swift */,
+				E0AAA1112222333344450015 /* SupabaseNotifications.swift */,
+				E0AAA1112222333344450035 /* SupabaseAuthManager.swift */,
+			);
+			path = Supabase;
+			sourceTree = "<group>";
+		};
+		E0AAA1112222333344450080 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				E0AAA1112222333344450085 /* AuthWindowController.swift */,
+			);
+			path = Auth;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -163,6 +257,24 @@
 			productReference = A1234567890123456789015A /* NotchToDo.app */;
 			productType = "com.apple.product-type.application";
 		};
+		D4F1C2BA0000000000000001 /* NotchToDoTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D4F1C2BB0000000000000001 /* Build configuration list for PBXNativeTarget "NotchToDoTests" */;
+			buildPhases = (
+				D4F1C2B70000000000000001 /* Sources */,
+				D4F1C2B80000000000000001 /* Frameworks */,
+				D4F1C2B90000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D4F1C2BF0000000000000001 /* PBXTargetDependency */,
+			);
+			name = NotchToDoTests;
+			productName = NotchToDoTests;
+			productReference = D4F1C2B30000000000000001 /* NotchToDoTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -174,6 +286,9 @@
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					A1234567890123456789015F = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					D4F1C2BA0000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -192,6 +307,7 @@
 			projectRoot = "";
 			targets = (
 				A1234567890123456789015F /* NotchToDo */,
+				D4F1C2BA0000000000000001 /* NotchToDoTests */,
 			);
 		};
 /* End PBXProject section */
@@ -202,6 +318,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				E24B3C482EA785A40071EB1C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F1C2B90000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,21 +351,53 @@
 				A1234567890123456789014A /* MockSpeechRecognizer.swift in Sources */,
 				B2234567890123456789018A /* AudioFeedback.swift in Sources */,
 				71347F2081894941A8C922AD /* TextSizePreference.swift in Sources */,
-
+				D1E2F3A50123456789ABCDEF /* SpeechCaptureCoordinator.swift in Sources */,
+				D1E2F3B50123456789ABCDEF /* OverlayWindowManager.swift in Sources */,
 				B1234567890123456789018A /* RealSpeechRecognizer.swift in Sources */,
 				B1234567890123456789018C /* RealWakeWordEngine.swift in Sources */,
 				B3234567890123456789018A /* NotchCompactPreview.swift in Sources */,
 				A12345678901234567890178 /* IntentClassification.swift in Sources */,
+				D1E2F3C50123456789ABCDEF /* Views/SemiCircleWithOrbsView.swift in Sources */,
 				C2D3E4F5A67890B1C2D3E4F5 /* DebugLogger.swift in Sources */,
 				A1234567890123456789014C /* IntentRouter.swift in Sources */,
 				C2AA00112233445566778899 /* PersistenceController.swift in Sources */,
 				C2AA0011223344556677889A /* OrbPersistenceStore.swift in Sources */,
+				E0AAA1112222333344450046 /* OrbEntity+CoreDataClass.swift in Sources */,
+				E0AAA1112222333344450056 /* TaskEntity+CoreDataClass.swift in Sources */,
+				E0AAA1112222333344445556 /* OrbEntity+CoreDataProperties.swift in Sources */,
+				E0AAA1112222333344446666 /* SupabaseService.swift in Sources */,
+				E0AAA1112222333344447776 /* SupabaseEnvironment.swift in Sources */,
+				E0AAA1112222333344448886 /* SupabaseSyncManager.swift in Sources */,
+				E0AAA1112222333344449996 /* SyncOutboxItem+CoreDataProperties.swift in Sources */,
+				E0AAA1112222333344450006 /* SyncOutboxOperation.swift in Sources */,
+				E0AAA1112222333344450016 /* SupabaseNotifications.swift in Sources */,
+				E0AAA1112222333344450026 /* Utilities/KeychainHelper.swift in Sources */,
+				E0AAA1112222333344450036 /* SupabaseAuthManager.swift in Sources */,
+				E0AAA1112222333344450066 /* SyncOutboxItem+CoreDataClass.swift in Sources */,
+				E0AAA1112222333344450076 /* SupabaseOutboxPayloads.swift in Sources */,
+				E0AAA1112222333344450086 /* AuthWindowController.swift in Sources */,
 				C2AA0011223344556677889B /* NotchDataModel.xcdatamodeld in Sources */,
 				C2AA0011223344556677889D /* Models/OrbPersistenceData.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D4F1C2B70000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D4F1C2B60000000000000001 /* IntentRouterTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D4F1C2BF0000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1234567890123456789015F /* NotchToDo */;
+			targetProxy = D4F1C2BE0000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A1234567890123456789016F /* Debug */ = {
@@ -376,11 +531,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = NotchToDo/NotchToDo.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = 9ZKA87THTR;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
@@ -389,6 +546,7 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NotchToDo/Info.plist;
+				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "NotchTo-Do needs microphone access to capture your voice after the wake word, processed on-device.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "NotchTo-Do uses speech recognition to transcribe your voice locally, network use is off by default.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -398,6 +556,7 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.notchtodo.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.10;
 			};
@@ -409,11 +568,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = NotchToDo/NotchToDo.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = 9ZKA87THTR;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
@@ -422,6 +583,7 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NotchToDo/Info.plist;
+				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "NotchTo-Do needs microphone access to capture your voice after the wake word, processed on-device.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "NotchTo-Do uses speech recognition to transcribe your voice locally, network use is off by default.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -431,8 +593,41 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.notchtodo.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+		D4F1C2BC0000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 79NA78ALVH;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.notchtodo.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.10;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NotchToDo.app/Contents/MacOS/NotchToDo";
+			};
+			name = Debug;
+		};
+		D4F1C2BD0000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 79NA78ALVH;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.notchtodo.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.10;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NotchToDo.app/Contents/MacOS/NotchToDo";
 			};
 			name = Release;
 		};
@@ -453,6 +648,15 @@
 			buildConfigurations = (
 				A1234567890123456789016F /* Debug */,
 				A1234567890123456789017A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D4F1C2BB0000000000000001 /* Build configuration list for PBXNativeTarget "NotchToDoTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D4F1C2BC0000000000000001 /* Debug */,
+				D4F1C2BD0000000000000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -10,7 +10,10 @@ import Cocoa
             didSet { notifyChange() }
         }
         @Published var details: String {
-            didSet { notifyChange() }
+            didSet {
+                updateNoteCount()
+                notifyChange()
+            }
         }
         @Published var deadline: Date? {
             didSet { notifyChange() }
@@ -27,8 +30,9 @@ import Cocoa
         var sortOrder: Double {
             didSet { notifyChange() }
         }
+        @Published private(set) var noteCount: Int = 0
         var onChange: (() -> Void)?
-        
+
         init(
             id: UUID = UUID(),
             title: String,
@@ -49,10 +53,28 @@ import Cocoa
             self.status = status
             self.createdAt = createdAt
             self.sortOrder = sortOrder
+            updateNoteCount()
         }
-        
+
         private func notifyChange() {
             onChange?()
+        }
+
+        private func updateNoteCount() {
+            noteCount = Task.calculateNoteCount(from: details)
+        }
+
+        private static func calculateNoteCount(from details: String) -> Int {
+            guard !details.isEmpty else { return 0 }
+            if let data = details.data(using: .utf8),
+               let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                return array.count
+            }
+            let lines = details
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            return lines.count
         }
     }
 
@@ -349,17 +371,17 @@ import Cocoa
     }
 }
 
-// MARK: - Color Palette System
+// MARK: - Color Palette System - Enhanced for vibrancy and visual hierarchy
 struct OrbColorPalette {
     static let colors: [NSColor] = [
-        NSColor(red: 0.0, green: 0.5, blue: 1.0, alpha: 1.0),   // Vivid Blue
-        NSColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 1.0),   // Vivid Red
-        NSColor(red: 0.0, green: 0.95, blue: 0.3, alpha: 1.0),  // Vivid Green
-        NSColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 1.0),   // Vivid Orange
-        NSColor(red: 0.7, green: 0.0, blue: 1.0, alpha: 1.0),   // Vivid Purple
-        NSColor(red: 0.0, green: 0.9, blue: 0.9, alpha: 1.0),   // Vivid Cyan
-        NSColor(red: 1.0, green: 0.0, blue: 0.6, alpha: 1.0),   // Vivid Hot Pink
-        NSColor(red: 1.0, green: 0.95, blue: 0.0, alpha: 1.0),  // Vivid Yellow
+        NSColor(red: 0.0, green: 0.6, blue: 1.0, alpha: 1.0),      // Bright Electric Blue
+        NSColor(red: 1.0, green: 0.15, blue: 0.25, alpha: 1.0),    // Vibrant Crimson Red
+        NSColor(red: 0.0, green: 1.0, blue: 0.4, alpha: 1.0),      // Luminous Emerald Green
+        NSColor(red: 1.0, green: 0.65, blue: 0.0, alpha: 1.0),     // Vivid Amber Orange
+        NSColor(red: 0.75, green: 0.0, blue: 1.0, alpha: 1.0),     // Rich Royal Purple
+        NSColor(red: 0.0, green: 0.95, blue: 1.0, alpha: 1.0),     // Brilliant Cyan Blue
+        NSColor(red: 1.0, green: 0.0, blue: 0.7, alpha: 1.0),      // Vibrant Magenta Pink
+        NSColor(red: 1.0, green: 0.98, blue: 0.0, alpha: 1.0),     // Bright Golden Yellow
     ]
     
     static func getColor(for index: Int) -> NSColor {

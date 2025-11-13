@@ -33,6 +33,8 @@ final class OrbPersistenceStore {
     init(persistenceController: PersistenceController) {
         viewContext = persistenceController.container.viewContext
         backgroundContext = persistenceController.container.newBackgroundContext()
+        backgroundContext.mergePolicy = NSMergeByPropertyStoreTrumpMergePolicy
+        backgroundContext.automaticallyMergesChangesFromParent = true
     }
 
     func loadSnapshots() throws -> [OrbSnapshot] {
@@ -41,6 +43,23 @@ final class OrbPersistenceStore {
         let entities = try viewContext.fetch(request)
         return entities.map { orbSnapshot(from: $0) }
     }
+    
+    /// Delete all orbs and tasks from Core Data (used on sign-out to clear user data)
+    func deleteAllData() throws {
+        // Delete all tasks
+        let taskRequest = NSFetchRequest<NSFetchRequestResult>(entityName: Keys.taskEntity)
+        let taskDeleteRequest = NSBatchDeleteRequest(fetchRequest: taskRequest)
+        try viewContext.persistentStoreCoordinator?.execute(taskDeleteRequest, with: viewContext)
+        
+        // Delete all orbs
+        let orbRequest = NSFetchRequest<NSFetchRequestResult>(entityName: Keys.orbEntity)
+        let orbDeleteRequest = NSBatchDeleteRequest(fetchRequest: orbRequest)
+        try viewContext.persistentStoreCoordinator?.execute(orbDeleteRequest, with: viewContext)
+        
+        // Reset contexts
+        viewContext.reset()
+        backgroundContext.reset()
+    }
 
     func scheduleSave(orbs snapshots: [OrbSnapshot]) {
         pendingSaveWorkItem?.cancel()
@@ -48,20 +67,108 @@ final class OrbPersistenceStore {
             self?.performSave(orbs: snapshots)
         }
         pendingSaveWorkItem = workItem
-        queue.asyncAfter(deadline: .now() + 0.6, execute: workItem)
+        // Reduce debounce so pushes appear faster after edits
+        queue.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+    }
+    
+    // Force immediate synchronous save for critical edits (e.g., before closing windows)
+    func saveImmediately(orbs snapshots: [OrbSnapshot]) {
+        pendingSaveWorkItem?.cancel()
+        pendingSaveWorkItem = nil
+        queue.sync { [weak self] in
+            guard let self else { return }
+            self.performSave(orbs: snapshots, waitForCompletion: true)
+        }
     }
 
-    private func performSave(orbs snapshots: [OrbSnapshot]) {
-        backgroundContext.perform { [weak self] in
-            guard let self else { return }
-            do {
-                try self.syncSnapshots(orbs: snapshots, in: self.backgroundContext)
-                if self.backgroundContext.hasChanges {
-                    try self.backgroundContext.save()
+    private func performSave(orbs snapshots: [OrbSnapshot], waitForCompletion: Bool = false) {
+        if waitForCompletion {
+            backgroundContext.performAndWait { [weak self] in
+                guard let self else { return }
+                do {
+                    try self.syncSnapshots(orbs: snapshots, in: self.backgroundContext)
+                    if self.backgroundContext.hasChanges {
+                        try self.backgroundContext.save()
+                        // After saving to background context, manually create outbox entries
+                        // because backgroundContext is ignored by the outbox observer
+                        // Wait for merge to propagate to view context, then manually trigger outbox
+                        self.viewContext.performAndWait {
+                            self.viewContext.refreshAllObjects()
+                            // Fetch updated entities from view context
+                            var updatedObjectIDs: [NSManagedObjectID] = []
+                            for snapshot in snapshots {
+                                let orbRequest = NSFetchRequest<NSManagedObject>(entityName: "OrbEntity")
+                                orbRequest.predicate = NSPredicate(format: "id == %@", snapshot.id as CVarArg)
+                                if let orbEntity = try? self.viewContext.fetch(orbRequest).first {
+                                    updatedObjectIDs.append(orbEntity.objectID)
+                                }
+                                for taskSnapshot in snapshot.tasks {
+                                    let taskRequest = NSFetchRequest<NSManagedObject>(entityName: "TaskEntity")
+                                    taskRequest.predicate = NSPredicate(format: "id == %@", taskSnapshot.id as CVarArg)
+                                    if let taskEntity = try? self.viewContext.fetch(taskRequest).first {
+                                        updatedObjectIDs.append(taskEntity.objectID)
+                                    }
+                                }
+                            }
+                            // Manually enqueue each entity for outbox
+                            let persistence = PersistenceController.shared
+                            for objectID in updatedObjectIDs {
+                                persistence.enqueueEntity(for: objectID, in: self.viewContext, operation: .update)
+                            }
+                            DebugLog.log("Manually enqueued \(updatedObjectIDs.count) entities for outbox sync", category: .sync)
+                        }
+                    }
+                } catch {
+                    DebugLog.log("Core Data save error: \(error)", category: .persistence)
+                    // If this was a merge conflict, prefer store values and retry once
+                    let nsError = error as NSError
+                    // 133020 is NSMergeConflictError in NSCocoaErrorDomain
+                    if nsError.domain == NSCocoaErrorDomain && nsError.code == 133020 {
+                        self.backgroundContext.mergePolicy = NSMergeByPropertyStoreTrumpMergePolicy
+                        self.backgroundContext.refreshAllObjects()
+                        do {
+                            if self.backgroundContext.hasChanges {
+                                try self.backgroundContext.save()
+                                DebugLog.log("Retry save after merge conflict succeeded", category: .persistence)
+                            }
+                        } catch {
+                            DebugLog.log("Retry save failed: \(error)", category: .persistence)
+                            self.backgroundContext.reset()
+                        }
+                    } else {
+                        self.backgroundContext.reset()
+                    }
                 }
-            } catch {
-                DebugLog.log("Core Data save error: \(error)", category: .persistence)
-                self.backgroundContext.reset()
+            }
+        } else {
+            backgroundContext.perform { [weak self] in
+                guard let self else { return }
+                do {
+                    try self.syncSnapshots(orbs: snapshots, in: self.backgroundContext)
+                    if self.backgroundContext.hasChanges {
+                        try self.backgroundContext.save()
+                    }
+                } catch {
+                    DebugLog.log("Core Data save error: \(error)", category: .persistence)
+                    // If this was a merge conflict, prefer store values and retry once
+                    let nsError = error as NSError
+                    // 133020 is NSMergeConflictError in NSCocoaErrorDomain
+                    if nsError.domain == NSCocoaErrorDomain && nsError.code == 133020 {
+                        self.backgroundContext.mergePolicy = NSMergeByPropertyStoreTrumpMergePolicy
+                        self.backgroundContext.refreshAllObjects()
+                        do {
+                            if self.backgroundContext.hasChanges {
+                                try self.backgroundContext.save()
+                                DebugLog.log("Retry save after merge conflict succeeded", category: .persistence)
+                            }
+                        } catch {
+                            DebugLog.log("Retry save failed: \(error)", category: .persistence)
+                            self.backgroundContext.reset()
+                        }
+                    } else {
+                        self.backgroundContext.reset()
+                    }
+                }
             }
         }
     }

@@ -179,20 +179,12 @@ class RealWakeWordEngine: WakeWordEngine {
             DebugLog.log("✅ Wake word audio engine started successfully", category: .speech)
         } catch {
             DebugLog.log("⚠️ Wake word audio engine failed to start: \(error.localizedDescription)", category: .speech)
-            // Clean up and retry after delay
             inputNode.removeTap(onBus: 0)
-            DebugLog.log("⚠️ Waiting for audio resources and retrying wake word engine...", category: .speech)
-            Thread.sleep(forTimeInterval: 0.3)
-
-            // Reinstall tap for retry
-            inputNode.installTap(onBus: 0, bufferSize: 512, format: recordingFormat) { buffer, _ in
-                self.recognitionRequest?.append(buffer)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self else { return }
+                self.restartRecognition()
             }
-
-            // Second attempt
-            audioEngine.prepare()
-            try audioEngine.start()
-            DebugLog.log("✅ Wake word audio engine started on retry", category: .speech)
+            return
         }
 
         isRunning = true
@@ -311,9 +303,6 @@ class RealWakeWordEngine: WakeWordEngine {
 
         DebugLog.log("Wake word detection stopped - audio resources released", category: .speech)
 
-        // CRITICAL: Give audio engine time to fully release resources
-        // This prevents conflicts when speech recognizer tries to start immediately after
-        Thread.sleep(forTimeInterval: 0.1)
     }
 
     // Expose running state to coordinate with dictation

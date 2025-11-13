@@ -10,18 +10,28 @@ class SpeechCaptureBubbleView: NSView {
     private let finalizePulseLayer = CAShapeLayer()
     private let finalizeTrailLayer = CAReplicatorLayer()
     private let finalizeTrailDot = CALayer()
+    private let holdIndicatorLayer = CAShapeLayer()
     private let transcriptField: NSTextField
     private let statusField: NSTextField
     private let thinkingDotsLayer = CALayer()
     
     private var isThinking = false
+    private var isSilenceHoldActive = false
+    private var statusTextBeforeHold: String?
     private var glowColor: NSColor?
     private var isClarificationMode = false
     private var finalizeEffectInFlight = false
     private var finalizePath: CGPath?
     private var finalizeTrailStart: CGPoint = .zero
-    private var finalizeTrailEnd: CGPoint = .zero
-    private var finalizeTrailPath: CGPath?
+   private var finalizeTrailEnd: CGPoint = .zero
+   private var finalizeTrailPath: CGPath?
+    var preferredSizeDidChange: ((NSSize) -> Void)?
+    private var cachedPreferredSize = NSSize(width: 320, height: 120)
+    private let minPreferredWidth: CGFloat = 320
+    private let maxPreferredWidth: CGFloat = 420
+    private let minPreferredHeight: CGFloat = 120
+    private let preferredHeightScreenPadding: CGFloat = 240
+    private let fallbackMaxPreferredHeight: CGFloat = 640
     
     override init(frame frameRect: NSRect) {
         transcriptField = NSTextField(labelWithString: "")
@@ -73,6 +83,14 @@ class SpeechCaptureBubbleView: NSView {
         bubbleLayer.addSublayer(backgroundGradient)
         bubbleLayer.addSublayer(glossGradient)
         bubbleLayer.addSublayer(borderLayer)
+        
+        holdIndicatorLayer.fillColor = NSColor.clear.cgColor
+        holdIndicatorLayer.strokeColor = NSColor.systemYellow.withAlphaComponent(0.85).cgColor
+        holdIndicatorLayer.lineWidth = 2.2
+        holdIndicatorLayer.lineDashPattern = [10, 8]
+        holdIndicatorLayer.lineCap = .round
+        holdIndicatorLayer.opacity = 0.0
+        bubbleLayer.addSublayer(holdIndicatorLayer)
         
         entranceRippleLayer.fillColor = NSColor.white.withAlphaComponent(0.08).cgColor
         entranceRippleLayer.strokeColor = NSColor.white.withAlphaComponent(0.22).cgColor
@@ -141,6 +159,11 @@ class SpeechCaptureBubbleView: NSView {
         entranceRippleLayer.path = bubblePath.cgPath
         finalizePulseLayer.frame = bubbleLayer.bounds
         finalizePulseLayer.path = bubblePath.cgPath
+        let holdInset: CGFloat = 3.0
+        let holdRect = bubbleLayer.bounds.insetBy(dx: holdInset, dy: holdInset)
+        let holdPath = NSBezierPath(roundedRect: holdRect, xRadius: max(bubbleLayer.cornerRadius - holdInset, 0), yRadius: max(bubbleLayer.cornerRadius - holdInset, 0))
+        holdIndicatorLayer.frame = bubbleLayer.bounds
+        holdIndicatorLayer.path = holdPath.cgPath
         finalizePath = bubblePath.cgPath
         finalizeTrailLayer.frame = bubbleLayer.bounds
         let trailY = bubbleLayer.bounds.maxY - 18
@@ -240,6 +263,66 @@ class SpeechCaptureBubbleView: NSView {
         finalizeTrailDot.removeAllAnimations()
         finalizeTrailDot.opacity = 0.0
         finalizeTrailDot.position = finalizeTrailStart
+        statusTextBeforeHold = nil
+        cachedPreferredSize = NSSize(width: minPreferredWidth, height: minPreferredHeight)
+        setSilenceHoldActive(false, animated: false)
+        notifyPreferredSizeChange(force: true)
+    }
+
+    func forcePreferredSizeUpdate() {
+        notifyPreferredSizeChange(force: true)
+    }
+    
+    func currentPreferredSize() -> NSSize {
+        calculatePreferredSize()
+    }
+    
+    private func notifyPreferredSizeChange(force: Bool = false) {
+        let newSize = calculatePreferredSize()
+        if force || abs(newSize.width - cachedPreferredSize.width) > 0.5 || abs(newSize.height - cachedPreferredSize.height) > 0.5 {
+            cachedPreferredSize = newSize
+            preferredSizeDidChange?(newSize)
+        }
+    }
+    
+    private func calculatePreferredSize() -> NSSize {
+        let padding: CGFloat = 18
+        let maxPreferredHeight = currentMaxPreferredHeight()
+        var width = minPreferredWidth
+        let maxContentWidth = maxPreferredWidth - padding * 2
+        let transcriptMeasure = boundingSize(for: transcriptField.stringValue, font: transcriptField.font, maxWidth: maxContentWidth)
+        let statusMeasure = boundingSize(for: statusField.stringValue, font: statusField.font, maxWidth: maxContentWidth)
+        let contentWidth = max(transcriptMeasure.width, statusMeasure.width)
+        width = min(maxPreferredWidth, max(minPreferredWidth, contentWidth + padding * 2))
+        let availableTextWidth = max(width - padding * 2, 1)
+        let transcriptHeight = boundingSize(for: transcriptField.stringValue, font: transcriptField.font, maxWidth: availableTextWidth).height
+        let statusHeight = boundingSize(for: statusField.stringValue, font: statusField.font, maxWidth: availableTextWidth).height
+        let hasTranscript = transcriptHeight > 0.1
+        let hasStatus = statusHeight > 0.1
+        let spacing: CGFloat = (hasTranscript && hasStatus) ? 6.0 : 0.0
+        var height = padding + statusHeight + spacing + transcriptHeight + padding
+        if !hasTranscript && !hasStatus {
+            height = minPreferredHeight
+        }
+        height = min(maxPreferredHeight, max(minPreferredHeight, height))
+        return NSSize(width: ceil(width), height: ceil(height))
+    }
+    
+    private func boundingSize(for text: String, font: NSFont?, maxWidth: CGFloat) -> CGSize {
+        guard let font = font, !text.isEmpty, maxWidth > 0 else {
+            return .zero
+        }
+        let attributed = NSAttributedString(string: text, attributes: [.font: font])
+        let rect = attributed.boundingRect(with: NSSize(width: maxWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading])
+        return CGSize(width: ceil(rect.width), height: ceil(rect.height))
+    }
+
+    private func currentMaxPreferredHeight() -> CGFloat {
+        guard let screen = NSScreen.main else {
+            return fallbackMaxPreferredHeight
+        }
+        let available = screen.visibleFrame.height - preferredHeightScreenPadding
+        return max(minPreferredHeight, available)
     }
     
     func updateTranscript(_ text: String, isFinal: Bool) {
@@ -260,26 +343,41 @@ class SpeechCaptureBubbleView: NSView {
         } else {
             transcriptField.textColor = NSColor.white.withAlphaComponent(0.85)
         }
+        notifyPreferredSizeChange()
     }
     
     func setStatus(_ text: String?, animated: Bool = true) {
         let newText = text ?? ""
-        guard statusField.stringValue != newText else { return }
-        
+        if isSilenceHoldActive {
+            statusTextBeforeHold = newText
+            return
+        }
+        updateStatusLabel(to: newText, animated: animated)
+    }
+    
+    private func updateStatusLabel(to text: String, animated: Bool, force: Bool = false) {
+        if !force && statusField.stringValue == text {
+            return
+        }
+        let targetAlpha: CGFloat = text.isEmpty ? 0.0 : 0.8
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.16
                 statusField.animator().alphaValue = 0.0
             } completionHandler: {
-                self.statusField.stringValue = newText
+                self.statusField.stringValue = text
+                self.notifyPreferredSizeChange(force: true)
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.16
-                    self.statusField.animator().alphaValue = newText.isEmpty ? 0.0 : 0.8
+                    self.statusField.animator().alphaValue = targetAlpha
+                } completionHandler: {
+                    self.notifyPreferredSizeChange()
                 }
             }
         } else {
-            statusField.stringValue = newText
-            statusField.alphaValue = newText.isEmpty ? 0.0 : 0.8
+            statusField.stringValue = text
+            statusField.alphaValue = targetAlpha
+            notifyPreferredSizeChange()
         }
     }
     
@@ -313,6 +411,63 @@ class SpeechCaptureBubbleView: NSView {
         
         let borderColor = color?.withAlphaComponent(0.35) ?? NSColor.white.withAlphaComponent(0.18)
         borderLayer.strokeColor = borderColor.cgColor
+    }
+    
+    func setSilenceHoldActive(_ active: Bool, animated: Bool = true) {
+        guard isSilenceHoldActive != active else { return }
+        isSilenceHoldActive = active
+        
+        let animationDuration: CFTimeInterval = animated ? 0.22 : 0.0
+
+        if active {
+            holdIndicatorLayer.removeAllAnimations()
+            if animationDuration > 0 {
+                let opacityAnimation = CABasicAnimation(keyPath: "opacity")
+                opacityAnimation.fromValue = holdIndicatorLayer.presentation()?.opacity ?? holdIndicatorLayer.opacity
+                opacityAnimation.toValue = 1.0
+                opacityAnimation.duration = animationDuration
+                opacityAnimation.fillMode = .forwards
+                opacityAnimation.isRemovedOnCompletion = false
+                holdIndicatorLayer.add(opacityAnimation, forKey: "holdOpacity")
+            }
+            holdIndicatorLayer.opacity = 1.0
+            
+            let dashAnimation = CABasicAnimation(keyPath: "lineDashPhase")
+            dashAnimation.fromValue = 0.0
+            dashAnimation.toValue = 20.0
+            dashAnimation.duration = 0.9
+            dashAnimation.repeatCount = .infinity
+            holdIndicatorLayer.add(dashAnimation, forKey: "holdDash")
+
+            let scaleAnimation = CABasicAnimation(keyPath: "transform.scale")
+            scaleAnimation.fromValue = 0.98
+            scaleAnimation.toValue = 1.04
+            scaleAnimation.duration = 0.9
+            scaleAnimation.autoreverses = true
+            scaleAnimation.repeatCount = .infinity
+            scaleAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            holdIndicatorLayer.add(scaleAnimation, forKey: "holdScale")
+
+            if statusTextBeforeHold == nil {
+                statusTextBeforeHold = statusField.stringValue
+            }
+            updateStatusLabel(to: "Holding to keep recording", animated: animated, force: true)
+        } else {
+            if animationDuration > 0 {
+                let opacityAnimation = CABasicAnimation(keyPath: "opacity")
+                opacityAnimation.fromValue = holdIndicatorLayer.presentation()?.opacity ?? holdIndicatorLayer.opacity
+                opacityAnimation.toValue = 0.0
+                opacityAnimation.duration = animationDuration
+                holdIndicatorLayer.add(opacityAnimation, forKey: "holdOpacity")
+            }
+            holdIndicatorLayer.opacity = 0.0
+            holdIndicatorLayer.removeAnimation(forKey: "holdDash")
+            holdIndicatorLayer.removeAnimation(forKey: "holdScale")
+            let restore = statusTextBeforeHold ?? ""
+            updateStatusLabel(to: restore, animated: animated, force: true)
+            statusTextBeforeHold = nil
+        }
+        notifyPreferredSizeChange(force: true)
     }
     
     func applyPopAnimation() {

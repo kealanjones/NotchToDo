@@ -18,6 +18,7 @@ struct TimestampedNoteEntry: Codable {
 protocol TaskDetailViewDelegate: AnyObject {
     func closeTaskDetail(for taskId: UUID)
     func taskDetailView(_ view: TaskDetailView, didTogglePin isPinned: Bool)
+    func persistEditsNow(for taskId: UUID)
 }
 
 class TaskDetailView: NSView {
@@ -324,7 +325,7 @@ class TaskDetailView: NSView {
         
         // Force the meta row to stick to the bottom with a bit more space
         NSLayoutConstraint.activate([
-            metaRow.bottomAnchor.constraint(equalTo: contentStack.bottomAnchor, constant: -15)
+            metaRow.bottomAnchor.constraint(lessThanOrEqualTo: contentStack.bottomAnchor, constant: -15)
         ])
         
         statusControl.segmentStyle = .rounded
@@ -882,6 +883,7 @@ class TaskDetailView: NSView {
         datePopover.performClose(nil)
         updateDueButton()
         updateMetadataLabel()
+        delegate?.persistEditsNow(for: task.id)
     }
     
     @objc private func handlePriorityChanged() {
@@ -890,12 +892,14 @@ class TaskDetailView: NSView {
         task.priority = priorityValues[index]
         updateMetadataLabel()
         updatePriorityColors(selectedIndex: index)
+        delegate?.persistEditsNow(for: task.id)
     }
     
     @objc private func handleDatePicked() {
         task.deadline = datePicker.dateValue
         updateDueButton()
         updateMetadataLabel()
+        delegate?.persistEditsNow(for: task.id)
     }
     
     @objc private func handleSetDueToday() {
@@ -919,6 +923,7 @@ class TaskDetailView: NSView {
             updateDueButton()
             updateMetadataLabel()
             datePopover.performClose(nil)
+            delegate?.persistEditsNow(for: task.id)
         }
     }
     
@@ -941,6 +946,7 @@ class TaskDetailView: NSView {
             titleField.stringValue = task.title
         }
         updateMetadataLabel()
+        delegate?.persistEditsNow(for: task.id)
     }
     
     private func priorityIndex(for value: Int) -> Int {
@@ -1091,6 +1097,7 @@ class TaskDetailView: NSView {
             
             refreshNotesDisplay()
             notesInputField.stringValue = ""
+            delegate?.persistEditsNow(for: task.id)
         }
     }
 }
@@ -1133,6 +1140,11 @@ extension TaskDetailView: NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
         guard obj.object as? NSTextField === titleField else { return }
         updateMetadataLabel()
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard obj.object as? NSTextField === titleField else { return }
+        handleTitleEditingEnd()
     }
 }
 
