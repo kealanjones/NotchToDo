@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material Design 3 seed color -->
+    <color name="seed">#4F5FFF</color>
+
+    <!-- Orb palette (matching iOS) -->
+    <color name="orb_blue">#0099FF</color>
+    <color name="orb_red">#FF2640</color>
+    <color name="orb_green">#00FF66</color>
+    <color name="orb_orange">#FFA500</color>
+    <color name="orb_purple">#BF00FF</color>
+    <color name="orb_cyan">#00F2FF</color>
+    <color name="orb_magenta">#FF00B3</color>
+    <color name="orb_yellow">#FFFA00</color>
+
+    <!-- Additional colors -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color>
+</resources>

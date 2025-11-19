@@ -50,15 +50,22 @@ final class OrbPersistenceStore {
         let taskRequest = NSFetchRequest<NSFetchRequestResult>(entityName: Keys.taskEntity)
         let taskDeleteRequest = NSBatchDeleteRequest(fetchRequest: taskRequest)
         try viewContext.persistentStoreCoordinator?.execute(taskDeleteRequest, with: viewContext)
-        
+
         // Delete all orbs
         let orbRequest = NSFetchRequest<NSFetchRequestResult>(entityName: Keys.orbEntity)
         let orbDeleteRequest = NSBatchDeleteRequest(fetchRequest: orbRequest)
         try viewContext.persistentStoreCoordinator?.execute(orbDeleteRequest, with: viewContext)
-        
+
+        // CRITICAL FIX: Also delete outbox items to prevent cross-user sync pollution
+        let outboxRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "SyncOutboxItem")
+        let outboxDeleteRequest = NSBatchDeleteRequest(fetchRequest: outboxRequest)
+        try viewContext.persistentStoreCoordinator?.execute(outboxDeleteRequest, with: viewContext)
+
         // Reset contexts
         viewContext.reset()
         backgroundContext.reset()
+
+        DebugLog.log("🗑️ Deleted all orbs, tasks, and outbox items from Core Data", category: .persistence)
     }
 
     func scheduleSave(orbs snapshots: [OrbSnapshot]) {
@@ -147,6 +154,34 @@ final class OrbPersistenceStore {
                     try self.syncSnapshots(orbs: snapshots, in: self.backgroundContext)
                     if self.backgroundContext.hasChanges {
                         try self.backgroundContext.save()
+
+                        // CRITICAL FIX: Manually enqueue entities for outbox in async path too!
+                        // Previously only synchronous path enqueued, causing missed syncs
+                        DispatchQueue.main.async {
+                            self.viewContext.performAndWait {
+                                self.viewContext.refreshAllObjects()
+                                var updatedObjectIDs: [NSManagedObjectID] = []
+                                for snapshot in snapshots {
+                                    let orbRequest = NSFetchRequest<NSManagedObject>(entityName: "OrbEntity")
+                                    orbRequest.predicate = NSPredicate(format: "id == %@", snapshot.id as CVarArg)
+                                    if let orbEntity = try? self.viewContext.fetch(orbRequest).first {
+                                        updatedObjectIDs.append(orbEntity.objectID)
+                                    }
+                                    for taskSnapshot in snapshot.tasks {
+                                        let taskRequest = NSFetchRequest<NSManagedObject>(entityName: "TaskEntity")
+                                        taskRequest.predicate = NSPredicate(format: "id == %@", taskSnapshot.id as CVarArg)
+                                        if let taskEntity = try? self.viewContext.fetch(taskRequest).first {
+                                            updatedObjectIDs.append(taskEntity.objectID)
+                                        }
+                                    }
+                                }
+                                let persistence = PersistenceController.shared
+                                for objectID in updatedObjectIDs {
+                                    persistence.enqueueEntity(for: objectID, in: self.viewContext, operation: .update)
+                                }
+                                DebugLog.log("✅ Async save: Enqueued \(updatedObjectIDs.count) entities for immediate sync", category: .sync)
+                            }
+                        }
                     }
                 } catch {
                     DebugLog.log("Core Data save error: \(error)", category: .persistence)

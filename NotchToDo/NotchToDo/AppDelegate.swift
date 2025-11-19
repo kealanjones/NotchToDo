@@ -550,11 +550,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, AuthViewControllerDelegate {
             let session = notification.object as? SupabaseAuthManager.Session
             self?.supabaseSyncManager?.updateAccessToken(session?.accessToken)
             if session != nil {
-                // User authenticated - load their data
+                // User authenticated - load their data and resume sync
                 self?.overlayController?.loadUserData()
-                self?.supabaseSyncManager?.requestImmediateSync(reason: "Auth session changed")
+                // CRITICAL FIX: Resume sync manager to activate polling and force initial pull
+                self?.supabaseSyncManager?.resume()
             } else {
-                // Session cleared - clear local data
+                // Session cleared - stop sync and clear local data
+                self?.supabaseSyncManager?.stop()
                 self?.overlayController?.clearLocalData()
             }
         }
@@ -626,7 +628,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, AuthViewControllerDelegate {
         }
 
         if supabaseAuthManager?.handleOAuthRedirect(url: url) == true {
-            DebugLog.log("Processed Supabase OAuth callback", category: .sync)
+            DebugLog.log("Processed Supabase OAuth callback successfully", category: .sync)
+
+            // Close auth window since OAuth succeeded
+            DispatchQueue.main.async { [weak self] in
+                self?.authWindowController?.close()
+                self?.authWindowController = nil
+
+                // Load user data and complete onboarding
+                self?.overlayController?.loadUserData()
+                UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+
+                // Show tutorial if needed
+                let hasSeenTutorial = UserDefaults.standard.bool(forKey: "hasSeenTutorial")
+                if !hasSeenTutorial {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        self?.showOnboarding()
+                    }
+                }
+            }
+
             supabaseSyncManager?.requestImmediateSync(reason: "OAuth redirect callback")
         }
     }
@@ -1301,6 +1322,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, AuthViewControllerDelegate {
         switch effect {
         case .createTask(let title):
             overlayController?.finalizeSpeechCapture(with: final, resolvedTaskTitle: title)
+        case .createAdvancedTask(let intent):
+            // NEW: Handle advanced task creation with all attributes
+            DebugLog.log("Creating advanced task: \(intent.title)", category: .intent)
+            overlayController?.finalizeSpeechCaptureForAdvancedTask(intent: intent)
+            // Provide voice feedback
+            VoiceFeedback.shared.announceIntent(intent)
         case .showOverlay:
             overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: "Opening Notch…") { [weak self] in
                 self?.overlayController?.revealOverlayForVoice()
@@ -1501,16 +1528,21 @@ extension AppDelegate {
     @objc private func handleSupabaseSignOut() {
         guard let authManager = supabaseAuthManager else { return }
 
+        DebugLog.log("🔒 Starting logout process...", category: .sync)
+
+        // CRITICAL: Stop sync manager FIRST to prevent any ongoing operations
+        supabaseSyncManager?.stop()
+
         // Clear auth session (tokens in Keychain)
         authManager.clearSession()
 
-        // Stop sync manager and clear sync state
+        // Clear access token from sync manager
         supabaseSyncManager?.updateAccessToken(nil)
 
         // Clear last pull timestamp to prevent stale data on next login
         UserDefaults.standard.removeObject(forKey: "SupabaseLastSuccessfulPullAt")
 
-        // Clear all local data (Core Data + in-memory orbs)
+        // Clear all local data (Core Data + in-memory orbs + OUTBOX)
         overlayController?.clearLocalData()
 
         // Clear onboarding state so auth window shows on next launch
@@ -1518,8 +1550,8 @@ extension AppDelegate {
         UserDefaults.standard.set(false, forKey: "hasSeenTutorial")
 
         rebuildDebugMenu(debugMenu)
-        DebugLog.log("✅ Signed out: cleared session, sync state, and local data", category: .sync)
-        showInfoAlert(title: "Signed Out", message: "Supabase session cleared.")
+        DebugLog.log("✅ Logout complete: cleared session, sync state, outbox, and all local data", category: .sync)
+        showInfoAlert(title: "Signed Out", message: "All data cleared. Ready for next login.")
 
         // Show auth window immediately
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in

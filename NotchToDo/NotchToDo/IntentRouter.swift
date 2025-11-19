@@ -8,6 +8,7 @@ struct RoutingContext {
 
 enum Action {
     case createTask(title: String)
+    case createAdvancedTask(intent: TaskIntent)  // NEW: Support for advanced task creation
     case showOverlay
     case createOrb(name: String)
     case clarifyTaskOrOrb(title: String, transcript: String)
@@ -18,6 +19,8 @@ extension Action: CustomStringConvertible {
         switch self {
         case .createTask(let title):
             return "Create task '\(title)'"
+        case .createAdvancedTask(let intent):
+            return "Create advanced task '\(intent.title)' (orb: \(intent.targetOrb ?? "auto"), priority: \(intent.priority ?? 2), has due date: \(intent.dueDate != nil))"
         case .showOverlay:
             return "Show overlay"
         case .createOrb(let name):
@@ -31,13 +34,18 @@ extension Action: CustomStringConvertible {
 
 class IntentRouter {
     private let classifier: IntentClassifier
+    private let advancedParser: AdvancedIntentParser  // NEW: Advanced NLP parser
     private let addVerbs: Set<String> = ["add", "create", "make", "start", "new"]
     private let openVerbs: Set<String> = ["open", "show", "reveal", "display", "bring"]
     private let orbKeywords: Set<String> = ["orb", "project", "workspace", "space"]
     private let taskKeywords: Set<String> = ["task", "tasks", "todo", "reminder", "item"]
-    
+
+    // Feature flag to enable/disable advanced parsing
+    private var useAdvancedParsing: Bool = true
+
     init(classifier: IntentClassifier = .shared) {
         self.classifier = classifier
+        self.advancedParser = AdvancedIntentParser()
     }
     
     func handle(transcript: String, context _: RoutingContext) -> Action? {
@@ -50,6 +58,28 @@ class IntentRouter {
         let mentionsOrb = !orbKeywords.isDisjoint(with: tokenSet)
         let mentionsTask = !taskKeywords.isDisjoint(with: tokenSet)
 
+        // NEW: Try advanced parsing first if enabled
+        if useAdvancedParsing {
+            // Try to parse with advanced NLP parser
+            if let taskIntent = advancedParser.parse(stripped) {
+                // Check if this is a complex command (has multiple attributes beyond just title)
+                let isComplex = taskIntent.targetOrb != nil ||
+                               taskIntent.dueDate != nil ||
+                               taskIntent.priority != nil ||
+                               taskIntent.status != nil ||
+                               taskIntent.notes != nil
+
+                if isComplex {
+                    DebugLog.log("Advanced parser detected complex command: \(taskIntent.title)", category: .intent)
+                    return .createAdvancedTask(intent: taskIntent)
+                }
+
+                // For simple commands, fall through to original logic for compatibility
+                DebugLog.log("Advanced parser detected simple command, using fallback logic", category: .intent)
+            }
+        }
+
+        // Original logic (fallback for backward compatibility)
         let prediction = classifier.predictIntent(for: stripped)
 
         switch prediction.intent {

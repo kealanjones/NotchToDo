@@ -23,13 +23,7 @@ protocol SpeechCaptureCoordinatorDelegate: AnyObject {
 final class SpeechCaptureCoordinator {
     weak var delegate: SpeechCaptureCoordinatorDelegate?
 
-    private let embeddingStopWords: Set<String> = [
-        "the", "a", "an", "to", "into", "my", "for", "and", "please", "could", "you",
-        "me", "can", "would", "notch", "hey", "ok", "okay", "add", "create", "make", "start"
-    ]
-
-    private lazy var wordEmbedding: NLEmbedding? = NLEmbedding.wordEmbedding(for: .english)
-    private var orbEmbeddingCache: [UUID: [Double]] = [:]
+    private let taskClassifier = TaskClassifier.shared
 
     private var speechBubbleWindow: NSWindow?
     private var speechBubbleView: SpeechCaptureBubbleView?
@@ -261,20 +255,12 @@ final class SpeechCaptureCoordinator {
     // MARK: - Embedding Cache
 
     func refreshOrbEmbeddingCache() {
-        orbEmbeddingCache.removeAll()
-        guard let embedding = wordEmbedding else { return }
         guard let orbManager = delegate?.orbManager else { return }
-        for orb in orbManager.orbs {
-            if let vector = sentenceVector(for: orb.name.lowercased(), embedding: embedding, skipStopWords: false) {
-                orbEmbeddingCache[orb.id] = vector
-            }
-        }
+        taskClassifier.refreshOrbCache(orbs: orbManager.orbs)
     }
 
     func primeEmbedding(for orb: ProjectOrb) {
-        guard let embedding = wordEmbedding,
-              let vector = sentenceVector(for: orb.name.lowercased(), embedding: embedding, skipStopWords: false) else { return }
-        orbEmbeddingCache[orb.id] = vector
+        taskClassifier.primeCache(for: orb)
     }
 
     // MARK: - Helpers
@@ -526,158 +512,22 @@ final class SpeechCaptureCoordinator {
             return delegate.resolveTargetOrbForNewTask()
         }
 
-        let normalized = transcript.lowercased()
+        // Use the new TaskClassifier for intelligent orb suggestion
+        let suggestion = taskClassifier.suggestOrbs(for: transcript, orbs: orbs, topN: 1)
 
-        for orb in orbs {
-            let name = orb.name.lowercased()
-            if normalized.contains(name) {
-                return orb
-            }
+        if let primaryMatch = suggestion.primarySuggestion {
+            DebugLog.log("""
+                ML-powered classification:
+                - Task: '\(transcript)'
+                - Selected orb: \(primaryMatch.orb.name)
+                - Confidence: \(String(format: "%.2f", primaryMatch.confidence))
+                - Method: \(primaryMatch.method.rawValue)
+                """, category: .ml)
+            return primaryMatch.orb
         }
 
-        if let embedding = wordEmbedding,
-           let queryVector = sentenceVector(for: normalized, embedding: embedding, skipStopWords: true),
-           let bestByEmbedding = bestOrbByEmbedding(for: queryVector, delegate: delegate) {
-            return bestByEmbedding
-        }
-
-        var bestMatch: (orb: ProjectOrb, score: Double)?
-
-        for orb in orbs {
-            let name = orb.name.lowercased()
-            var score: Double = 0
-            let components = name.split { !$0.isLetter }
-            for component in components {
-                let token = String(component)
-                if normalized.contains(token) {
-                    score += 1.5
-                } else if token.count >= 4 {
-                    let prefix = String(token.prefix(3))
-                    if normalized.contains(prefix) {
-                        score += 0.5
-                    }
-                }
-            }
-
-            if let currentBest = bestMatch {
-                if score > currentBest.score {
-                    bestMatch = (orb, score)
-                }
-            } else {
-                bestMatch = (orb, score)
-            }
-        }
-
-        if let best = bestMatch, best.score > 0.1 {
-            return best.orb
-        }
-
-        if let minimumTasksOrb = orbs.min(by: { lhs, rhs in
-            if lhs.taskCount == rhs.taskCount {
-                return lhs.name < rhs.name
-            }
-            return lhs.taskCount < rhs.taskCount
-        }) {
-            return minimumTasksOrb
-        }
-
+        // Fallback to default behavior
         return delegate.resolveTargetOrbForNewTask()
-    }
-
-    private func bestOrbByEmbedding(for queryVector: [Double], delegate: SpeechCaptureCoordinatorDelegate) -> ProjectOrb? {
-        var bestCandidate: (orb: ProjectOrb, score: Double)?
-
-        for orb in delegate.orbManager.orbs {
-            guard let orbVector = vectorForOrbEmbedding(orb),
-                  let similarity = cosineSimilarity(between: queryVector, and: orbVector) else {
-                continue
-            }
-
-            let workloadBoost = min(0.08, log(Double(max(orb.taskCount, 1))) * 0.03)
-            let compositeScore = similarity + workloadBoost
-
-            if let current = bestCandidate {
-                if compositeScore > current.score {
-                    bestCandidate = (orb, compositeScore)
-                }
-            } else {
-                bestCandidate = (orb, compositeScore)
-            }
-        }
-
-        guard let finalCandidate = bestCandidate, finalCandidate.score > 0.12 else {
-            return nil
-        }
-        return finalCandidate.orb
-    }
-
-    private func vectorForOrbEmbedding(_ orb: ProjectOrb) -> [Double]? {
-        if let cached = orbEmbeddingCache[orb.id] {
-            return cached
-        }
-        guard let embedding = wordEmbedding,
-              let vector = sentenceVector(for: orb.name.lowercased(), embedding: embedding, skipStopWords: false) else {
-            return nil
-        }
-        orbEmbeddingCache[orb.id] = vector
-        return vector
-    }
-
-    private func sentenceVector(for text: String, embedding: NLEmbedding, skipStopWords: Bool) -> [Double]? {
-        let rawTokens = text.split { !$0.isLetter }.map { String($0).lowercased() }
-        let filteredTokens: [String]
-        if skipStopWords {
-            filteredTokens = rawTokens.filter { !$0.isEmpty && !embeddingStopWords.contains($0) }
-        } else {
-            filteredTokens = rawTokens.filter { !$0.isEmpty }
-        }
-
-        guard !filteredTokens.isEmpty else { return nil }
-
-        var running: [Double] = []
-        var count = 0
-
-        for token in filteredTokens {
-            guard let vector = embedding.vector(for: token) else { continue }
-            if running.isEmpty {
-                running = vector
-            } else if running.count == vector.count {
-                for index in running.indices {
-                    running[index] += vector[index]
-                }
-            } else {
-                continue
-            }
-            count += 1
-        }
-
-        guard count > 0 else { return nil }
-
-        let divisor = Double(count)
-        for index in running.indices {
-            running[index] /= divisor
-        }
-
-        return running
-    }
-
-    private func cosineSimilarity(between lhs: [Double], and rhs: [Double]) -> Double? {
-        guard lhs.count == rhs.count else { return nil }
-
-        var dot: Double = 0
-        var lhsMagnitude: Double = 0
-        var rhsMagnitude: Double = 0
-
-        for index in 0..<lhs.count {
-            let l = lhs[index]
-            let r = rhs[index]
-            dot += l * r
-            lhsMagnitude += l * l
-            rhsMagnitude += r * r
-        }
-
-        guard lhsMagnitude > 0.0001, rhsMagnitude > 0.0001 else { return nil }
-        return dot / (sqrt(lhsMagnitude) * sqrt(rhsMagnitude))
     }
 
     private func animateSpeechBubble(into orb: ProjectOrb, with taskTitle: String) {
@@ -687,6 +537,8 @@ final class SpeechCaptureCoordinator {
             logSessionEvent("bubble window missing during animation; finishing session")
             pendingBubbleTargetOrbId = nil
             delegate.addTask(taskTitle, to: orb)
+            // Record feedback for ML training
+            taskClassifier.recordFeedback(taskText: taskTitle, chosenOrb: orb)
             pendingTranscript = nil
             pendingTaskTitle = nil
             delegate.setState(.idle)
@@ -699,6 +551,8 @@ final class SpeechCaptureCoordinator {
             pendingBubbleTargetOrbId = nil
             dismissSpeechBubble()
             delegate.addTask(taskTitle, to: orb)
+            // Record feedback for ML training
+            taskClassifier.recordFeedback(taskText: taskTitle, chosenOrb: orb)
             pendingTranscript = nil
             pendingTaskTitle = nil
             delegate.setState(.idle)
@@ -724,6 +578,8 @@ final class SpeechCaptureCoordinator {
             orb.applyImpulse(CGPoint(x: 0, y: 3.5))
             self.pendingBubbleTargetOrbId = nil
             delegate.addTask(taskTitle, to: orb)
+            // Record feedback for ML training
+            self.taskClassifier.recordFeedback(taskText: taskTitle, chosenOrb: orb)
             AudioFeedback.shared.play(.dropIntoOrb, volume: 0.55)
             delegate.compactPreview.present(
                 orbColor: orb.color,

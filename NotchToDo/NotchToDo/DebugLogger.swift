@@ -9,6 +9,7 @@ enum DebugCategory: CaseIterable, Hashable {
     case physics
     case persistence
     case sync
+    case ml
     
     var displayName: String {
         switch self {
@@ -20,6 +21,7 @@ enum DebugCategory: CaseIterable, Hashable {
         case .physics: return "Physics"
         case .persistence: return "Persistence"
         case .sync: return "Sync"
+        case .ml: return "Machine Learning"
         }
     }
     
@@ -33,11 +35,12 @@ enum DebugCategory: CaseIterable, Hashable {
         case .physics: return "PHYS"
         case .persistence: return "DATA"
         case .sync: return "SYNC"
+        case .ml: return "ML"
         }
     }
     
     static var defaultEnabled: Set<DebugCategory> {
-        return [.intent, .speech, .overlay, .sync, .persistence]
+        return [.intent, .speech, .overlay, .sync, .persistence, .ml]
     }
 }
 
