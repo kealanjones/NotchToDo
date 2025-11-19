@@ -155,7 +155,22 @@ import Cocoa
             let task = Task(title: title, sortOrder: Double(tasks.count))
             addTask(task)
         }
-        
+
+        /// Add a task with all advanced attributes from voice command intent
+        func addTask(from intent: TaskIntent) {
+            let task = Task(
+                title: intent.title,
+                isCompleted: false,
+                details: intent.notes ?? "",
+                deadline: intent.combinedDueDate,
+                priority: intent.priority ?? 2,
+                status: intent.status ?? 1,
+                createdAt: Date(),
+                sortOrder: Double(tasks.count)
+            )
+            addTask(task)
+        }
+
         func addTask(from snapshot: TaskSnapshot) {
             let task = Task(
                 id: snapshot.id,

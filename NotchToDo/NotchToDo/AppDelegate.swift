@@ -1322,6 +1322,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, AuthViewControllerDelegate {
         switch effect {
         case .createTask(let title):
             overlayController?.finalizeSpeechCapture(with: final, resolvedTaskTitle: title)
+        case .createAdvancedTask(let intent):
+            // NEW: Handle advanced task creation with all attributes
+            DebugLog.log("Creating advanced task: \(intent.title)", category: .intent)
+            overlayController?.finalizeSpeechCaptureForAdvancedTask(intent: intent)
+            // Provide voice feedback
+            VoiceFeedback.shared.announceIntent(intent)
         case .showOverlay:
             overlayController?.finalizeSpeechCaptureForCommand(transcript: final, status: "Opening Notch…") { [weak self] in
                 self?.overlayController?.revealOverlayForVoice()

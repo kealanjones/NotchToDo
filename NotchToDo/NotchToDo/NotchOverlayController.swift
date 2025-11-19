@@ -255,6 +255,65 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
         speechCoordinator.finalizeCommand(transcript: transcript, status: status, completion: completion)
     }
 
+    /// NEW: Finalize speech capture for advanced task creation with all attributes
+    func finalizeSpeechCaptureForAdvancedTask(intent: TaskIntent) {
+        DebugLog.log("Finalizing advanced task: \(intent.title)", category: .intent)
+
+        // Resolve target orb using fuzzy matching if specified
+        var targetOrb: ProjectOrb
+
+        if let targetOrbName = intent.targetOrb {
+            // Try fuzzy matching against available orbs
+            let orbNames = orbManager.orbs.map { $0.name }
+
+            if let match = FuzzyOrbMatcher.findBestMatch(targetOrbName, in: orbNames) {
+                DebugLog.log("Matched orb '\(targetOrbName)' to '\(match.orbName)' (confidence: \(match.confidence))", category: .intent)
+
+                if let foundOrb = orbManager.orbs.first(where: { $0.name == match.orbName }) {
+                    targetOrb = foundOrb
+                } else {
+                    DebugLog.log("Orb match failed, using default", category: .intent)
+                    targetOrb = resolveTargetOrbForNewTask()
+                }
+            } else {
+                DebugLog.log("No orb match found for '\(targetOrbName)', using ML classifier", category: .intent)
+                targetOrb = resolveTargetOrbForNewTask()
+            }
+        } else {
+            // No orb specified, use ML classification (existing behavior)
+            targetOrb = resolveTargetOrbForNewTask()
+        }
+
+        // Create the task with all attributes
+        targetOrb.addTask(from: intent)
+
+        // Update UI
+        if let window = taskCardWindows[targetOrb.id],
+           let taskCardView = window.contentView as? TaskCardView {
+            taskCardView.updateTasks(targetOrb.tasks, projectName: targetOrb.name, orbColor: targetOrb.color, orbId: targetOrb.id)
+            window.alphaValue = 1.0
+            window.makeKeyAndOrderFront(nil)
+            if let newTask = targetOrb.tasks.last {
+                taskCardView.highlightTask(newTask)
+            }
+        }
+
+        // Finalize speech capture UI
+        speechCoordinator.finalizeCommand(
+            transcript: intent.title,
+            status: "Added to \(targetOrb.name)",
+            completion: nil
+        )
+
+        // Update notch context
+        if currentOpenOrb?.id == targetOrb.id {
+            updateNotchContext(for: targetOrb)
+        }
+
+        semiCircleView?.needsDisplay = true
+        resetFadeTimer()
+    }
+
     func cancelSpeechCapture() {
         speechCoordinator.cancelSession()
     }

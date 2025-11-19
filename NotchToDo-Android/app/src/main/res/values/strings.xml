@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NotchToDo</string>
+
+    <!-- Navigation -->
+    <string name="nav_tasks">Tasks</string>
+    <string name="nav_orbs">Orbs</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Auth -->
+    <string name="auth_sign_in">Sign In</string>
+    <string name="auth_sign_up">Sign Up</string>
+    <string name="auth_sign_out">Sign Out</string>
+    <string name="auth_email">Email</string>
+    <string name="auth_password">Password</string>
+    <string name="auth_email_hint">Enter your email</string>
+    <string name="auth_password_hint">Enter your password</string>
+    <string name="auth_sign_in_button">Sign In</string>
+    <string name="auth_sign_up_button">Create Account</string>
+    <string name="auth_no_account">Don\'t have an account?</string>
+    <string name="auth_have_account">Already have an account?</string>
+    <string name="auth_error_empty_email">Email cannot be empty</string>
+    <string name="auth_error_empty_password">Password cannot be empty</string>
+    <string name="auth_error_invalid_email">Invalid email format</string>
+
+    <!-- Tasks -->
+    <string name="task_title">Title</string>
+    <string name="task_notes">Notes</string>
+    <string name="task_due_date">Due Date</string>
+    <string name="task_priority">Priority</string>
+    <string name="task_status">Status</string>
+    <string name="task_create">Create Task</string>
+    <string name="task_edit">Edit Task</string>
+    <string name="task_delete">Delete Task</string>
+    <string name="task_delete_confirm">Are you sure you want to delete this task?</string>
+    <string name="task_title_hint">What needs to be done?</string>
+    <string name="task_notes_hint">Add notes…</string>
+    <string name="task_voice_input">Voice Input</string>
+    <string name="task_no_tasks">No tasks yet</string>
+    <string name="task_no_tasks_desc">Create a task to get started</string>
+
+    <!-- Task Status -->
+    <string name="status_outstanding">Outstanding</string>
+    <string name="status_in_progress">In Progress</string>
+    <string name="status_complete">Complete</string>
+
+    <!-- Task Priority -->
+    <string name="priority_low">Low</string>
+    <string name="priority_medium">Medium</string>
+    <string name="priority_high">High</string>
+
+    <!-- Orbs -->
+    <string name="orb_name">Orb Name</string>
+    <string name="orb_create">Create Orb</string>
+    <string name="orb_edit">Edit Orb</string>
+    <string name="orb_delete">Delete Orb</string>
+    <string name="orb_delete_confirm">Are you sure you want to delete this orb and all its tasks?</string>
+    <string name="orb_name_hint">Enter orb name</string>
+    <string name="orb_no_orbs">No orbs yet</string>
+    <string name="orb_no_orbs_desc">Create an orb to organize your tasks</string>
+    <string name="orb_color">Color</string>
+    <string name="orb_task_count">%d tasks</string>
+
+    <!-- Search -->
+    <string name="search">Search</string>
+    <string name="search_tasks">Search tasks…</string>
+    <string name="search_no_results">No results found</string>
+
+    <!-- Actions -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_done">Done</string>
+    <string name="action_create">Create</string>
+    <string name="action_sync">Sync Now</string>
+
+    <!-- Settings -->
+    <string name="settings_account">Account</string>
+    <string name="settings_sync">Sync</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %s</string>
+    <string name="settings_last_sync">Last sync: %s</string>
+    <string name="settings_never_synced">Never synced</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_reminders">Task Reminders</string>
+    <string name="notif_channel_reminders_desc">Notifications for task due dates</string>
+    <string name="notif_task_due">Task due: %s</string>
+
+    <!-- Widget -->
+    <string name="widget_name">NotchToDo Tasks</string>
+    <string name="widget_description">View your tasks at a glance</string>
+
+    <!-- Permissions -->
+    <string name="permission_microphone_rationale">Microphone permission is needed for voice input</string>
+    <string name="permission_notification_rationale">Notification permission is needed for task reminders</string>
+
+    <!-- Errors -->
+    <string name="error_generic">Something went wrong</string>
+    <string name="error_network">Network error. Please check your connection.</string>
+    <string name="error_auth">Authentication error. Please sign in again.</string>
+    <string name="error_sync">Sync failed. Will retry later.</string>
+
+    <!-- Share Target -->
+    <string name="share_add_task">Add to NotchToDo</string>
+</resources>
