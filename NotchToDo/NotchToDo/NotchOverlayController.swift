@@ -188,7 +188,18 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
     }
     
     func addTask(_ title: String, to targetOrb: ProjectOrb) {
-        targetOrb.addTask(title: title)
+        // Validate and sanitize task title
+        let validatedTitle: String
+        do {
+            validatedTitle = try InputValidator.validateTaskTitle(title)
+        } catch {
+            DebugLog.logValidationError(error as! InputValidator.ValidationError, category: .app)
+            DebugLog.log("Task creation failed due to validation error", category: .app)
+            // Use a safe fallback or show error to user
+            return
+        }
+
+        targetOrb.addTask(title: validatedTitle)
         let newlyCreatedTask = targetOrb.tasks.last
 
         if let window = taskCardWindows[targetOrb.id],
@@ -1304,7 +1315,17 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
     }
     
     func createNewProject(name: String) {
-        let sanitizedName = sanitizeOrbName(name)
+        // Validate and sanitize orb name using InputValidator
+        let validatedName: String
+        do {
+            validatedName = try InputValidator.validateOrbName(name)
+        } catch {
+            DebugLog.logValidationError(error as! InputValidator.ValidationError, category: .app)
+            DebugLog.log("Project creation failed due to validation error", category: .app)
+            return
+        }
+
+        let sanitizedName = sanitizeOrbName(validatedName)
         DebugLog.log("🎯 Creating new project: \(sanitizedName)", category: .app)
         DebugLog.log("🎯 Current orb count before: \(orbManager.orbs.count)", category: .app)
         

@@ -6,11 +6,9 @@ enum DebugCategory: CaseIterable, Hashable {
     case speech
     case overlay
     case tasks
-    case physics
     case persistence
     case sync
-    case ml
-    
+
     var displayName: String {
         switch self {
         case .app: return "App Lifecycle"
@@ -18,13 +16,11 @@ enum DebugCategory: CaseIterable, Hashable {
         case .speech: return "Speech & Voice"
         case .overlay: return "Overlay & UI"
         case .tasks: return "Tasks & Cards"
-        case .physics: return "Physics"
         case .persistence: return "Persistence"
         case .sync: return "Sync"
-        case .ml: return "Machine Learning"
         }
     }
-    
+
     var tag: String {
         switch self {
         case .app: return "APP"
@@ -32,24 +28,22 @@ enum DebugCategory: CaseIterable, Hashable {
         case .speech: return "SPEECH"
         case .overlay: return "OVERLAY"
         case .tasks: return "TASK"
-        case .physics: return "PHYS"
         case .persistence: return "DATA"
         case .sync: return "SYNC"
-        case .ml: return "ML"
         }
     }
-    
+
     static var defaultEnabled: Set<DebugCategory> {
-        return [.intent, .speech, .overlay, .sync, .persistence, .ml]
+        return [.intent, .speech, .overlay, .sync, .persistence]
     }
 }
 
 final class DebugLogger {
     static let shared = DebugLogger()
-    
+
     private let lock = NSLock()
     private var enabledCategories: Set<DebugCategory> = DebugCategory.defaultEnabled
-    
+
     func setCategory(_ category: DebugCategory, enabled: Bool) {
         lock.lock()
         if enabled {
@@ -59,14 +53,14 @@ final class DebugLogger {
         }
         lock.unlock()
     }
-    
+
     func isEnabled(_ category: DebugCategory) -> Bool {
         lock.lock()
         let enabled = enabledCategories.contains(category)
         lock.unlock()
         return enabled
     }
-    
+
     func allCategories() -> [DebugCategory] {
         return DebugCategory.allCases
     }

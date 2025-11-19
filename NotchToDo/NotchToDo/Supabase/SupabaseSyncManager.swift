@@ -89,6 +89,7 @@ final class SupabaseSyncManager {
     }()
 
     private var forceFullPullNext: Bool = false
+    private var isActive: Bool = false // Track if sync manager is active
 
     private struct PullState {
         static let lastPullKey = "SupabaseLastSuccessfulPullAt"
@@ -115,7 +116,9 @@ final class SupabaseSyncManager {
         self.service = service
         self.persistence = persistenceController
         self.backgroundContext = persistenceController.container.newBackgroundContext()
-        self.backgroundContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        // CRITICAL FIX: Use store trump policy so remote changes win during pull operations
+        // Previously used object trump which caused local changes to always win over remote
+        self.backgroundContext.mergePolicy = NSMergeByPropertyStoreTrumpMergePolicy
         self.backgroundContext.automaticallyMergesChangesFromParent = true
         persistenceController.registerSyncWorkerContext(backgroundContext)
 
@@ -132,12 +135,14 @@ final class SupabaseSyncManager {
         timer.schedule(deadline: .now() + 10, repeating: 10, leeway: .seconds(1))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            // Avoid overlapping pulls while actively syncing
-            if case .syncing = self.state { return }
+            // Only pull if active (authenticated) - allows clean shutdown on logout
+            guard self.isActive else { return }
+            // Pull can run concurrently with push operations - no longer blocking
             self.pullRemoteChanges()
         }
         timer.resume()
         pullTimer = timer
+        self.isActive = false // Starts inactive until authenticated
     }
 
     func updateAccessToken(_ token: String?) {
@@ -146,9 +151,43 @@ final class SupabaseSyncManager {
             currentUserID = Self.extractUserID(from: token)
             if currentUserID == nil {
                 DebugLog.log("Unable to decode Supabase user ID from access token", category: .sync)
+            } else {
+                DebugLog.log("✅ Sync manager activated for user \(currentUserID!.uuidString.prefix(8))", category: .sync)
+                isActive = true // Activate sync when authenticated
             }
         } else {
             currentUserID = nil
+            isActive = false
+            DebugLog.log("🔒 Sync manager deactivated (no auth token)", category: .sync)
+        }
+    }
+
+    /// Stop all sync operations and clean up state (call on logout)
+    func stop() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.isActive = false
+            self.accessToken = nil
+            self.currentUserID = nil
+            self.state = .idle
+            self.forceFullPullNext = false
+            DebugLog.log("🛑 Sync manager stopped and reset", category: .sync)
+        }
+    }
+
+    /// Resume sync operations after login
+    func resume() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard self.accessToken != nil, self.currentUserID != nil else {
+                DebugLog.log("⚠️ Cannot resume sync: missing credentials", category: .sync)
+                return
+            }
+            self.isActive = true
+            self.forceFullPullNext = true // Force full pull on resume
+            DebugLog.log("▶️ Sync manager resumed", category: .sync)
+            self.pullRemoteChanges()
+            self.flushPendingChanges()
         }
     }
 
@@ -181,18 +220,28 @@ final class SupabaseSyncManager {
     }
 
     private func flushPendingChanges() {
-        guard state != .syncing else { return }
+        guard isActive else {
+            DebugLog.log("⏸️ Skipping flush: sync manager inactive", category: .sync)
+            return
+        }
+        guard state != .syncing else {
+            DebugLog.log("⏸️ Skipping flush: already syncing", category: .sync)
+            return
+        }
         state = .syncing
+        DebugLog.log("⬆️ Starting outbox flush...", category: .sync)
         persistence.performOutboxMaintenanceSync()
         processOutboxBatch(limit: 50)
-        // Always attempt a pull after pushing local changes
+        // Always attempt a pull after pushing local changes to get latest state
         pullRemoteChanges()
         if case .syncing = state {
             state = .idle
         }
+        DebugLog.log("✅ Outbox flush complete", category: .sync)
     }
 
     private func pullRemoteChanges() {
+        guard isActive else { return } // Don't pull if not active
         guard let accessToken else { return }
         guard let userID = currentUserID else { return }
         let since: Date? = {
@@ -292,15 +341,17 @@ final class SupabaseSyncManager {
                     }
                 }
 
-                DebugLog.log("Pulled \(remoteOrbs.count) orbs, \(remoteTasks.count) tasks", category: .sync)
+                DebugLog.log("⬇️ Pulled \(remoteOrbs.count) orbs, \(remoteTasks.count) tasks from Supabase", category: .sync)
                 self.mergeRemote(orbs: remoteOrbs, tasks: remoteTasks)
                 let maxOrbTime = remoteOrbs.compactMap { $0.updatedAt ?? $0.createdAt }.max()
                 let maxTaskTime = remoteTasks.compactMap { $0.updatedAt ?? $0.createdAt }.max()
                 if let latest = [maxOrbTime, maxTaskTime].compactMap({ $0 }).max() {
                     PullState.update(latest)
-                    DebugLog.log("Updated lastSuccessfulPullAt -> \(latest)", category: .sync)
+                    DebugLog.log("✅ Pull successful - updated lastSuccessfulPullAt to \(latest.ISO8601Format())", category: .sync)
+                } else if remoteOrbs.isEmpty && remoteTasks.isEmpty {
+                    DebugLog.log("✅ Pull complete - no new data from server", category: .sync)
                 } else {
-                    DebugLog.log("No remote rows changed; lastSuccessfulPullAt unchanged", category: .sync)
+                    DebugLog.log("⚠️ Pull complete but couldn't determine latest timestamp", category: .sync)
                 }
             } catch {
                 DebugLog.log("Remote pull failed: \(error)", category: .sync)
@@ -310,6 +361,21 @@ final class SupabaseSyncManager {
 
     private func mergeRemote(orbs: [OrbFetchRecord], tasks: [TaskFetchRecord]) {
         backgroundContext.performAndWait {
+            // SECURITY: Validate all incoming data matches current user
+            let currentUID = self.currentUserID
+            for r in orbs {
+                if let uid = currentUID, r.userId != uid {
+                    DebugLog.log("⚠️ SECURITY: Rejecting orb \(r.id) - user_id mismatch! Expected \(uid), got \(r.userId)", category: .sync)
+                    return // Abort entire merge on security violation
+                }
+            }
+            for r in tasks {
+                if let uid = currentUID, r.userId != uid {
+                    DebugLog.log("⚠️ SECURITY: Rejecting task \(r.id) - user_id mismatch! Expected \(uid), got \(r.userId)", category: .sync)
+                    return // Abort entire merge on security violation
+                }
+            }
+
             func safeSet(_ object: NSManagedObject, key: String, value: Any?) {
                 guard object.entity.attributesByName.keys.contains(key) else { return }
                 object.setValue(value, forKey: key)
@@ -610,6 +676,7 @@ final class SupabaseSyncManager {
         backgroundContext.performAndWait {
             if let outboxItem = try? backgroundContext.existingObject(with: workItem.objectID) as? SyncOutboxItem {
                 backgroundContext.delete(outboxItem)
+                DebugLog.log("✅ Synced \(workItem.operation.name) \(workItem.entityName) #\(workItem.localIdentifier.uuidString.prefix(8)) → remoteID: \(outcome.remoteID?.uuidString.prefix(8) ?? "nil")", category: .sync)
             }
 
             applyLocalPostSyncHousekeeping(
@@ -625,7 +692,7 @@ final class SupabaseSyncManager {
                     try backgroundContext.save()
                 }
             } catch {
-                DebugLog.log("Failed to persist sync bookkeeping: \(error)", category: .sync)
+                DebugLog.log("❌ Failed to persist sync bookkeeping: \(error)", category: .sync)
                 backgroundContext.reset()
             }
         }
