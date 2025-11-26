@@ -231,30 +231,52 @@ final class SupabaseSyncManager {
         state = .syncing
         DebugLog.log("⬆️ Starting outbox flush...", category: .sync)
         persistence.performOutboxMaintenanceSync()
-        processOutboxBatch(limit: 50)
-        // Always attempt a pull after pushing local changes to get latest state
-        pullRemoteChanges()
-        if case .syncing = state {
-            state = .idle
+        
+        // Process outbox using async/await without blocking
+        AsyncTask(priority: .utility) { [weak self] in
+            guard let self else { return }
+            await self.processOutboxBatchAsync(limit: 50)
+            // Always attempt a pull after pushing local changes to get latest state
+            await self.pullRemoteChangesAsync()
+            await MainActor.run {
+                if case .syncing = self.state {
+                    self.state = .idle
+                }
+                DebugLog.log("✅ Outbox flush complete", category: .sync)
+            }
         }
-        DebugLog.log("✅ Outbox flush complete", category: .sync)
     }
 
     private func pullRemoteChanges() {
         guard isActive else { return } // Don't pull if not active
         guard let accessToken else { return }
         guard let userID = currentUserID else { return }
+        
+        // Use non-blocking async pull
+        AsyncTask(priority: .utility) { [weak self] in
+            guard let self else { return }
+            await self.pullRemoteChangesAsync()
+        }
+    }
+    
+    /// Async version of remote pull - does not block the calling thread
+    private func pullRemoteChangesAsync() async {
+        guard isActive else { return }
+        guard let accessToken else { return }
+        guard let userID = currentUserID else { return }
+        
         let since: Date? = {
             if forceFullPullNext { return nil }
             guard let last = PullState.lastSuccessfulPullAt else { return nil }
             // Apply small skew to avoid missing near-edge updates
             return last.addingTimeInterval(-5)
         }()
+        
         do {
-            try fetchAndMergeRemote(userID: userID, since: since, accessToken: accessToken)
+            try await fetchAndMergeRemoteAsync(userID: userID, since: since, accessToken: accessToken)
             forceFullPullNext = false
         } catch {
-            DebugLog.log("Remote pull failed to schedule: \(error)", category: .sync)
+            DebugLog.log("Remote pull failed: \(error)", category: .sync)
         }
     }
 
@@ -263,7 +285,8 @@ final class SupabaseSyncManager {
         queue.async { [weak self] in self?.forceFullPullNext = true }
     }
 
-    private func fetchAndMergeRemote(userID: UUID, since: Date?, accessToken: String) throws {
+    /// Async version of fetch and merge - uses proper async/await without blocking
+    private func fetchAndMergeRemoteAsync(userID: UUID, since: Date?, accessToken: String) async throws {
         let sinceISO: String? = {
             guard let s = since else { return nil }
             return SupabaseService.iso8601FormatterWithFractional.string(from: s)
@@ -282,80 +305,46 @@ final class SupabaseSyncManager {
             return items
         }()
 
-        queue.async { [weak self] in
-            guard let self else { return }
-            do {
-                // ORBS pull with 401 refresh + retry
-                let remoteOrbs: [OrbFetchRecord] = try awaitResult { continuation in
-                    AsyncTask(priority: .utility) {
-                        do {
-                            var req = try self.service.makeRequest(path: "orbs", method: .get, queryItems: orbQuery, accessToken: accessToken)
-                            req.setValue("return=representation", forHTTPHeaderField: "Prefer")
-                            do {
-                                let result: [OrbFetchRecord] = try await self.service.perform(req, decode: [OrbFetchRecord].self)
-                                continuation(result, nil)
-                            } catch {
-                                if case let SupabaseService.ServiceError.invalidResponse(status, _) = error, status == 401 {
-                                    await self.authManager?.refreshSessionIfNeeded()
-                                    let newToken = self.authManager?.currentSession?.accessToken
-                                    if let newToken { self.updateAccessToken(newToken) }
-                                    var retryReq = try self.service.makeRequest(path: "orbs", method: .get, queryItems: orbQuery, accessToken: newToken ?? accessToken)
-                                    retryReq.setValue("return=representation", forHTTPHeaderField: "Prefer")
-                                    do {
-                                        let retried: [OrbFetchRecord] = try await self.service.perform(retryReq, decode: [OrbFetchRecord].self)
-                                        continuation(retried, nil)
-                                    } catch { continuation(nil, error) }
-                                } else {
-                                    continuation(nil, error)
-                                }
-                            }
-                        } catch { continuation(nil, error) }
-                    }
-                }
+        // Fetch orbs with 401 refresh + retry
+        let remoteOrbs: [OrbFetchRecord] = try await fetchWithAuthRetry(path: "orbs", queryItems: orbQuery, accessToken: accessToken)
+        
+        // Fetch tasks with 401 refresh + retry
+        let remoteTasks: [TaskFetchRecord] = try await fetchWithAuthRetry(path: "tasks", queryItems: taskQuery, accessToken: accessToken)
 
-                // TASKS pull with 401 refresh + retry
-                let remoteTasks: [TaskFetchRecord] = try awaitResult { continuation in
-                    AsyncTask(priority: .utility) {
-                        do {
-                            var req = try self.service.makeRequest(path: "tasks", method: .get, queryItems: taskQuery, accessToken: accessToken)
-                            req.setValue("return=representation", forHTTPHeaderField: "Prefer")
-                            do {
-                                let result: [TaskFetchRecord] = try await self.service.perform(req, decode: [TaskFetchRecord].self)
-                                continuation(result, nil)
-                            } catch {
-                                if case let SupabaseService.ServiceError.invalidResponse(status, _) = error, status == 401 {
-                                    await self.authManager?.refreshSessionIfNeeded()
-                                    let newToken = self.authManager?.currentSession?.accessToken
-                                    if let newToken { self.updateAccessToken(newToken) }
-                                    var retryReq = try self.service.makeRequest(path: "tasks", method: .get, queryItems: taskQuery, accessToken: newToken ?? accessToken)
-                                    retryReq.setValue("return=representation", forHTTPHeaderField: "Prefer")
-                                    do {
-                                        let retried: [TaskFetchRecord] = try await self.service.perform(retryReq, decode: [TaskFetchRecord].self)
-                                        continuation(retried, nil)
-                                    } catch { continuation(nil, error) }
-                                } else {
-                                    continuation(nil, error)
-                                }
-                            }
-                        } catch { continuation(nil, error) }
-                    }
-                }
-
-                DebugLog.log("⬇️ Pulled \(remoteOrbs.count) orbs, \(remoteTasks.count) tasks from Supabase", category: .sync)
-                self.mergeRemote(orbs: remoteOrbs, tasks: remoteTasks)
-                let maxOrbTime = remoteOrbs.compactMap { $0.updatedAt ?? $0.createdAt }.max()
-                let maxTaskTime = remoteTasks.compactMap { $0.updatedAt ?? $0.createdAt }.max()
-                if let latest = [maxOrbTime, maxTaskTime].compactMap({ $0 }).max() {
-                    PullState.update(latest)
-                    DebugLog.log("✅ Pull successful - updated lastSuccessfulPullAt to \(latest.ISO8601Format())", category: .sync)
-                } else if remoteOrbs.isEmpty && remoteTasks.isEmpty {
-                    DebugLog.log("✅ Pull complete - no new data from server", category: .sync)
-                } else {
-                    DebugLog.log("⚠️ Pull complete but couldn't determine latest timestamp", category: .sync)
-                }
-            } catch {
-                DebugLog.log("Remote pull failed: \(error)", category: .sync)
+        DebugLog.log("⬇️ Pulled \(remoteOrbs.count) orbs, \(remoteTasks.count) tasks from Supabase", category: .sync)
+        mergeRemote(orbs: remoteOrbs, tasks: remoteTasks)
+        
+        let maxOrbTime = remoteOrbs.compactMap { $0.updatedAt ?? $0.createdAt }.max()
+        let maxTaskTime = remoteTasks.compactMap { $0.updatedAt ?? $0.createdAt }.max()
+        if let latest = [maxOrbTime, maxTaskTime].compactMap({ $0 }).max() {
+            PullState.update(latest)
+            DebugLog.log("✅ Pull successful - updated lastSuccessfulPullAt to \(latest.ISO8601Format())", category: .sync)
+        } else if remoteOrbs.isEmpty && remoteTasks.isEmpty {
+            DebugLog.log("✅ Pull complete - no new data from server", category: .sync)
+        } else {
+            DebugLog.log("⚠️ Pull complete but couldn't determine latest timestamp", category: .sync)
+        }
+    }
+    
+    /// Generic fetch with automatic 401 retry after token refresh
+    private func fetchWithAuthRetry<T: Decodable>(path: String, queryItems: [URLQueryItem], accessToken: String) async throws -> T {
+        var req = try service.makeRequest(path: path, method: .get, queryItems: queryItems, accessToken: accessToken)
+        req.setValue("return=representation", forHTTPHeaderField: "Prefer")
+        
+        do {
+            return try await service.perform(req, decode: T.self)
+        } catch {
+            // Check for 401 and retry with refreshed token
+            if case let SupabaseService.ServiceError.invalidResponse(status, _) = error, status == 401 {
+                await authManager?.refreshSessionIfNeeded()
+                let newToken = authManager?.currentSession?.accessToken
+                if let newToken { updateAccessToken(newToken) }
+                
+                var retryReq = try service.makeRequest(path: path, method: .get, queryItems: queryItems, accessToken: newToken ?? accessToken)
+                retryReq.setValue("return=representation", forHTTPHeaderField: "Prefer")
+                return try await service.perform(retryReq, decode: T.self)
             }
+            throw error
         }
     }
 
@@ -465,23 +454,8 @@ final class SupabaseSyncManager {
         }
     }
 
-    // Utility to await inside non-async function context
-    private func awaitResult<T>(_ body: (@escaping (T?, Error?) -> Void) -> Void) throws -> T {
-        var result: Result<T, Error>!
-        let group = DispatchGroup()
-        group.enter()
-        body { value, error in
-            if let value { result = .success(value) } else { result = .failure(error ?? NSError(domain: "com.notchtodo", code: -1)) }
-            group.leave()
-        }
-        group.wait()
-        switch result! {
-        case .success(let v): return v
-        case .failure(let e): throw e
-        }
-    }
-
-    private func processOutboxBatch(limit: Int) {
+    /// Async version of outbox batch processing - does not block threads
+    private func processOutboxBatchAsync(limit: Int) async {
         guard let accessToken else {
             DebugLog.log("Supabase sync paused: missing access token", category: .sync)
             state = .paused
@@ -505,20 +479,9 @@ final class SupabaseSyncManager {
 
         guard !workItems.isEmpty else { return }
 
-        var processingError: Error?
-        let group = DispatchGroup()
-        group.enter()
-        AsyncTask(priority: .utility) {
-            do {
-                try await self.process(workItems: workItems, accessToken: accessToken, userID: userID)
-            } catch {
-                processingError = error
-            }
-            group.leave()
-        }
-        group.wait()
-
-        if let error = processingError {
+        do {
+            try await process(workItems: workItems, accessToken: accessToken, userID: userID)
+        } catch {
             handleProcessingError(error)
         }
     }

@@ -6,7 +6,9 @@ import com.notchtodo.data.local.entities.toEntity
 import com.notchtodo.data.remote.SupabaseApi
 import com.notchtodo.data.remote.dto.*
 import com.notchtodo.domain.model.Orb
+import com.notchtodo.util.DateUtils
 import com.notchtodo.util.DebugLog
+import com.notchtodo.util.RetryHelper
 import com.notchtodo.util.SecurePreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -97,7 +99,7 @@ class OrbRepository @Inject constructor(
                 try {
                     val response = api.softDeleteOrb(
                         idFilter = "eq.${orbId}",
-                        deletedAt = mapOf("deleted_at" to formatISO8601(Date()))
+                        deletedAt = mapOf("deleted_at" to DateUtils.formatISO8601(Date()))
                     )
                     if (!response.isSuccessful) {
                         DebugLog.error("Remote delete failed: ${response.code()}", category = DebugLog.Category.SYNC)
@@ -162,9 +164,12 @@ class OrbRepository @Inject constructor(
     }
 
     private suspend fun syncOrbToRemote(orb: Orb) {
-        val userId = authRepository.getUserId() ?: return
+        val userId = authRepository.getUserId() ?: run {
+            DebugLog.log("Cannot sync orb: not authenticated", DebugLog.Category.SYNC)
+            return
+        }
 
-        try {
+        RetryHelper.withRetryOrNull(RetryHelper.networkConfig) {
             // Check if orb exists on remote
             val existingResponse = api.getOrb(idFilter = "eq.${orb.id}")
 
@@ -175,24 +180,22 @@ class OrbRepository @Inject constructor(
                     colorHex = orb.colorHex,
                     sortOrder = orb.sortOrder
                 )
-                api.updateOrb(idFilter = "eq.${orb.id}", updates = updates)
+                val updateResponse = api.updateOrb(idFilter = "eq.${orb.id}", updates = updates)
+                if (!updateResponse.isSuccessful) {
+                    throw Exception("Update failed: ${updateResponse.code()}")
+                }
             } else {
                 // Create new orb
                 val createRequest = orb.toCreateRequest()
-                api.createOrb(createRequest)
+                val createResponse = api.createOrb(createRequest)
+                if (!createResponse.isSuccessful) {
+                    throw Exception("Create failed: ${createResponse.code()}")
+                }
             }
 
             // Mark as synced
             orbDao.updateSyncPending(orb.id.toString(), false)
-
-        } catch (e: Exception) {
-            DebugLog.error("Failed to sync orb to remote: ${orb.name}", e, DebugLog.Category.SYNC)
-        }
-    }
-
-    private fun formatISO8601(date: Date): String {
-        val formatter = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", java.util.Locale.US)
-        formatter.timeZone = java.util.TimeZone.getTimeZone("UTC")
-        return formatter.format(date)
+            DebugLog.log("Successfully synced orb: ${orb.name}", DebugLog.Category.SYNC)
+        } ?: DebugLog.error("Failed to sync orb after retries: ${orb.name}", category = DebugLog.Category.SYNC)
     }
 }
