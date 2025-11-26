@@ -91,10 +91,13 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
     
     // Clear all local data (on sign-out)
     func clearLocalData() {
-        // Clear orbs and tasks from memory
+        DebugLog.log("🧹 Starting comprehensive local data cleanup...", category: .persistence)
+        
+        // 1. Clear orbs and tasks from memory FIRST
+        orbManager.clearAllOrbs()
         orbManager.applySnapshots([])
         
-        // Delete all Core Data records
+        // 2. Delete all Core Data records (orbs, tasks, outbox)
         do {
             try orbStore.deleteAllData()
             DebugLog.log("✅ Deleted all Core Data records", category: .persistence)
@@ -102,18 +105,26 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
             DebugLog.log("❌ Failed to delete Core Data: \(error)", category: .persistence)
         }
         
-        // Close all open windows
+        // 3. Clear ML training data and caches
+        TaskClassifier.shared.clearAllMLData()
+        
+        // 4. Close all open windows
         taskCardWindows.values.forEach { $0.close() }
         taskCardWindows.removeAll()
         taskDetailWindows.values.forEach { $0.close() }
         taskDetailWindows.removeAll()
         currentOpenOrb = nil
         
-        // Hide semi-circle
+        // 5. Hide semi-circle overlay
         hideSemiCircle()
         
-        // Clear custom sizes
+        // 6. Clear custom sizes
         customCardSizes.removeAll()
+        
+        // 7. Reset UI state
+        currentListenState = .idle
+        
+        DebugLog.log("✅ Comprehensive local data cleanup complete", category: .persistence)
     }
 
     private func scheduleOrbSave() {

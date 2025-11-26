@@ -196,4 +196,34 @@ final class PersistenceController {
             }
         }
     }
+    
+    /// Delete ALL data from Core Data (call on logout to clear user data)
+    func deleteAllData() {
+        let context = container.viewContext
+        
+        do {
+            // Delete all tasks
+            let taskRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "TaskEntity")
+            let taskDeleteRequest = NSBatchDeleteRequest(fetchRequest: taskRequest)
+            try context.persistentStoreCoordinator?.execute(taskDeleteRequest, with: context)
+            
+            // Delete all orbs
+            let orbRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "OrbEntity")
+            let orbDeleteRequest = NSBatchDeleteRequest(fetchRequest: orbRequest)
+            try context.persistentStoreCoordinator?.execute(orbDeleteRequest, with: context)
+            
+            // Delete all sync outbox items if they exist
+            let outboxRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "SyncOutboxItem")
+            let outboxDeleteRequest = NSBatchDeleteRequest(fetchRequest: outboxRequest)
+            try? context.persistentStoreCoordinator?.execute(outboxDeleteRequest, with: context)
+            
+            // Reset the contexts
+            context.reset()
+            backgroundContext.reset()
+            
+            DebugLog.log("🗑️ Deleted all orbs, tasks, and outbox items from Core Data", category: .persistence)
+        } catch {
+            DebugLog.log("❌ Failed to delete all data: \(error)", category: .persistence)
+        }
+    }
 }

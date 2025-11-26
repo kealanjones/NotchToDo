@@ -525,11 +525,15 @@ extension NSColor {
         }
 
         func applySnapshots(_ snapshots: [OrbSnapshot]) {
-            guard !snapshots.isEmpty else {
+            // CRITICAL FIX: Always clear existing orbs first before applying snapshots
+            // This ensures logout properly clears all data
+            if snapshots.isEmpty {
+                orbs.removeAll()
                 if includeSampleData {
                     seedSampleOrbsIfNeeded()
                 }
                 updateOrbPositions()
+                notifyChange()
                 return
             }
 

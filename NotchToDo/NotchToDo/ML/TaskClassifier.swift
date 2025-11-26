@@ -173,6 +173,21 @@ final class TaskClassifier {
         trainingDataManager.clearAllExamples()
         DebugLog.log("Cleared all training data", category: .ml)
     }
+    
+    /// Clear ALL cached and persisted ML data (call on logout)
+    func clearAllMLData() {
+        // Clear training examples from UserDefaults
+        trainingDataManager.clearAllExamples()
+        
+        // Clear orb embedding cache
+        orbEmbeddingCache.removeAll()
+        lastCacheUpdate = nil
+        
+        // Clear embedding generator cache
+        embeddingGenerator.clearCache()
+        
+        DebugLog.log("🧹 Cleared all ML data: training examples, orb embeddings, and text embeddings", category: .ml)
+    }
 
     /// Get training statistics
     func getTrainingStats() -> [UUID: Int] {
