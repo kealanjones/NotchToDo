@@ -176,4 +176,24 @@ class DataManager: ObservableObject {
     var isAuthenticated: Bool {
         authManager?.currentSession != nil
     }
+    
+    // MARK: - Password Reset
+    
+    func resetPassword(email: String) async throws {
+        guard let supabaseService = supabaseService else {
+            throw NSError(domain: "DataManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Supabase service not initialized"])
+        }
+        
+        // Send password reset email via Supabase
+        let body: [String: Any] = ["email": email]
+        let request = try supabaseService.makeAuthRequest(path: "recover", body: body)
+        let _: EmptyResponse = try await supabaseService.performAuth(request, decode: EmptyResponse.self)
+    }
+}
+
+// Empty response for endpoints that don't return data
+private struct EmptyResponse: Decodable {
+    init(from decoder: Decoder) throws {
+        // Accept any response
+    }
 }

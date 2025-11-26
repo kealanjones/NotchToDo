@@ -19,7 +19,8 @@ data class AuthUiState(
     val error: String? = null,
     val emailError: String? = null,
     val passwordError: String? = null,
-    val passwordVisible: Boolean = false
+    val passwordVisible: Boolean = false,
+    val isAuthenticated: Boolean = false
 )
 
 @HiltViewModel
@@ -30,16 +31,33 @@ class AuthViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
+    init {
+        // Check if already authenticated
+        if (authRepository.isAuthenticated()) {
+            _uiState.value = _uiState.value.copy(isAuthenticated = true)
+        }
+    }
+
     fun onEmailChange(email: String) {
-        _uiState.value = _uiState.value.copy(email = email, emailError = null, error = null)
+        _uiState.value = _uiState.value.copy(
+            email = email.trim(),
+            emailError = null,
+            error = null
+        )
     }
 
     fun onPasswordChange(password: String) {
-        _uiState.value = _uiState.value.copy(password = password, passwordError = null, error = null)
+        _uiState.value = _uiState.value.copy(
+            password = password,
+            passwordError = null,
+            error = null
+        )
     }
 
     fun togglePasswordVisibility() {
-        _uiState.value = _uiState.value.copy(passwordVisible = !_uiState.value.passwordVisible)
+        _uiState.value = _uiState.value.copy(
+            passwordVisible = !_uiState.value.passwordVisible
+        )
     }
 
     fun toggleMode() {
@@ -51,11 +69,30 @@ class AuthViewModel @Inject constructor(
         )
     }
 
+    fun clearErrors() {
+        _uiState.value = _uiState.value.copy(
+            error = null,
+            emailError = null,
+            passwordError = null
+        )
+    }
+
+    fun clearForm() {
+        _uiState.value = _uiState.value.copy(
+            email = "",
+            password = "",
+            error = null,
+            emailError = null,
+            passwordError = null,
+            passwordVisible = false
+        )
+    }
+
     fun signIn() {
         val email = _uiState.value.email
         val password = _uiState.value.password
 
-        if (!validateInputs(email, password)) {
+        if (!validateInputs(email, password, isSignUp = false)) {
             return
         }
 
@@ -66,8 +103,12 @@ class AuthViewModel @Inject constructor(
 
             if (result.isSuccess) {
                 DebugLog.log("Sign in successful", DebugLog.Category.AUTH)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    isAuthenticated = true
+                )
             } else {
-                val errorMessage = result.exceptionOrNull()?.message ?: "Sign in failed"
+                val errorMessage = parseErrorMessage(result.exceptionOrNull())
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = errorMessage
@@ -81,7 +122,7 @@ class AuthViewModel @Inject constructor(
         val email = _uiState.value.email
         val password = _uiState.value.password
 
-        if (!validateInputs(email, password)) {
+        if (!validateInputs(email, password, isSignUp = true)) {
             return
         }
 
@@ -92,8 +133,12 @@ class AuthViewModel @Inject constructor(
 
             if (result.isSuccess) {
                 DebugLog.log("Sign up successful", DebugLog.Category.AUTH)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    isAuthenticated = true
+                )
             } else {
-                val errorMessage = result.exceptionOrNull()?.message ?: "Sign up failed"
+                val errorMessage = parseErrorMessage(result.exceptionOrNull())
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = errorMessage
@@ -103,25 +148,67 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    private fun validateInputs(email: String, password: String): Boolean {
+    fun signOut() {
+        viewModelScope.launch {
+            authRepository.signOut()
+            _uiState.value = AuthUiState()
+        }
+    }
+
+    private fun validateInputs(email: String, password: String, isSignUp: Boolean): Boolean {
         var isValid = true
 
-        if (email.isBlank()) {
-            _uiState.value = _uiState.value.copy(emailError = "Email cannot be empty")
-            isValid = false
-        } else if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-            _uiState.value = _uiState.value.copy(emailError = "Invalid email format")
-            isValid = false
+        // Email validation
+        when {
+            email.isBlank() -> {
+                _uiState.value = _uiState.value.copy(emailError = "Email is required")
+                isValid = false
+            }
+            !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() -> {
+                _uiState.value = _uiState.value.copy(emailError = "Please enter a valid email")
+                isValid = false
+            }
         }
 
-        if (password.isBlank()) {
-            _uiState.value = _uiState.value.copy(passwordError = "Password cannot be empty")
-            isValid = false
-        } else if (password.length < 6) {
-            _uiState.value = _uiState.value.copy(passwordError = "Password must be at least 6 characters")
-            isValid = false
+        // Password validation
+        when {
+            password.isBlank() -> {
+                _uiState.value = _uiState.value.copy(passwordError = "Password is required")
+                isValid = false
+            }
+            password.length < 6 -> {
+                _uiState.value = _uiState.value.copy(passwordError = "Password must be at least 6 characters")
+                isValid = false
+            }
+            isSignUp && password.length < 8 -> {
+                _uiState.value = _uiState.value.copy(passwordError = "Password must be at least 8 characters for security")
+                isValid = false
+            }
         }
 
         return isValid
+    }
+
+    private fun parseErrorMessage(exception: Throwable?): String {
+        val message = exception?.message ?: "An unexpected error occurred"
+
+        // Parse common Supabase error messages for better UX
+        return when {
+            message.contains("Invalid login credentials", ignoreCase = true) -> 
+                "Invalid email or password. Please try again."
+            message.contains("Email not confirmed", ignoreCase = true) ->
+                "Please verify your email address before signing in."
+            message.contains("User already registered", ignoreCase = true) ->
+                "An account with this email already exists."
+            message.contains("Password should be at least", ignoreCase = true) ->
+                "Password must be at least 6 characters."
+            message.contains("rate limit", ignoreCase = true) ->
+                "Too many attempts. Please wait a moment and try again."
+            message.contains("network", ignoreCase = true) ->
+                "Network error. Please check your connection."
+            message.contains("timeout", ignoreCase = true) ->
+                "Request timed out. Please try again."
+            else -> message
+        }
     }
 }
