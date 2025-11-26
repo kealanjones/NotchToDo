@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Helper struct to hold task with its parent orb
 struct TaskWithOrb: Identifiable {
@@ -7,16 +8,44 @@ struct TaskWithOrb: Identifiable {
     var id: UUID { task.id }
 }
 
-/// View model to cache and optimize task computations
+/// View model to cache and optimize task computations with debounced search
 @MainActor
 class TasksViewModel: ObservableObject {
     @Published private(set) var allTasks: [TaskWithOrb] = []
-    @Published var searchText: String = "" {
-        didSet { updateFilteredTasks() }
-    }
+    @Published var searchText: String = ""
     @Published private(set) var groupedTasks: [(status: TaskModel.Status, tasks: [TaskWithOrb])] = []
+    @Published private(set) var isSearching: Bool = false
     
     private var filteredTasks: [TaskWithOrb] = []
+    private var cancellables = Set<AnyCancellable>()
+    
+    /// Debounce interval in seconds
+    private let searchDebounceInterval: TimeInterval = 0.3
+    
+    init() {
+        setupSearchDebouncing()
+    }
+    
+    private func setupSearchDebouncing() {
+        // Debounce search text changes to avoid excessive filtering
+        $searchText
+            .debounce(for: .seconds(searchDebounceInterval), scheduler: DispatchQueue.main)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.isSearching = false
+                self?.updateFilteredTasks()
+            }
+            .store(in: &cancellables)
+        
+        // Show searching indicator immediately when user starts typing
+        $searchText
+            .dropFirst() // Skip initial value
+            .filter { !$0.isEmpty }
+            .sink { [weak self] _ in
+                self?.isSearching = true
+            }
+            .store(in: &cancellables)
+    }
     
     func updateFromOrbs(_ orbs: [OrbModel]) {
         // Only rebuild if the data actually changed
@@ -38,8 +67,12 @@ class TasksViewModel: ObservableObject {
         if searchText.isEmpty {
             filteredTasks = allTasks
         } else {
-            filteredTasks = allTasks.filter { 
-                $0.task.title.localizedCaseInsensitiveContains(searchText) 
+            let searchTerms = searchText.lowercased()
+            filteredTasks = allTasks.filter { item in
+                // Search in title
+                item.task.title.lowercased().contains(searchTerms) ||
+                // Also search in orb name for better discoverability
+                item.orb.name.lowercased().contains(searchTerms)
             }
         }
         updateGroupedTasks()
@@ -51,6 +84,19 @@ class TasksViewModel: ObservableObject {
             let tasks = filteredTasks.filter { $0.task.statusEnum == status }
             return (status: status, tasks: tasks)
         }
+    }
+    
+    /// Immediately execute search without waiting for debounce (e.g., for "search" button)
+    func executeSearchImmediately() {
+        isSearching = false
+        updateFilteredTasks()
+    }
+    
+    /// Clear search text
+    func clearSearch() {
+        searchText = ""
+        isSearching = false
+        updateFilteredTasks()
     }
 }
 
