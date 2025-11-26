@@ -96,7 +96,7 @@ class OrbRepository @Inject constructor(
             if (userId != null) {
                 try {
                     val response = api.softDeleteOrb(
-                        id = orbId.toString(),
+                        idFilter = "eq.${orbId}",
                         deletedAt = mapOf("deleted_at" to formatISO8601(Date()))
                     )
                     if (!response.isSuccessful) {
@@ -166,7 +166,7 @@ class OrbRepository @Inject constructor(
 
         try {
             // Check if orb exists on remote
-            val existingResponse = api.getOrb(orb.id.toString())
+            val existingResponse = api.getOrb(idFilter = "eq.${orb.id}")
 
             if (existingResponse.isSuccessful && existingResponse.body()?.isNotEmpty() == true) {
                 // Update existing orb
@@ -175,7 +175,7 @@ class OrbRepository @Inject constructor(
                     colorHex = orb.colorHex,
                     sortOrder = orb.sortOrder
                 )
-                api.updateOrb(orb.id.toString(), updates = updates)
+                api.updateOrb(idFilter = "eq.${orb.id}", updates = updates)
             } else {
                 // Create new orb
                 val createRequest = orb.toCreateRequest()

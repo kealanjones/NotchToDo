@@ -20,23 +20,20 @@ interface SupabaseApi {
 
     @GET("rest/v1/tasks")
     suspend fun getTask(
-        @Query("id") id: String,
-        @Query("eq") eq: String = id,
+        @Query("id") idFilter: String,  // Pass "eq.{uuid}" format
         @Query("select") select: String = "*"
     ): Response<List<TaskDto>>
 
     @GET("rest/v1/tasks")
     suspend fun getTasksByOrb(
-        @Query("orb_id") orbId: String,
-        @Query("eq") eq: String = orbId,
+        @Query("orb_id") orbIdFilter: String,  // Pass "eq.{uuid}" format
         @Query("deleted_at") deletedAt: String = "is.null",
         @Query("select") select: String = "*"
     ): Response<List<TaskDto>>
 
     @GET("rest/v1/tasks")
     suspend fun getTasksUpdatedSince(
-        @Query("updated_at") updatedAt: String,
-        @Query("gte") gte: String = updatedAt,
+        @Query("updated_at") updatedAtFilter: String,  // Pass "gte.{timestamp}" format
         @Query("select") select: String = "*"
     ): Response<List<TaskDto>>
 
@@ -49,23 +46,20 @@ interface SupabaseApi {
     @PATCH("rest/v1/tasks")
     @Headers("Prefer: return=representation")
     suspend fun updateTask(
-        @Query("id") id: String,
-        @Query("eq") eq: String = id,
+        @Query("id") idFilter: String,  // Pass "eq.{uuid}" format
         @Body updates: TaskUpdateRequest
     ): Response<List<TaskDto>>
 
     @PATCH("rest/v1/tasks")
     @Headers("Prefer: return=representation")
     suspend fun softDeleteTask(
-        @Query("id") id: String,
-        @Query("eq") eq: String = id,
+        @Query("id") idFilter: String,  // Pass "eq.{uuid}" format
         @Body deletedAt: Map<String, String>
     ): Response<List<TaskDto>>
 
     @DELETE("rest/v1/tasks")
     suspend fun deleteTask(
-        @Query("id") id: String,
-        @Query("eq") eq: String = id
+        @Query("id") idFilter: String  // Pass "eq.{uuid}" format
     ): Response<Unit>
 
     // ==================== Orbs ====================
@@ -79,15 +73,13 @@ interface SupabaseApi {
 
     @GET("rest/v1/orbs")
     suspend fun getOrb(
-        @Query("id") id: String,
-        @Query("eq") eq: String = id,
+        @Query("id") idFilter: String,  // Pass "eq.{uuid}" format
         @Query("select") select: String = "*"
     ): Response<List<OrbDto>>
 
     @GET("rest/v1/orbs")
     suspend fun getOrbsUpdatedSince(
-        @Query("updated_at") updatedAt: String,
-        @Query("gte") gte: String = updatedAt,
+        @Query("updated_at") updatedAtFilter: String,  // Pass "gte.{timestamp}" format
         @Query("select") select: String = "*"
     ): Response<List<OrbDto>>
 
@@ -100,23 +92,20 @@ interface SupabaseApi {
     @PATCH("rest/v1/orbs")
     @Headers("Prefer: return=representation")
     suspend fun updateOrb(
-        @Query("id") id: String,
-        @Query("eq") eq: String = id,
+        @Query("id") idFilter: String,  // Pass "eq.{uuid}" format
         @Body updates: OrbUpdateRequest
     ): Response<List<OrbDto>>
 
     @PATCH("rest/v1/orbs")
     @Headers("Prefer: return=representation")
     suspend fun softDeleteOrb(
-        @Query("id") id: String,
-        @Query("eq") eq: String = id,
+        @Query("id") idFilter: String,  // Pass "eq.{uuid}" format
         @Body deletedAt: Map<String, String>
     ): Response<List<OrbDto>>
 
     @DELETE("rest/v1/orbs")
     suspend fun deleteOrb(
-        @Query("id") id: String,
-        @Query("eq") eq: String = id
+        @Query("id") idFilter: String  // Pass "eq.{uuid}" format
     ): Response<Unit>
 
     // ==================== Auth ====================

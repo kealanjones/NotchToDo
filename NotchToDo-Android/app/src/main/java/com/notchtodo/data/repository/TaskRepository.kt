@@ -112,7 +112,7 @@ class TaskRepository @Inject constructor(
             if (userId != null) {
                 try {
                     val response = api.softDeleteTask(
-                        id = taskId.toString(),
+                        idFilter = "eq.${taskId}",
                         deletedAt = mapOf("deleted_at" to formatISO8601(Date()))
                     )
                     if (!response.isSuccessful) {
@@ -140,7 +140,7 @@ class TaskRepository @Inject constructor(
             if (userId != null) {
                 try {
                     val updates = TaskUpdateRequest(status = status.value)
-                    api.updateTask(taskId.toString(), updates = updates)
+                    api.updateTask(idFilter = "eq.${taskId}", updates = updates)
                 } catch (e: Exception) {
                     DebugLog.error("Failed to sync status update", e, DebugLog.Category.SYNC)
                 }
@@ -208,7 +208,7 @@ class TaskRepository @Inject constructor(
 
         try {
             // Check if task exists on remote
-            val existingResponse = api.getTask(task.id.toString())
+            val existingResponse = api.getTask(idFilter = "eq.${task.id}")
 
             if (existingResponse.isSuccessful && existingResponse.body()?.isNotEmpty() == true) {
                 // Update existing task
@@ -222,7 +222,7 @@ class TaskRepository @Inject constructor(
                     orbId = task.orbId?.toString(),
                     sortOrder = task.sortOrder
                 )
-                api.updateTask(task.id.toString(), updates = updates)
+                api.updateTask(idFilter = "eq.${task.id}", updates = updates)
             } else {
                 // Create new task
                 val createRequest = task.toCreateRequest()

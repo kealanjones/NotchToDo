@@ -1,19 +1,26 @@
 import Foundation
 
-// MARK: - Task Data Model (iOS-compatible)
-class TaskModel: ObservableObject, Identifiable {
-    let id: UUID
-    @Published var title: String
-    @Published var isCompleted: Bool
-    @Published var details: String
-    @Published var deadline: Date?
-    @Published var priority: Int
-    @Published var status: Int16 // 1=Outstanding, 2=In Progress, 3=Complete
-    let createdAt: Date  // Immutable - set once at creation
-    @Published var sortOrder: Double
-    @Published private(set) var noteCount: Int = 0
+#if canImport(Combine)
+import Combine
+#endif
 
-    init(
+// MARK: - Task Data Model (Cross-platform)
+public class TaskModel: ObservableObject, Identifiable {
+    public let id: UUID
+    @Published public var title: String
+    @Published public var isCompleted: Bool
+    @Published public var details: String
+    @Published public var deadline: Date?
+    @Published public var priority: Int
+    @Published public var status: Int16 // 1=Outstanding, 2=In Progress, 3=Complete
+    public let createdAt: Date  // Immutable - set once at creation
+    @Published public var sortOrder: Double
+    @Published public private(set) var noteCount: Int = 0
+    
+    /// Callback for change notifications (used by macOS for persistence)
+    public var onChange: (() -> Void)?
+
+    public init(
         id: UUID = UUID(),
         title: String,
         isCompleted: Bool = false,
@@ -39,6 +46,11 @@ class TaskModel: ObservableObject, Identifiable {
     private func updateNoteCount() {
         noteCount = TaskModel.calculateNoteCount(from: details)
     }
+    
+    /// Notify observers of changes (for macOS persistence integration)
+    public func notifyChange() {
+        onChange?()
+    }
 
     private static func calculateNoteCount(from details: String) -> Int {
         guard !details.isEmpty else { return 0 }
@@ -55,13 +67,13 @@ class TaskModel: ObservableObject, Identifiable {
 }
 
 // MARK: - Task Status Extension
-extension TaskModel {
+public extension TaskModel {
     enum Status: Int16 {
         case outstanding = 1
         case inProgress = 2
         case complete = 3
 
-        var displayName: String {
+        public var displayName: String {
             switch self {
             case .outstanding: return "Outstanding"
             case .inProgress: return "In Progress"
@@ -69,7 +81,7 @@ extension TaskModel {
             }
         }
 
-        var iconName: String {
+        public var iconName: String {
             switch self {
             case .outstanding: return "circle"
             case .inProgress: return "circle.lefthalf.filled"

@@ -14,10 +14,31 @@ final class SupabaseAuthManager {
     }
     private let service: SupabaseService
     private let queue = DispatchQueue(label: "com.notchtodo.supabase.auth", qos: .utility)
+    
+    // Thread-safe session storage
+    private let sessionLock = NSLock()
+    private var _currentSession: Session?
+    
+    /// Thread-safe access to the current session
     private(set) var currentSession: Session? {
-        didSet {
-            guard oldValue?.accessToken != currentSession?.accessToken else { return }
-            NotificationCenter.default.post(name: .supabaseAuthSessionChanged, object: currentSession)
+        get {
+            sessionLock.lock()
+            defer { sessionLock.unlock() }
+            return _currentSession
+        }
+        set {
+            sessionLock.lock()
+            let oldValue = _currentSession
+            _currentSession = newValue
+            sessionLock.unlock()
+            
+            // Only post notification if session actually changed
+            guard oldValue?.accessToken != newValue?.accessToken else { return }
+            
+            // Post notification on main thread for UI safety
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .supabaseAuthSessionChanged, object: newValue)
+            }
         }
     }
 
