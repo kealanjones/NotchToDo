@@ -1126,10 +1126,14 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
             taskCardView.getSearchActiveState()
         }
 
-        let hasInteractions = hasVisibleTaskCards || hasVisibleTaskDetails || hasActiveSearch
+        // Check if user is hovering over or dragging an orb
+        let isHoveringOrb = semiCircleView?.hoveredOrbId != nil
+        let isDraggingOrb = semiCircleView?.isDragging == true
+
+        let hasInteractions = hasVisibleTaskCards || hasVisibleTaskDetails || hasActiveSearch || isHoveringOrb || isDraggingOrb
 
         if hasInteractions {
-            DebugLog.log("🔄 Active interactions detected - taskCards: \(hasVisibleTaskCards), taskDetails: \(hasVisibleTaskDetails), search: \(hasActiveSearch)", category: .app)
+            DebugLog.log("🔄 Active interactions detected - taskCards: \(hasVisibleTaskCards), taskDetails: \(hasVisibleTaskDetails), search: \(hasActiveSearch), hoveringOrb: \(isHoveringOrb), draggingOrb: \(isDraggingOrb)", category: .app)
         }
 
         return hasInteractions
