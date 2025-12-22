@@ -1297,7 +1297,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AuthViewControllerDelegate {
         DebugLog.log("Voice session error: \(errorMessage)", category: .speech)
         releaseSpaceHoldIfNeeded()
         speechRecognizer?.stop()
-        overlayController?.setState(.error(errorMessage))
+        // showSpeechError now handles state reset to .idle so notch shrinks immediately
         overlayController?.showSpeechError(errorMessage)
         currentVoiceSessionID = nil
         restartWakeWord(after: 2.0)

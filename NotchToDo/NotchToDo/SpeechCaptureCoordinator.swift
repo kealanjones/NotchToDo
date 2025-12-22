@@ -233,7 +233,12 @@ final class SpeechCaptureCoordinator {
         speechBubbleView?.updateTranscript("Error", isFinal: true)
         speechBubbleView?.setStatus(errorMessage)
         speechBubbleView?.setThinking(false)
-        dismissSpeechBubble(after: 3.0)
+
+        // Reset notch to idle immediately so it shrinks right away
+        delegate?.setState(.idle)
+
+        // Dismiss error bubble after short delay
+        dismissSpeechBubble(after: 2.0)
         activeSessionID = nil
     }
 
@@ -649,7 +654,7 @@ final class SpeechCaptureCoordinator {
         pendingTranscript = nil
         pendingTaskTitle = nil
         pendingBubbleTargetOrbId = nil
-        delegate?.setState(.error("Listening timed out"))
+        // showSpeechError now handles state reset to .idle
         showSpeechError("Listening timed out")
         delegate?.speechCaptureCoordinator(self, didFailWith: "Listening timed out")
         activeSessionID = nil
