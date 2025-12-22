@@ -178,12 +178,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
     internal func resolveTargetOrbForNewTask() -> ProjectOrb {
         if let openOrb = currentOpenOrb {
             return openOrb
-        } else if let firstOrb = orbManager.orbs.first {
-            return firstOrb
         } else {
-            let newOrb = orbManager.createOrb(name: "Captured Tasks")
+            // Use dedicated "Captured Tasks" orb for uncategorized tasks
+            let capturedTasksOrb = orbManager.findOrCreateCapturedTasksOrb()
             semiCircleView?.needsDisplay = true
-            return newOrb
+            return capturedTasksOrb
         }
     }
     
@@ -802,6 +801,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
         DebugLog.log("🗑️ Deleted project \(orb.name)", category: .overlay)
         showUndoNotification(message: "Deleted \"\(deletedOrb.name)\"")
 
+        // Persist immediately to prevent reappearance on app relaunch
+        persistEditsImmediately()
+
         // Register undo
         undoManager.registerUndo(withTarget: self) { controller in
             controller.restoreProject(deletedOrb, at: savedIndex, wasOpen: wasOpen, cardSize: savedCardSize)
@@ -1123,10 +1125,14 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
             taskCardView.getSearchActiveState()
         }
 
-        let hasInteractions = hasVisibleTaskCards || hasVisibleTaskDetails || hasActiveSearch
+        // Check if user is hovering over or dragging an orb
+        let isHoveringOrb = semiCircleView?.hoveredOrbId != nil
+        let isDraggingOrb = semiCircleView?.isDragging == true
+
+        let hasInteractions = hasVisibleTaskCards || hasVisibleTaskDetails || hasActiveSearch || isHoveringOrb || isDraggingOrb
 
         if hasInteractions {
-            DebugLog.log("🔄 Active interactions detected - taskCards: \(hasVisibleTaskCards), taskDetails: \(hasVisibleTaskDetails), search: \(hasActiveSearch)", category: .app)
+            DebugLog.log("🔄 Active interactions detected - taskCards: \(hasVisibleTaskCards), taskDetails: \(hasVisibleTaskDetails), search: \(hasActiveSearch), hoveringOrb: \(isHoveringOrb), draggingOrb: \(isDraggingOrb)", category: .app)
         }
 
         return hasInteractions

@@ -4,7 +4,7 @@ import QuartzCore
 class SemiCircleWithOrbsView: NSView, FrameUpdatable {
         private let orbManager: OrbManager
         internal weak var controller: NotchOverlayController?
-        private var hoveredOrbId: UUID? = nil
+        internal var hoveredOrbId: UUID? = nil  // Exposed for interaction detection
         private var mouseTrackingArea: NSTrackingArea?
         private var animationsActive = false
         private var isTickerRegistered = false
@@ -21,7 +21,7 @@ class SemiCircleWithOrbsView: NSView, FrameUpdatable {
         }
 
         // Drag and drop functionality
-        private var isDragging: Bool = false
+        internal var isDragging: Bool = false  // Exposed for interaction detection
         private var draggedOrb: ProjectOrb? = nil
         private var dragStartLocation: NSPoint = NSPoint.zero
         private var dragCurrentLocation: NSPoint = NSPoint.zero
