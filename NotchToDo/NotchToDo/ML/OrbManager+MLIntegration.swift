@@ -32,14 +32,6 @@ extension OrbManager {
 
     /// Add a task with automatic orb selection
     func addTaskWithClassification(_ taskTitle: String) -> (orb: ProjectOrb, wasAutoAssigned: Bool) {
-        guard !orbs.isEmpty else {
-            // Create a default orb if none exist
-            let defaultOrb = createOrb(name: "Inbox")
-            defaultOrb.addTask(title: taskTitle)
-            TaskClassifier.shared.recordFeedback(taskText: taskTitle, chosenOrb: defaultOrb)
-            return (orb: defaultOrb, wasAutoAssigned: true)
-        }
-
         let suggestion = suggestOrbs(for: taskTitle, topN: 1)
 
         if let primaryOrb = suggestion.primarySuggestion?.orb {
@@ -56,10 +48,16 @@ extension OrbManager {
             return (orb: primaryOrb, wasAutoAssigned: true)
         }
 
-        // Fallback: use first orb or create inbox
-        let fallbackOrb = orbs.first ?? createOrb(name: "Inbox")
+        // Fallback: use dedicated "Captured Tasks" orb for uncategorized tasks
+        let fallbackOrb = findOrCreateCapturedTasksOrb()
         fallbackOrb.addTask(title: taskTitle)
         TaskClassifier.shared.recordFeedback(taskText: taskTitle, chosenOrb: fallbackOrb)
+
+        DebugLog.log("""
+            Task assigned to fallback orb:
+            - Task: '\(taskTitle)'
+            - Orb: \(fallbackOrb.name)
+            """, category: .ml)
 
         return (orb: fallbackOrb, wasAutoAssigned: false)
     }

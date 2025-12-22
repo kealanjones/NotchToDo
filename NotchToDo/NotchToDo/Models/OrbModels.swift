@@ -520,6 +520,19 @@ extension NSColor {
             orb.rebindTaskHandlers()
         }
 
+        /// Find or create the fallback "Captured Tasks" orb for uncategorized tasks
+        func findOrCreateCapturedTasksOrb() -> ProjectOrb {
+            // First, try to find existing "Captured Tasks" or "Inbox" orb
+            if let existingOrb = orbs.first(where: {
+                $0.name == "Captured Tasks" || $0.name == "Inbox"
+            }) {
+                return existingOrb
+            }
+
+            // Create new "Captured Tasks" orb
+            return createOrb(name: "Captured Tasks")
+        }
+
         private func notifyChange() {
             onChange?()
         }

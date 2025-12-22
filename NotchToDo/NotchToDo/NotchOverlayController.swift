@@ -178,12 +178,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
     internal func resolveTargetOrbForNewTask() -> ProjectOrb {
         if let openOrb = currentOpenOrb {
             return openOrb
-        } else if let firstOrb = orbManager.orbs.first {
-            return firstOrb
         } else {
-            let newOrb = orbManager.createOrb(name: "Captured Tasks")
+            // Use dedicated "Captured Tasks" orb for uncategorized tasks
+            let capturedTasksOrb = orbManager.findOrCreateCapturedTasksOrb()
             semiCircleView?.needsDisplay = true
-            return newOrb
+            return capturedTasksOrb
         }
     }
     
