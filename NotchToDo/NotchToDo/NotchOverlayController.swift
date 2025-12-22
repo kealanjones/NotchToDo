@@ -802,6 +802,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
         DebugLog.log("🗑️ Deleted project \(orb.name)", category: .overlay)
         showUndoNotification(message: "Deleted \"\(deletedOrb.name)\"")
 
+        // Persist immediately to prevent reappearance on app relaunch
+        persistEditsImmediately()
+
         // Register undo
         undoManager.registerUndo(withTarget: self) { controller in
             controller.restoreProject(deletedOrb, at: savedIndex, wasOpen: wasOpen, cardSize: savedCardSize)
