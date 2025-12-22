@@ -40,6 +40,8 @@ final class OrbPersistenceStore {
     func loadSnapshots() throws -> [OrbSnapshot] {
         let request = NSFetchRequest<NSManagedObject>(entityName: Keys.orbEntity)
         request.sortDescriptors = [NSSortDescriptor(key: Keys.sortOrder, ascending: true)]
+        // CRITICAL: Filter out soft-deleted orbs to prevent zombie orbs from reappearing
+        request.predicate = NSPredicate(format: "deletedAt == nil")
         let entities = try viewContext.fetch(request)
         return entities.map { orbSnapshot(from: $0) }
     }
@@ -331,6 +333,8 @@ final class OrbPersistenceStore {
             DebugLog.log("taskSnapshots: fetched from relationship set, count \(tasks.count)", category: .persistence)
         } else {
             let fetch = NSFetchRequest<NSManagedObject>(entityName: Keys.taskEntity)
+            // CRITICAL: Filter out soft-deleted tasks
+            fetch.predicate = NSPredicate(format: "deletedAt == nil")
             do {
                 let allTasks = try orb.managedObjectContext?.fetch(fetch) ?? []
                 tasks = allTasks.filter { task in
@@ -349,7 +353,9 @@ final class OrbPersistenceStore {
             }
         }
 
+        // Filter out soft-deleted tasks from both code paths
         return tasks
+            .filter { ($0.value(forKey: Keys.deletedAt) as? Date) == nil }
             .sorted { (lhs, rhs) -> Bool in
                 let l = lhs.value(forKey: Keys.sortOrder) as? Double ?? 0
                 let r = rhs.value(forKey: Keys.sortOrder) as? Double ?? 0

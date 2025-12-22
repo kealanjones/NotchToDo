@@ -137,7 +137,9 @@ final class SupabaseSyncManager {
             guard let self else { return }
             // Only pull if active (authenticated) - allows clean shutdown on logout
             guard self.isActive else { return }
-            // Pull can run concurrently with push operations - no longer blocking
+            // CRITICAL: Process outbox before pulling to prevent race conditions
+            // This ensures local changes are pushed before remote changes overwrite them
+            self.processOutboxBatch(limit: 50)
             self.pullRemoteChanges()
         }
         timer.resume()
@@ -186,8 +188,10 @@ final class SupabaseSyncManager {
             self.isActive = true
             self.forceFullPullNext = true // Force full pull on resume
             DebugLog.log("▶️ Sync manager resumed", category: .sync)
-            self.pullRemoteChanges()
+            // CRITICAL: Flush outbox BEFORE pulling to prevent losing local changes
             self.flushPendingChanges()
+            // Pull happens inside flushPendingChanges, but call again to ensure full pull
+            self.pullRemoteChanges()
         }
     }
 
@@ -271,12 +275,16 @@ final class SupabaseSyncManager {
 
         let orbQuery: [URLQueryItem] = {
             var items = [URLQueryItem(name: "user_id", value: "eq.\(userID.uuidString)")]
+            // CRITICAL: Filter out soft-deleted orbs to prevent zombie records
+            items.append(URLQueryItem(name: "deleted_at", value: "is.null"))
             if let sinceISO { items.append(URLQueryItem(name: "updated_at", value: "gte.\(sinceISO)")) }
             items.append(URLQueryItem(name: "order", value: "updated_at.asc"))
             return items
         }()
         let taskQuery: [URLQueryItem] = {
             var items = [URLQueryItem(name: "user_id", value: "eq.\(userID.uuidString)")]
+            // CRITICAL: Filter out soft-deleted tasks to prevent zombie records
+            items.append(URLQueryItem(name: "deleted_at", value: "is.null"))
             if let sinceISO { items.append(URLQueryItem(name: "updated_at", value: "gte.\(sinceISO)")) }
             items.append(URLQueryItem(name: "order", value: "updated_at.asc"))
             return items
