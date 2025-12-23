@@ -62,20 +62,11 @@ class IntentRouter {
         if useAdvancedParsing {
             // Try to parse with advanced NLP parser
             if let taskIntent = advancedParser.parse(stripped) {
-                // Check if this is a complex command (has multiple attributes beyond just title)
-                let isComplex = taskIntent.targetOrb != nil ||
-                               taskIntent.dueDate != nil ||
-                               taskIntent.priority != nil ||
-                               taskIntent.status != nil ||
-                               taskIntent.notes != nil
-
-                if isComplex {
-                    DebugLog.log("Advanced parser detected complex command: \(taskIntent.title)", category: .intent)
-                    return .createAdvancedTask(intent: taskIntent)
-                }
-
-                // For simple commands, fall through to original logic for compatibility
-                DebugLog.log("Advanced parser detected simple command, using fallback logic", category: .intent)
+                // CRITICAL FIX: Always use advanced parser results - it's smarter than regex
+                // The advanced parser correctly handles phrases like "create a task called X"
+                // and properly extracts titles, removing helper words and conflicting keywords
+                DebugLog.log("Advanced parser extracted: \(taskIntent.title)", category: .intent)
+                return .createAdvancedTask(intent: taskIntent)
             }
         }
 
@@ -134,11 +125,12 @@ class IntentRouter {
     }
     
     private func parseAddTask(_ text: String) -> String? {
-        let tokenSet = Set(text.split { !$0.isLetter }.map { String($0) })
-        if !orbKeywords.isDisjoint(with: tokenSet) {
-            return nil
-        }
-        let pattern = #"^(add|create|new|start|make)\s+(.+)$"#
+        // CRITICAL FIX: Removed overly broad keyword rejection
+        // Previously rejected "create a task called Project Review" because "project" appeared in name
+        // Note: This is now a fallback since advanced parser is used primarily
+
+        // Improved pattern that handles "called/named" keywords
+        let pattern = #"^(add|create|new|start|make)\s+(?:a\s+)?(?:task\s+)?(?:called|named|titled)?\s*(.+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               match.numberOfRanges >= 3 else { return nil }
@@ -163,10 +155,10 @@ class IntentRouter {
     }
     
     private func parseCreateOrb(_ text: String) -> String? {
-        let tokenSet = Set(text.split { !$0.isLetter }.map { String($0) })
-        if !taskKeywords.isDisjoint(with: tokenSet) {
-            return nil
-        }
+        // CRITICAL FIX: Removed overly broad keyword rejection
+        // Previously rejected "create an orb called Task Manager" because "task" appeared in name
+        // The regex pattern below is smart enough to identify orb creation commands
+        // by looking for explicit "orb"/"project" keywords in the command structure
         let pattern = #"^(?:add|create|make|start)\s+(?:an?\s+)?(?:orb|project|workspace|space)\s*(?:called|named|titled)?\s*(.+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
