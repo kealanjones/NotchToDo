@@ -3,18 +3,18 @@ import Security
 
 /// Secure Keychain helper with enhanced error handling and audit logging
 /// Used for storing sensitive data like authentication tokens
-enum KeychainHelper {
+public enum KeychainHelper {
 
     // MARK: - Errors
 
-    enum KeychainError: LocalizedError {
+    public enum KeychainError: LocalizedError {
         case unexpectedDataFormat
         case operationFailed(OSStatus)
         case itemNotFound
         case duplicateItem
         case accessDenied
 
-        var errorDescription: String? {
+        public var errorDescription: String? {
             switch self {
             case .unexpectedDataFormat:
                 return "Keychain data format is invalid"
@@ -38,7 +38,7 @@ enum KeychainHelper {
     ///   - key: The unique key identifier
     /// - Returns: True if successful, false otherwise
     @discardableResult
-    static func setString(_ value: String?, for key: String) -> Bool {
+    public static func setString(_ value: String?, for key: String) -> Bool {
         let service = Bundle.main.bundleIdentifier ?? "com.notchtodo.app"
         let account = key
 
@@ -121,7 +121,7 @@ enum KeychainHelper {
     /// Retrieves a string value from the Keychain
     /// - Parameter key: The unique key identifier
     /// - Returns: The stored string value, or nil if not found
-    static func string(for key: String) -> String? {
+    public static func string(for key: String) -> String? {
         let service = Bundle.main.bundleIdentifier ?? "com.notchtodo.app"
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -160,7 +160,7 @@ enum KeychainHelper {
     /// Checks if a value exists for the given key
     /// - Parameter key: The unique key identifier
     /// - Returns: True if the key exists in Keychain
-    static func exists(for key: String) -> Bool {
+    public static func exists(for key: String) -> Bool {
         let service = Bundle.main.bundleIdentifier ?? "com.notchtodo.app"
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -176,7 +176,7 @@ enum KeychainHelper {
     /// Removes all Keychain items for this app (use with caution!)
     /// - Returns: True if successful
     @discardableResult
-    static func clearAll() -> Bool {
+    public static func clearAll() -> Bool {
         let service = Bundle.main.bundleIdentifier ?? "com.notchtodo.app"
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,

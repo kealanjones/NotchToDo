@@ -4,34 +4,37 @@ import Cocoa
     class Task: ObservableObject, Identifiable {
         let id: UUID
         @Published var title: String {
-            didSet { notifyChange() }
+            didSet { notifyChangeIfEnabled() }
         }
         @Published var isCompleted: Bool {
-            didSet { notifyChange() }
+            didSet { notifyChangeIfEnabled() }
         }
         @Published var details: String {
             didSet {
                 updateNoteCount()
-                notifyChange()
+                notifyChangeIfEnabled()
             }
         }
         @Published var deadline: Date? {
-            didSet { notifyChange() }
+            didSet { notifyChangeIfEnabled() }
         }
         @Published var priority: Int {
-            didSet { notifyChange() }
+            didSet { notifyChangeIfEnabled() }
         }
         @Published var status: Int16 {
-            didSet { notifyChange() }
+            didSet { notifyChangeIfEnabled() }
         }
         var createdAt: Date {
-            didSet { notifyChange() }
+            didSet { notifyChangeIfEnabled() }
         }
         var sortOrder: Double {
-            didSet { notifyChange() }
+            didSet { notifyChangeIfEnabled() }
         }
         @Published private(set) var noteCount: Int = 0
         var onChange: (() -> Void)?
+        
+        /// When true, suppresses change notifications (for batch operations)
+        var isBatchUpdating: Bool = false
 
         init(
             id: UUID = UUID(),
@@ -56,7 +59,13 @@ import Cocoa
             updateNoteCount()
         }
 
-        private func notifyChange() {
+        private func notifyChangeIfEnabled() {
+            guard !isBatchUpdating else { return }
+            onChange?()
+        }
+        
+        /// Force a change notification (call after batch updates)
+        func notifyChange() {
             onChange?()
         }
 
@@ -244,12 +253,26 @@ import Cocoa
         }
 
         private func reindexTasks() {
+            // Batch update: suppress individual change notifications
+            for task in tasks {
+                task.isBatchUpdating = true
+            }
+            
+            // Update all sort orders
             for (index, task) in tasks.enumerated() {
                 let order = Double(index)
                 if task.sortOrder != order {
                     task.sortOrder = order
                 }
             }
+            
+            // Re-enable notifications
+            for task in tasks {
+                task.isBatchUpdating = false
+            }
+            
+            // Single notification for the entire batch
+            // (parent notifyChange() will be called by the caller)
         }
         
     private func attachChangeHandler(to task: Task) {
@@ -628,6 +651,7 @@ extension NSColor {
             // Store the target positions for the new orb
             let newOrbTargetAngle = newPositions[newOrb.id]?.angle ?? 0.0
             let newOrbTargetRadius = newPositions[newOrb.id]?.radius ?? semiCircleRadius
+            let newOrbTargetScale = newPositions[newOrb.id]?.scale ?? 1.0
             
             // Reset new orb to invisible and zero scale
             newOrb.isVisible = false
@@ -637,7 +661,13 @@ extension NSColor {
             let animationDuration = 0.8
             let startTime = CACurrentMediaTime()
             
-            Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
+            // Use weak self to prevent retain cycle
+            Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self, weak newOrb] timer in
+                guard let self = self, let newOrb = newOrb else {
+                    timer.invalidate()
+                    return
+                }
+                
                 let elapsed = CACurrentMediaTime() - startTime
                 let progress = min(elapsed / animationDuration, 1.0)
                 
@@ -660,13 +690,14 @@ extension NSColor {
                     timer.invalidate()
                     
                     // Start the new orb's growth animation after repositioning is complete
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak newOrb] in
+                        guard let self = self, let newOrb = newOrb else { return }
                         newOrb.isVisible = true
                         newOrb.animationScale = 0.0
                         // Set new orb to its target position
                         newOrb.angle = newOrbTargetAngle
                         newOrb.radius = newOrbTargetRadius
-                        newOrb.scale = newPositions[newOrb.id]?.scale ?? 1.0
+                        newOrb.scale = newOrbTargetScale
                         self.animateOrbGrowth(orb: newOrb, duration: 0.6)
                     }
                 }
@@ -861,7 +892,13 @@ extension NSColor {
         
         private func animateOrbGrowth(orb: ProjectOrb, duration: Double) {
             let startTime = CACurrentMediaTime()
-            Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { timer in
+            // Use weak orb reference to prevent retain cycle
+            Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak orb] timer in
+                guard let orb = orb else {
+                    timer.invalidate()
+                    return
+                }
+                
                 let elapsed = CACurrentMediaTime() - startTime
                 let progress = min(elapsed / duration, 1.0)
                 

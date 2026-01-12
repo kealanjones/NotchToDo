@@ -7,7 +7,9 @@ import com.notchtodo.data.local.entities.toEntity
 import com.notchtodo.data.remote.SupabaseApi
 import com.notchtodo.data.remote.dto.*
 import com.notchtodo.domain.model.Task
+import com.notchtodo.util.DateUtils
 import com.notchtodo.util.DebugLog
+import com.notchtodo.util.RetryHelper
 import com.notchtodo.util.SecurePreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -112,8 +114,8 @@ class TaskRepository @Inject constructor(
             if (userId != null) {
                 try {
                     val response = api.softDeleteTask(
-                        id = taskId.toString(),
-                        deletedAt = mapOf("deleted_at" to formatISO8601(Date()))
+                        idFilter = "eq.${taskId}",
+                        deletedAt = mapOf("deleted_at" to DateUtils.formatISO8601(Date()))
                     )
                     if (!response.isSuccessful) {
                         DebugLog.error("Remote delete failed: ${response.code()}", category = DebugLog.Category.SYNC)
@@ -140,7 +142,7 @@ class TaskRepository @Inject constructor(
             if (userId != null) {
                 try {
                     val updates = TaskUpdateRequest(status = status.value)
-                    api.updateTask(taskId.toString(), updates = updates)
+                    api.updateTask(idFilter = "eq.${taskId}", updates = updates)
                 } catch (e: Exception) {
                     DebugLog.error("Failed to sync status update", e, DebugLog.Category.SYNC)
                 }
@@ -204,11 +206,14 @@ class TaskRepository @Inject constructor(
     }
 
     private suspend fun syncTaskToRemote(task: Task) {
-        val userId = authRepository.getUserId() ?: return
+        val userId = authRepository.getUserId() ?: run {
+            DebugLog.log("Cannot sync task: not authenticated", DebugLog.Category.SYNC)
+            return
+        }
 
-        try {
+        RetryHelper.withRetryOrNull(RetryHelper.networkConfig) {
             // Check if task exists on remote
-            val existingResponse = api.getTask(task.id.toString())
+            val existingResponse = api.getTask(idFilter = "eq.${task.id}")
 
             if (existingResponse.isSuccessful && existingResponse.body()?.isNotEmpty() == true) {
                 // Update existing task
@@ -218,28 +223,26 @@ class TaskRepository @Inject constructor(
                     status = task.status.value,
                     priority = task.priority,
                     isCompleted = task.isCompleted,
-                    dueDate = task.dueDate?.let { formatISO8601(it) },
+                    dueDate = task.dueDate?.let { DateUtils.formatISO8601(it) },
                     orbId = task.orbId?.toString(),
                     sortOrder = task.sortOrder
                 )
-                api.updateTask(task.id.toString(), updates = updates)
+                val updateResponse = api.updateTask(idFilter = "eq.${task.id}", updates = updates)
+                if (!updateResponse.isSuccessful) {
+                    throw Exception("Update failed: ${updateResponse.code()}")
+                }
             } else {
                 // Create new task
                 val createRequest = task.toCreateRequest()
-                api.createTask(createRequest)
+                val createResponse = api.createTask(createRequest)
+                if (!createResponse.isSuccessful) {
+                    throw Exception("Create failed: ${createResponse.code()}")
+                }
             }
 
             // Mark as synced
             taskDao.updateSyncPending(task.id.toString(), false)
-
-        } catch (e: Exception) {
-            DebugLog.error("Failed to sync task to remote: ${task.title}", e, DebugLog.Category.SYNC)
-        }
-    }
-
-    private fun formatISO8601(date: Date): String {
-        val formatter = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", java.util.Locale.US)
-        formatter.timeZone = java.util.TimeZone.getTimeZone("UTC")
-        return formatter.format(date)
+            DebugLog.log("Successfully synced task: ${task.title}", DebugLog.Category.SYNC)
+        } ?: DebugLog.error("Failed to sync task after retries: ${task.title}", category = DebugLog.Category.SYNC)
     }
 }

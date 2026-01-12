@@ -3,33 +3,39 @@ import Foundation
 /// Minimal façade around Supabase's REST/Storage endpoints. We defer
 /// third-party SDK dependencies until we confirm requirements, but keep an
 /// ergonomic surface area for higher-level sync code.
-final class SupabaseService {
-    struct Configuration {
-        let projectURL: URL
-        let anonKey: String
-        let storageBucket: String
+public final class SupabaseService {
+    public struct Configuration {
+        public let projectURL: URL
+        public let anonKey: String
+        public let storageBucket: String
+        
+        public init(projectURL: URL, anonKey: String, storageBucket: String) {
+            self.projectURL = projectURL
+            self.anonKey = anonKey
+            self.storageBucket = storageBucket
+        }
     }
 
-    static let iso8601FormatterWithFractional: ISO8601DateFormatter = {
+    public static let iso8601FormatterWithFractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
-    static let iso8601Formatter: ISO8601DateFormatter = {
+    public static let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
 
-    enum HTTPMethod: String {
+    public enum HTTPMethod: String {
         case get = "GET"
         case post = "POST"
         case patch = "PATCH"
         case delete = "DELETE"
     }
 
-    enum ServiceError: Error {
+    public enum ServiceError: Error {
         case invalidConfiguration
         case invalidResponse(status: Int, body: String)
         case missingCredentials
@@ -40,7 +46,7 @@ final class SupabaseService {
     private let jsonDecoder = JSONDecoder()
     private let jsonEncoder = JSONEncoder()
 
-    init(configuration: Configuration, urlSession: URLSession = .shared) {
+    public init(configuration: Configuration, urlSession: URLSession = .shared) {
         self.configuration = configuration
         self.urlSession = urlSession
         jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -63,7 +69,7 @@ final class SupabaseService {
         }
     }
 
-    func makeRequest(
+    public func makeRequest(
         path: String,
         method: HTTPMethod = .get,
         queryItems: [URLQueryItem] = [],
@@ -100,7 +106,7 @@ final class SupabaseService {
         return request
     }
 
-    func perform<T: Decodable>(_ request: URLRequest, decode: T.Type) async throws -> T {
+    public func perform<T: Decodable>(_ request: URLRequest, decode: T.Type) async throws -> T {
         let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               200..<300 ~= httpResponse.statusCode else {
@@ -128,13 +134,13 @@ final class SupabaseService {
         }
     }
 
-    func perform(_ request: URLRequest) async throws {
+    public func perform(_ request: URLRequest) async throws {
         let _: EmptyResponse = try await perform(request, decode: EmptyResponse.self)
     }
 
     // MARK: - Auth
 
-    func makeAuthRequest(
+    public func makeAuthRequest(
         path: String,
         queryItems: [URLQueryItem] = [],
         body: [String: Any]
@@ -159,7 +165,7 @@ final class SupabaseService {
         return request
     }
 
-    func performAuth<T: Decodable>(_ request: URLRequest, decode: T.Type) async throws -> T {
+    public func performAuth<T: Decodable>(_ request: URLRequest, decode: T.Type) async throws -> T {
         let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               200..<300 ~= httpResponse.statusCode else {
@@ -180,7 +186,7 @@ final class SupabaseService {
 
     // MARK: - Storage
 
-    func storageUploadURL(for path: String) -> URL {
+    public func storageUploadURL(for path: String) -> URL {
         configuration.projectURL
             .appendingPathComponent("storage/v1/object")
             .appendingPathComponent("\(configuration.storageBucket)/\(path)")
@@ -189,7 +195,7 @@ final class SupabaseService {
 
 // MARK: - Helpers
 
-struct EmptyResponse: Decodable {}
+public struct EmptyResponse: Decodable {}
 
 private extension SupabaseService {
     static func parseISO8601Date(_ string: String) -> Date? {
@@ -201,7 +207,7 @@ private extension SupabaseService {
 }
 
 extension SupabaseService.ServiceError: LocalizedError {
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .invalidConfiguration:
             return "Supabase configuration is incomplete."

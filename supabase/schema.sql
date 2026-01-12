@@ -44,6 +44,8 @@ create table if not exists public.orbs (
 
 create index if not exists idx_orbs_user on public.orbs(user_id);
 create index if not exists idx_orbs_updated_at on public.orbs(updated_at);
+create index if not exists idx_orbs_deleted_at on public.orbs(deleted_at) where deleted_at is null;
+create index if not exists idx_orbs_user_not_deleted on public.orbs(user_id, sort_order) where deleted_at is null;
 
 create or replace function public.bump_orb_version()
 returns trigger
@@ -86,6 +88,9 @@ create table if not exists public.tasks (
 create index if not exists idx_tasks_user on public.tasks(user_id);
 create index if not exists idx_tasks_orb on public.tasks(orb_id);
 create index if not exists idx_tasks_updated_at on public.tasks(updated_at);
+create index if not exists idx_tasks_deleted_at on public.tasks(deleted_at) where deleted_at is null;
+create index if not exists idx_tasks_user_not_deleted on public.tasks(user_id, sort_order) where deleted_at is null;
+create index if not exists idx_tasks_orb_not_deleted on public.tasks(orb_id, sort_order) where deleted_at is null;
 
 create or replace function public.bump_task_version()
 returns trigger

@@ -1,25 +1,32 @@
 import Foundation
 
-#if os(macOS)
-import AppKit
-typealias PlatformColor = NSColor
-#else
-import UIKit
-typealias PlatformColor = UIColor
+#if canImport(Combine)
+import Combine
 #endif
 
-// MARK: - Orb Data Model (iOS-compatible)
-class OrbModel: ObservableObject, Identifiable {
-    let id: UUID
-    let color: PlatformColor
-    @Published var name: String
-    @Published var taskCount: Int = 0
-    @Published var tasks: [TaskModel] = []
-    var sortOrder: Double = 0.0
-    var createdAt: Date
-    var updatedAt: Date?
+#if os(macOS)
+import AppKit
+public typealias PlatformColor = NSColor
+#else
+import UIKit
+public typealias PlatformColor = UIColor
+#endif
 
-    init(
+// MARK: - Orb Data Model (Cross-platform)
+public class OrbModel: ObservableObject, Identifiable {
+    public let id: UUID
+    public let color: PlatformColor
+    @Published public var name: String
+    @Published public var taskCount: Int = 0
+    @Published public var tasks: [TaskModel] = []
+    @Published public var sortOrder: Double = 0.0
+    public let createdAt: Date  // Immutable - set once at creation
+    @Published public var updatedAt: Date?
+    
+    /// Callback for change notifications (used by macOS for persistence)
+    public var onChange: (() -> Void)?
+
+    public init(
         id: UUID = UUID(),
         name: String,
         color: PlatformColor,
@@ -34,24 +41,27 @@ class OrbModel: ObservableObject, Identifiable {
         self.taskCount = tasks.count
     }
 
-    func addTask(_ task: TaskModel) {
+    public func addTask(_ task: TaskModel) {
         tasks.append(task)
         reindexTasks()
         taskCount = tasks.count
+        notifyChange()
     }
 
-    func removeTask(_ task: TaskModel) -> Int? {
+    public func removeTask(_ task: TaskModel) -> Int? {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return nil }
         tasks.remove(at: index)
         reindexTasks()
         taskCount = tasks.count
+        notifyChange()
         return index
     }
 
-    func insertTask(_ task: TaskModel, at index: Int) {
+    public func insertTask(_ task: TaskModel, at index: Int) {
         tasks.insert(task, at: index)
         reindexTasks()
         taskCount = tasks.count
+        notifyChange()
     }
 
     private func reindexTasks() {
@@ -59,11 +69,16 @@ class OrbModel: ObservableObject, Identifiable {
             task.sortOrder = Double(index)
         }
     }
+    
+    /// Notify observers of changes (for macOS persistence integration)
+    public func notifyChange() {
+        onChange?()
+    }
 }
 
 // MARK: - Color Palette System
-struct OrbColorPalette {
-    static let colors: [PlatformColor] = [
+public struct OrbColorPalette {
+    public static let colors: [PlatformColor] = [
         PlatformColor(red: 0.0, green: 0.6, blue: 1.0, alpha: 1.0),      // Bright Electric Blue
         PlatformColor(red: 1.0, green: 0.15, blue: 0.25, alpha: 1.0),    // Vibrant Crimson Red
         PlatformColor(red: 0.0, green: 1.0, blue: 0.4, alpha: 1.0),      // Luminous Emerald Green
@@ -74,17 +89,17 @@ struct OrbColorPalette {
         PlatformColor(red: 1.0, green: 0.98, blue: 0.0, alpha: 1.0),     // Bright Golden Yellow
     ]
 
-    static func getColor(for index: Int) -> PlatformColor {
+    public static func getColor(for index: Int) -> PlatformColor {
         return colors[index % colors.count]
     }
 
-    static func getUniqueColor(for orbIndex: Int) -> PlatformColor {
+    public static func getUniqueColor(for orbIndex: Int) -> PlatformColor {
         return colors[orbIndex % colors.count]
     }
 }
 
 // MARK: - Color Extensions
-extension PlatformColor {
+public extension PlatformColor {
     func toHexString() -> String {
         #if os(macOS)
         guard let rgb = usingColorSpace(.extendedSRGB) ?? usingColorSpace(.sRGB) else {
@@ -93,6 +108,7 @@ extension PlatformColor {
         let r = Int(round(rgb.redComponent * 255.0))
         let g = Int(round(rgb.greenComponent * 255.0))
         let b = Int(round(rgb.blueComponent * 255.0))
+        return String(format: "#%02X%02X%02X", r, g, b)
         #else
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         getRed(&r, green: &g, blue: &b, alpha: &a)
@@ -101,7 +117,6 @@ extension PlatformColor {
         let bInt = Int(round(b * 255.0))
         return String(format: "#%02X%02X%02X", rInt, gInt, bInt)
         #endif
-        return String(format: "#%02X%02X%02X", r, g, b)
     }
 
     static func fromHexString(_ hex: String) -> PlatformColor? {

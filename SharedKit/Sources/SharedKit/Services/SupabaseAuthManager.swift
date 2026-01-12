@@ -1,10 +1,21 @@
 import Foundation
 
-final class SupabaseAuthManager {
-    struct Session {
-        let accessToken: String
-        let refreshToken: String?
-        let expiresAt: Date?
+public extension Notification.Name {
+    /// Posted when the Supabase authentication session changes
+    static let supabaseAuthSessionChanged = Notification.Name("supabaseAuthSessionChanged")
+}
+
+public final class SupabaseAuthManager {
+    public struct Session {
+        public let accessToken: String
+        public let refreshToken: String?
+        public let expiresAt: Date?
+        
+        public init(accessToken: String, refreshToken: String?, expiresAt: Date?) {
+            self.accessToken = accessToken
+            self.refreshToken = refreshToken
+            self.expiresAt = expiresAt
+        }
     }
 
     private enum Keys {
@@ -12,33 +23,55 @@ final class SupabaseAuthManager {
         static let refreshToken = "SupabaseRefreshToken"
         static let expiresAt = "SupabaseAccessTokenExpiry"
     }
+    
     private let service: SupabaseService
     private let queue = DispatchQueue(label: "com.notchtodo.supabase.auth", qos: .utility)
-    private(set) var currentSession: Session? {
-        didSet {
-            guard oldValue?.accessToken != currentSession?.accessToken else { return }
-            NotificationCenter.default.post(name: .supabaseAuthSessionChanged, object: currentSession)
+    
+    // Thread-safe session storage
+    private let sessionLock = NSLock()
+    private var _currentSession: Session?
+    
+    /// Thread-safe access to the current session
+    public private(set) var currentSession: Session? {
+        get {
+            sessionLock.lock()
+            defer { sessionLock.unlock() }
+            return _currentSession
+        }
+        set {
+            sessionLock.lock()
+            let oldValue = _currentSession
+            _currentSession = newValue
+            sessionLock.unlock()
+            
+            // Only post notification if session actually changed
+            guard oldValue?.accessToken != newValue?.accessToken else { return }
+            
+            // Post notification on main thread for UI safety
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .supabaseAuthSessionChanged, object: newValue)
+            }
         }
     }
 
-    init(service: SupabaseService) {
+    public init(service: SupabaseService) {
         self.service = service
         loadPersistedSession()
     }
 
-    func bootstrapWithDeveloperToken(_ token: String) {
+    public func bootstrapWithDeveloperToken(_ token: String) {
         queue.async {
             self.persistSession(accessToken: token, refreshToken: nil, expiresAt: nil)
         }
     }
 
-    func clearSession() {
+    public func clearSession() {
         queue.async {
             self.persistSession(accessToken: nil, refreshToken: nil, expiresAt: nil)
         }
     }
 
-    func signIn(email: String, password: String) async throws {
+    public func signIn(email: String, password: String) async throws {
         let body: [String: Any] = [
             "email": email,
             "password": password
@@ -52,7 +85,7 @@ final class SupabaseAuthManager {
         persistSessionAsync(from: response)
     }
 
-    func signUp(email: String, password: String) async throws {
+    public func signUp(email: String, password: String) async throws {
         let body: [String: Any] = [
             "email": email,
             "password": password,
@@ -63,7 +96,7 @@ final class SupabaseAuthManager {
         persistSessionAsync(from: response)
     }
 
-    func refreshSessionIfNeeded() async {
+    public func refreshSessionIfNeeded() async {
         guard let session = currentSession,
               let expiresAt = session.expiresAt,
               let refreshToken = session.refreshToken else { return }
@@ -87,7 +120,7 @@ final class SupabaseAuthManager {
     }
 
     @discardableResult
-    func handleOAuthRedirect(url: URL) -> Bool {
+    public func handleOAuthRedirect(url: URL) -> Bool {
         guard url.scheme == "notch", url.host == "auth-callback" else { return false }
 
         let fragmentParams = parse(url.fragment)
@@ -113,7 +146,7 @@ final class SupabaseAuthManager {
         return true
     }
 
-    func setSession(accessToken: String, refreshToken: String?, expiresAt: Date?) {
+    public func setSession(accessToken: String, refreshToken: String?, expiresAt: Date?) {
         persistSessionAsync(accessToken: accessToken, refreshToken: refreshToken, expiresAt: expiresAt)
     }
 

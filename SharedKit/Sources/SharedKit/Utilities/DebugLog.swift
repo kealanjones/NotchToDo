@@ -1,6 +1,6 @@
 import Foundation
 
-enum DebugCategory: CaseIterable, Hashable {
+public enum DebugCategory: CaseIterable, Hashable {
     case app
     case intent
     case speech
@@ -8,8 +8,9 @@ enum DebugCategory: CaseIterable, Hashable {
     case tasks
     case persistence
     case sync
+    case physics  // Used by macOS for orb physics
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .app: return "App Lifecycle"
         case .intent: return "Intent Routing"
@@ -18,10 +19,11 @@ enum DebugCategory: CaseIterable, Hashable {
         case .tasks: return "Tasks & Cards"
         case .persistence: return "Persistence"
         case .sync: return "Sync"
+        case .physics: return "Physics"
         }
     }
 
-    var tag: String {
+    public var tag: String {
         switch self {
         case .app: return "APP"
         case .intent: return "INTENT"
@@ -30,21 +32,24 @@ enum DebugCategory: CaseIterable, Hashable {
         case .tasks: return "TASK"
         case .persistence: return "DATA"
         case .sync: return "SYNC"
+        case .physics: return "PHYSICS"
         }
     }
 
-    static var defaultEnabled: Set<DebugCategory> {
+    public static var defaultEnabled: Set<DebugCategory> {
         return [.intent, .speech, .overlay, .sync, .persistence]
     }
 }
 
-final class DebugLogger {
-    static let shared = DebugLogger()
+public final class DebugLogger {
+    public static let shared = DebugLogger()
 
     private let lock = NSLock()
     private var enabledCategories: Set<DebugCategory> = DebugCategory.defaultEnabled
 
-    func setCategory(_ category: DebugCategory, enabled: Bool) {
+    private init() {}
+
+    public func setCategory(_ category: DebugCategory, enabled: Bool) {
         lock.lock()
         if enabled {
             enabledCategories.insert(category)
@@ -54,20 +59,20 @@ final class DebugLogger {
         lock.unlock()
     }
 
-    func isEnabled(_ category: DebugCategory) -> Bool {
+    public func isEnabled(_ category: DebugCategory) -> Bool {
         lock.lock()
         let enabled = enabledCategories.contains(category)
         lock.unlock()
         return enabled
     }
 
-    func allCategories() -> [DebugCategory] {
+    public func allCategories() -> [DebugCategory] {
         return DebugCategory.allCases
     }
 }
 
-enum DebugLog {
-    static func log(
+public enum DebugLog {
+    public static func log(
         _ message: @autoclosure () -> String,
         category: DebugCategory,
         file: StaticString = #fileID,

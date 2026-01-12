@@ -1,39 +1,118 @@
 import SwiftUI
+import Combine
 
-struct TasksView: View {
-    @EnvironmentObject var dataManager: DataManager
-    @State private var selectedOrb: OrbModel?
-    @State private var showingCreateTask = false
-    @State private var searchText = ""
+/// Helper struct to hold task with its parent orb
+struct TaskWithOrb: Identifiable {
+    let orb: OrbModel
+    let task: TaskModel
+    var id: UUID { task.id }
+}
 
-    var allTasks: [(orb: OrbModel, task: TaskModel)] {
-        dataManager.orbs.flatMap { orb in
-            orb.tasks.map { (orb: orb, task: $0) }
+/// View model to cache and optimize task computations with debounced search
+@MainActor
+class TasksViewModel: ObservableObject {
+    @Published private(set) var allTasks: [TaskWithOrb] = []
+    @Published var searchText: String = ""
+    @Published private(set) var groupedTasks: [(status: TaskModel.Status, tasks: [TaskWithOrb])] = []
+    @Published private(set) var isSearching: Bool = false
+    
+    private var filteredTasks: [TaskWithOrb] = []
+    private var cancellables = Set<AnyCancellable>()
+    
+    /// Debounce interval in seconds
+    private let searchDebounceInterval: TimeInterval = 0.3
+    
+    init() {
+        setupSearchDebouncing()
+    }
+    
+    private func setupSearchDebouncing() {
+        // Debounce search text changes to avoid excessive filtering
+        $searchText
+            .debounce(for: .seconds(searchDebounceInterval), scheduler: DispatchQueue.main)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.isSearching = false
+                self?.updateFilteredTasks()
+            }
+            .store(in: &cancellables)
+        
+        // Show searching indicator immediately when user starts typing
+        $searchText
+            .dropFirst() // Skip initial value
+            .filter { !$0.isEmpty }
+            .sink { [weak self] _ in
+                self?.isSearching = true
+            }
+            .store(in: &cancellables)
+    }
+    
+    func updateFromOrbs(_ orbs: [OrbModel]) {
+        // Only rebuild if the data actually changed
+        let newTasks = orbs.flatMap { orb in
+            orb.tasks.map { TaskWithOrb(orb: orb, task: $0) }
+        }
+        
+        // Compare task IDs to avoid unnecessary updates
+        let newIds = Set(newTasks.map { $0.id })
+        let currentIds = Set(allTasks.map { $0.id })
+        
+        if newIds != currentIds || newTasks.count != allTasks.count {
+            allTasks = newTasks
+            updateFilteredTasks()
         }
     }
-
-    var filteredTasks: [(orb: OrbModel, task: TaskModel)] {
+    
+    private func updateFilteredTasks() {
         if searchText.isEmpty {
-            return allTasks
+            filteredTasks = allTasks
+        } else {
+            let searchTerms = searchText.lowercased()
+            filteredTasks = allTasks.filter { item in
+                // Search in title
+                item.task.title.lowercased().contains(searchTerms) ||
+                // Also search in orb name for better discoverability
+                item.orb.name.lowercased().contains(searchTerms)
+            }
         }
-        return allTasks.filter { $0.task.title.localizedCaseInsensitiveContains(searchText) }
+        updateGroupedTasks()
     }
-
-    var groupedTasks: [(status: TaskModel.Status, tasks: [(orb: OrbModel, task: TaskModel)])] {
+    
+    private func updateGroupedTasks() {
         let statuses: [TaskModel.Status] = [.outstanding, .inProgress, .complete]
-        return statuses.map { status in
+        groupedTasks = statuses.map { status in
             let tasks = filteredTasks.filter { $0.task.statusEnum == status }
             return (status: status, tasks: tasks)
         }
     }
+    
+    /// Immediately execute search without waiting for debounce (e.g., for "search" button)
+    func executeSearchImmediately() {
+        isSearching = false
+        updateFilteredTasks()
+    }
+    
+    /// Clear search text
+    func clearSearch() {
+        searchText = ""
+        isSearching = false
+        updateFilteredTasks()
+    }
+}
+
+struct TasksView: View {
+    @EnvironmentObject var dataManager: DataManager
+    @StateObject private var viewModel = TasksViewModel()
+    @State private var selectedOrb: OrbModel?
+    @State private var showingCreateTask = false
 
     var body: some View {
         NavigationView {
             List {
-                ForEach(groupedTasks, id: \.status.rawValue) { group in
+                ForEach(viewModel.groupedTasks, id: \.status.rawValue) { group in
                     if !group.tasks.isEmpty {
                         Section(header: Text(group.status.displayName)) {
-                            ForEach(group.tasks, id: \.task.id) { item in
+                            ForEach(group.tasks) { item in
                                 NavigationLink(destination: TaskDetailView(task: item.task, orb: item.orb)) {
                                     TaskRowView(task: item.task, orb: item.orb)
                                 }
@@ -42,7 +121,7 @@ struct TasksView: View {
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "Search tasks")
+            .searchable(text: $viewModel.searchText, prompt: "Search tasks")
             .navigationTitle("Tasks")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -53,6 +132,12 @@ struct TasksView: View {
             }
             .sheet(isPresented: $showingCreateTask) {
                 CreateTaskView()
+            }
+            .onAppear {
+                viewModel.updateFromOrbs(dataManager.orbs)
+            }
+            .onChange(of: dataManager.orbs) { newOrbs in
+                viewModel.updateFromOrbs(newOrbs)
             }
         }
     }
