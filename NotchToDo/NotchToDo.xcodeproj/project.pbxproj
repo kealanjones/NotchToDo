@@ -63,6 +63,11 @@
 		F1A2B3C4D5E6F7A8B9C0D1E3 /* OnboardingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E2 /* OnboardingViewController.swift */; };
 		F1A2B3C4D5E6F7A8B9C0D1E5 /* AppDelegate+DebugMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E4 /* AppDelegate+DebugMenu.swift */; };
 		F1A2B3C4D5E6F7A8B9C0D1E7 /* AppDelegate+VoiceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E6 /* AppDelegate+VoiceSession.swift */; };
+		C2AA0011223344556677889E /* ChangeTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556683 /* ChangeTracker.swift */; };
+		C2AA0011223344556677889F /* DataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556684 /* DataStore.swift */; };
+		C2AA00112233445566778901 /* OrbRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556685 /* OrbRepository.swift */; };
+		C2AA00112233445566778902 /* TaskRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556686 /* TaskRepository.swift */; };
+		C2AA00112233445566778903 /* TaskEntity+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556687 /* TaskEntity+CoreDataProperties.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -138,6 +143,11 @@
 		F1A2B3C4D5E6F7A8B9C0D1E2 /* OnboardingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewController.swift; sourceTree = "<group>"; };
 		F1A2B3C4D5E6F7A8B9C0D1E4 /* AppDelegate+DebugMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDelegate+DebugMenu.swift"; sourceTree = "<group>"; };
 		F1A2B3C4D5E6F7A8B9C0D1E6 /* AppDelegate+VoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDelegate+VoiceSession.swift"; sourceTree = "<group>"; };
+		C2AA00990011223344556683 /* ChangeTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeTracker.swift; sourceTree = "<group>"; };
+		C2AA00990011223344556684 /* DataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStore.swift; sourceTree = "<group>"; };
+		C2AA00990011223344556685 /* OrbRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbRepository.swift; sourceTree = "<group>"; };
+		C2AA00990011223344556686 /* TaskRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRepository.swift; sourceTree = "<group>"; };
+		C2AA00990011223344556687 /* TaskEntity+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TaskEntity+CoreDataProperties.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -248,9 +258,14 @@
 			children = (
 				C2AA00990011223344556677 /* PersistenceController.swift */,
 				C2AA00990011223344556678 /* OrbPersistenceStore.swift */,
+				C2AA00990011223344556684 /* DataStore.swift */,
+				C2AA00990011223344556685 /* OrbRepository.swift */,
+				C2AA00990011223344556686 /* TaskRepository.swift */,
+				C2AA00990011223344556683 /* ChangeTracker.swift */,
 				E0AAA1112222333344450045 /* OrbEntity+CoreDataClass.swift */,
 				E0AAA1112222333344450055 /* TaskEntity+CoreDataClass.swift */,
 				E0AAA1112222333344445555 /* OrbEntity+CoreDataProperties.swift */,
+				C2AA00990011223344556687 /* TaskEntity+CoreDataProperties.swift */,
 			);
 			path = Persistence;
 			sourceTree = "<group>";
@@ -437,6 +452,11 @@
 				A1234567890123456789014C /* IntentRouter.swift in Sources */,
 				C2AA00112233445566778899 /* PersistenceController.swift in Sources */,
 				C2AA0011223344556677889A /* OrbPersistenceStore.swift in Sources */,
+				C2AA0011223344556677889F /* DataStore.swift in Sources */,
+				C2AA00112233445566778901 /* OrbRepository.swift in Sources */,
+				C2AA00112233445566778902 /* TaskRepository.swift in Sources */,
+				C2AA0011223344556677889E /* ChangeTracker.swift in Sources */,
+				C2AA00112233445566778903 /* TaskEntity+CoreDataProperties.swift in Sources */,
 				E0AAA1112222333344450046 /* OrbEntity+CoreDataClass.swift in Sources */,
 				E0AAA1112222333344450056 /* TaskEntity+CoreDataClass.swift in Sources */,
 				E0AAA1112222333344445556 /* OrbEntity+CoreDataProperties.swift in Sources */,
