@@ -81,6 +81,8 @@ final class SupabaseSyncManager {
     private var currentUserID: UUID?
     private var outboxObserver: NSObjectProtocol?
     weak var authManager: SupabaseAuthManager?
+    /// Reference to the unified ChangeTracker for outbox operations.
+    var changeTracker: ChangeTracker?
     private var pullTimer: DispatchSourceTimer?
     private let payloadDecoder: JSONDecoder = {
         let decoder = JSONDecoder()
@@ -89,7 +91,7 @@ final class SupabaseSyncManager {
     }()
 
     private var forceFullPullNext: Bool = false
-    private var isActive: Bool = false // Track if sync manager is active
+    private var isActive: Bool = false
 
     private struct PullState {
         static let lastPullKey = "SupabaseLastSuccessfulPullAt"
@@ -122,8 +124,9 @@ final class SupabaseSyncManager {
         self.backgroundContext.automaticallyMergesChangesFromParent = true
         persistenceController.registerSyncWorkerContext(backgroundContext)
 
+        // Listen for outbox changes from the new ChangeTracker
         outboxObserver = NotificationCenter.default.addObserver(
-            forName: .supabaseOutboxDidChange,
+            forName: ChangeTracker.outboxDidChangeNotification,
             object: nil,
             queue: nil
         ) { [weak self] _ in
@@ -221,23 +224,23 @@ final class SupabaseSyncManager {
 
     private func flushPendingChanges() {
         guard isActive else {
-            DebugLog.log("⏸️ Skipping flush: sync manager inactive", category: .sync)
+            DebugLog.log("Skipping flush: sync manager inactive", category: .sync)
             return
         }
         guard state != .syncing else {
-            DebugLog.log("⏸️ Skipping flush: already syncing", category: .sync)
+            DebugLog.log("Skipping flush: already syncing", category: .sync)
             return
         }
         state = .syncing
-        DebugLog.log("⬆️ Starting outbox flush...", category: .sync)
-        persistence.performOutboxMaintenanceSync()
+        DebugLog.log("Starting outbox flush...", category: .sync)
+        changeTracker?.performMaintenance()
         processOutboxBatch(limit: 50)
         // Always attempt a pull after pushing local changes to get latest state
         pullRemoteChanges()
         if case .syncing = state {
             state = .idle
         }
-        DebugLog.log("✅ Outbox flush complete", category: .sync)
+        DebugLog.log("Outbox flush complete", category: .sync)
     }
 
     private func pullRemoteChanges() {
@@ -673,11 +676,16 @@ final class SupabaseSyncManager {
     }
 
     private func persistSuccess(for workItem: OutboxWorkItem, outcome: SyncOutcome) {
+        // Remove from ChangeTracker's outbox
+        changeTracker?.removeItem(objectID: workItem.objectID)
+
         backgroundContext.performAndWait {
+            // Also try legacy cleanup for any remaining old-format entries
             if let outboxItem = try? backgroundContext.existingObject(with: workItem.objectID) as? SyncOutboxItem {
                 backgroundContext.delete(outboxItem)
-                DebugLog.log("✅ Synced \(workItem.operation.name) \(workItem.entityName) #\(workItem.localIdentifier.uuidString.prefix(8)) → remoteID: \(outcome.remoteID?.uuidString.prefix(8) ?? "nil")", category: .sync)
             }
+
+            DebugLog.log("Synced \(workItem.operation.name) \(workItem.entityName) #\(workItem.localIdentifier.uuidString.prefix(8)) -> remoteID: \(outcome.remoteID?.uuidString.prefix(8) ?? "nil")", category: .sync)
 
             applyLocalPostSyncHousekeeping(
                 entityName: workItem.entityName,
@@ -692,7 +700,7 @@ final class SupabaseSyncManager {
                     try backgroundContext.save()
                 }
             } catch {
-                DebugLog.log("❌ Failed to persist sync bookkeeping: \(error)", category: .sync)
+                DebugLog.log("Failed to persist sync bookkeeping: \(error)", category: .sync)
                 backgroundContext.reset()
             }
         }

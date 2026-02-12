@@ -584,6 +584,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, AuthViewControllerDelegate {
             }
         }
 
+        // Wire ChangeTracker from DataStore into sync manager
+        syncManager.changeTracker = overlayController?.dataStore.changeTracker
+
         supabaseService = service
         supabaseSyncManager = syncManager
         supabaseAuthManager = authManager
@@ -1585,7 +1588,7 @@ extension AppDelegate {
 
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
-            overlayController?.orbManager.clearAllOrbs()
+            overlayController?.dataStore.clearAllData()
             DebugLog.log("All orbs cleared via debug menu", category: .app)
         }
     }

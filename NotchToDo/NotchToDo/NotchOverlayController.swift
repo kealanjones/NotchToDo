@@ -15,35 +15,35 @@ extension NSScreen {
 
 class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCaptureCoordinatorDelegate {
     private let persistenceController: PersistenceController
-    private let orbStore: OrbPersistenceStore
-    internal let orbManager: OrbManager  // Changed to internal for TaskCardView access
+    let dataStore: DataStore
+    internal var orbManager: OrbManager { dataStore.orbManager }
     internal var notchIndicatorWindow: NSWindow?
     internal var semiCircleWindow: NSWindow?
-    internal var semiCircleView: SemiCircleWithOrbsView? // Added
-    internal var currentOpenOrb: ProjectOrb? // Track which orb's card is currently open
-    internal var taskCardWindows: [UUID: NSWindow] = [:] // Track multiple task cards by orb ID
-    internal var taskDetailWindows: [UUID: NSWindow] = [:] // Track task detail windows by task ID
+    internal var semiCircleView: SemiCircleWithOrbsView?
+    internal var currentOpenOrb: ProjectOrb?
+    internal var taskCardWindows: [UUID: NSWindow] = [:]
+    internal var taskDetailWindows: [UUID: NSWindow] = [:]
     internal var currentListenState: ListenState = .idle
-    var isSemiCircleVisible = false // Added
-    
+    var isSemiCircleVisible = false
+
     // Speech capture coordination
     let compactPreview = NotchCompactPreviewController()
     private lazy var speechCoordinator = SpeechCaptureCoordinator(delegate: self)
     private lazy var windowManager = OverlayWindowManager(controller: self)
     var speechFailureHandler: ((String) -> Void)?
     var speechCaptureVisibilityHandler: ((Bool) -> Void)?
-    
-        // Auto-fade timer system
+
+    // Auto-fade timer system
     private var fadeTimer: Timer?
     private let fadeDelay: TimeInterval = 10.0
     private var isFaded: Bool = false
     private var isAutoFadeSuspended = false
     private var orbRattleTimer: Timer?
-    
+
     // Task drag visualization
     var draggedTaskWindow: NSWindow?
     var draggedTaskView: TaskDragView?
-    
+
     // Card size preferences (stores custom sizes per orb)
     internal var customCardSizes: [UUID: CGSize] = [:]
 
@@ -52,81 +52,50 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
 
     init(persistenceController: PersistenceController = .shared) {
         self.persistenceController = persistenceController
-        self.orbStore = OrbPersistenceStore(persistenceController: persistenceController)
-        self.orbManager = OrbManager(includeSampleData: false) // Don't load sample data
-        // Don't load orb state until authenticated
-        orbManager.onChange = { [weak self] in
-            self?.scheduleOrbSave()
-        }
+        self.dataStore = DataStore(container: persistenceController.container)
         windowManager.setupNotchIndicator()
         windowManager.setupSemiCircle()
         setupNotificationObservers()
         refreshOrbEmbeddingCache()
     }
 
-    private func loadOrbState() {
-        do {
-            let snapshots = try orbStore.loadSnapshots()
-            orbManager.applySnapshots(snapshots)
-            if snapshots.isEmpty {
-                scheduleOrbSave()
-            }
-        } catch {
-            DebugLog.log("Failed to load persisted orb state: \(error)", category: .persistence)
-            orbManager.applySnapshots([])
-            scheduleOrbSave()
-        }
-    }
-
     // Expose a safe public reload for external callers
     func reloadFromPersistence() {
-        loadOrbState()
+        dataStore.reloadFromPersistence()
     }
-    
+
     // Load data when user authenticates
     func loadUserData() {
-        loadOrbState()
+        dataStore.loadFromPersistence()
         refreshOrbEmbeddingCache()
     }
-    
+
     // Clear all local data (on sign-out)
     func clearLocalData() {
-        // Clear orbs and tasks from memory
-        orbManager.applySnapshots([])
-        
-        // Delete all Core Data records
-        do {
-            try orbStore.deleteAllData()
-            DebugLog.log("✅ Deleted all Core Data records", category: .persistence)
-        } catch {
-            DebugLog.log("❌ Failed to delete Core Data: \(error)", category: .persistence)
-        }
-        
+        dataStore.clearAllData()
+
         // Close all open windows
         taskCardWindows.values.forEach { $0.close() }
         taskCardWindows.removeAll()
         taskDetailWindows.values.forEach { $0.close() }
         taskDetailWindows.removeAll()
         currentOpenOrb = nil
-        
+
         // Hide semi-circle
         hideSemiCircle()
-        
+
         // Clear custom sizes
         customCardSizes.removeAll()
     }
 
-    private func scheduleOrbSave() {
-        let snapshots = orbManager.makeSnapshots()
-        orbStore.scheduleSave(orbs: snapshots)
-    }
-
     // Persist immediately and nudge sync so remote reflects edits quickly
     private func persistEditsImmediately() {
-        let snapshots = orbManager.makeSnapshots()
-        orbStore.saveImmediately(orbs: snapshots)
+        dataStore.saveImmediately()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NotificationCenter.default.post(name: .supabaseOutboxDidChange, object: nil)
+            NotificationCenter.default.post(
+                name: ChangeTracker.outboxDidChangeNotification,
+                object: nil
+            )
         }
     }
     
@@ -174,16 +143,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
         let targetOrb = resolveTargetOrbForNewTask()
         addTask(title, to: targetOrb)
     }
-    
+
     internal func resolveTargetOrbForNewTask() -> ProjectOrb {
-        if let openOrb = currentOpenOrb {
-            return openOrb
-        } else {
-            // Use dedicated "Captured Tasks" orb for uncategorized tasks
-            let capturedTasksOrb = orbManager.findOrCreateCapturedTasksOrb()
-            semiCircleView?.needsDisplay = true
-            return capturedTasksOrb
-        }
+        let orb = dataStore.resolveTargetOrb(currentOpenOrb: currentOpenOrb)
+        semiCircleView?.needsDisplay = true
+        return orb
     }
     
     func addTask(_ title: String, to targetOrb: ProjectOrb) {
@@ -198,7 +162,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
             return
         }
 
-        targetOrb.addTask(title: validatedTitle)
+        dataStore.addTask(title: validatedTitle, to: targetOrb)
         let newlyCreatedTask = targetOrb.tasks.last
 
         if let window = taskCardWindows[targetOrb.id],
@@ -283,8 +247,8 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
             targetOrb = resolveTargetOrbForNewTask()
         }
 
-        // Create the task with all attributes
-        targetOrb.addTask(from: intent)
+        // Create the task with all attributes and persist
+        dataStore.addTask(from: intent, to: targetOrb)
 
         // Update UI
         if let window = taskCardWindows[targetOrb.id],
@@ -779,7 +743,7 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
 
     func deleteProject(_ orb: ProjectOrb) {
         guard let index = orbManager.removeOrb(orb) else {
-            DebugLog.log("🗑️ Failed to remove orb", category: .overlay)
+            DebugLog.log("Failed to remove orb", category: .overlay)
             return
         }
 
@@ -798,10 +762,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
         refreshOrbEmbeddingCache()
         semiCircleView?.needsDisplay = true
 
-        DebugLog.log("🗑️ Deleted project \(orb.name)", category: .overlay)
+        DebugLog.log("Deleted project \(orb.name)", category: .overlay)
         showUndoNotification(message: "Deleted \"\(deletedOrb.name)\"")
 
-        // Persist immediately to prevent reappearance on app relaunch
+        // Persist immediately via DataStore
+        dataStore.deleteOrb(orb)
         persistEditsImmediately()
 
         // Register undo
@@ -1044,8 +1009,11 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
             // Trigger orb display update to refresh task counters
             semiCircleView?.needsDisplay = true
             
-            DebugLog.log("🎯 Transferred task '\(task.title)' from '\(source.name)' to '\(target.name)'", category: .tasks)
-            DebugLog.log("🎯 Updated task counts - \(source.name): \(source.taskCount), \(target.name): \(target.taskCount)", category: .tasks)
+            // Persist task transfer to Core Data
+            dataStore.persistOrbTasks(source)
+            dataStore.persistOrbTasks(target)
+
+            DebugLog.log("Transferred task '\(task.title)' from '\(source.name)' to '\(target.name)'", category: .tasks)
         }
     }
     
