@@ -6,12 +6,17 @@ struct NotchToDoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if dataManager.isAuthenticated {
-                MainTabView()
-                    .environmentObject(dataManager)
-            } else {
-                AuthView()
-                    .environmentObject(dataManager)
+            Group {
+                if dataManager.isAuthenticated {
+                    MainTabView()
+                        .environmentObject(dataManager)
+                } else {
+                    AuthView()
+                        .environmentObject(dataManager)
+                }
+            }
+            .onOpenURL { url in
+                dataManager.authManager?.handleOAuthRedirect(url: url)
             }
         }
     }

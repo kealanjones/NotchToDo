@@ -60,6 +60,9 @@
 		E0AAA1112222333344450076 /* SupabaseOutboxPayloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450075 /* SupabaseOutboxPayloads.swift */; };
 		E0AAA1112222333344450086 /* AuthWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AAA1112222333344450085 /* AuthWindowController.swift */; };
 		E24B3C482EA785A40071EB1C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E24B3C472EA785A40071EB1C /* Assets.xcassets */; };
+		F1A2B3C4D5E6F7A8B9C0D1E3 /* OnboardingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E2 /* OnboardingViewController.swift */; };
+		F1A2B3C4D5E6F7A8B9C0D1E5 /* AppDelegate+DebugMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E4 /* AppDelegate+DebugMenu.swift */; };
+		F1A2B3C4D5E6F7A8B9C0D1E7 /* AppDelegate+VoiceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E6 /* AppDelegate+VoiceSession.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -132,6 +135,9 @@
 		E0AAA1112222333344450075 /* SupabaseOutboxPayloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseOutboxPayloads.swift; sourceTree = "<group>"; };
 		E0AAA1112222333344450085 /* AuthWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthWindowController.swift; sourceTree = "<group>"; };
 		E24B3C472EA785A40071EB1C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7A8B9C0D1E2 /* OnboardingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewController.swift; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7A8B9C0D1E4 /* AppDelegate+DebugMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDelegate+DebugMenu.swift"; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7A8B9C0D1E6 /* AppDelegate+VoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDelegate+VoiceSession.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -189,6 +195,9 @@
 				A1234567890123456789012B /* NotchToDoApp.swift */,
 				E24B3C472EA785A40071EB1C /* Assets.xcassets */,
 				A1234567890123456789012D /* AppDelegate.swift */,
+				F1A2B3C4D5E6F7A8B9C0D1E4 /* AppDelegate+DebugMenu.swift */,
+				F1A2B3C4D5E6F7A8B9C0D1E6 /* AppDelegate+VoiceSession.swift */,
+				F1A2B3C4D5E6F7A8B9C0D1E2 /* OnboardingViewController.swift */,
 				A12345678901234567890161 /* ListenState.swift */,
 				A12345678901234567890163 /* NotchIndicatorView.swift */,
 				A12345678901234567890165 /* OrbModels.swift */,
@@ -400,6 +409,9 @@
 			files = (
 				A1234567890123456789012A /* NotchToDoApp.swift in Sources */,
 				A1234567890123456789012C /* AppDelegate.swift in Sources */,
+				F1A2B3C4D5E6F7A8B9C0D1E3 /* OnboardingViewController.swift in Sources */,
+				F1A2B3C4D5E6F7A8B9C0D1E5 /* AppDelegate+DebugMenu.swift in Sources */,
+				F1A2B3C4D5E6F7A8B9C0D1E7 /* AppDelegate+VoiceSession.swift in Sources */,
 				A12345678901234567890160 /* ListenState.swift in Sources */,
 				A12345678901234567890162 /* NotchIndicatorView.swift in Sources */,
 				A12345678901234567890164 /* OrbModels.swift in Sources */,

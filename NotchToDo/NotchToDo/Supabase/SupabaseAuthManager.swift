@@ -88,14 +88,20 @@ final class SupabaseAuthManager {
 
     @discardableResult
     func handleOAuthRedirect(url: URL) -> Bool {
-        guard url.scheme == "notch", url.host == "auth-callback" else { return false }
+        let validSchemes: Set<String> = ["notch", "notchtodo"]
+        guard let scheme = url.scheme, validSchemes.contains(scheme),
+              url.host == "auth-callback" else {
+            DebugLog.log("OAuth redirect rejected: unexpected URL \(url.scheme ?? "nil")://\(url.host ?? "nil")", category: .sync)
+            return false
+        }
 
         let fragmentParams = parse(url.fragment)
         let queryParams = parse(url.query)
         let params = fragmentParams.merging(queryParams) { current, _ in current }
 
-        guard let accessToken = params["access_token"] else {
-            DebugLog.log("OAuth redirect missing access_token", category: .sync)
+        guard let accessToken = params["access_token"], !accessToken.isEmpty,
+              accessToken.count <= 8192 else {
+            DebugLog.log("OAuth redirect missing or invalid access_token", category: .sync)
             return false
         }
 

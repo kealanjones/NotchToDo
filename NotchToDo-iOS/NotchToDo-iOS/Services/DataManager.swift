@@ -12,7 +12,7 @@ class DataManager: ObservableObject {
     private let persistence = PersistenceController.shared
     private var cancellables = Set<AnyCancellable>()
     private var supabaseService: SupabaseService?
-    private var authManager: SupabaseAuthManager?
+    private(set) var authManager: SupabaseAuthManager?
 
     private init() {
         setupSupabase()
