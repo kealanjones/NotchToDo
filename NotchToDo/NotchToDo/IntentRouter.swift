@@ -141,8 +141,8 @@ class IntentRouter {
         let pattern = #"^(add|create|new|start|make)\s+(.+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-              match.numberOfRanges >= 3 else { return nil }
-        let titleRange = Range(match.range(at: 2), in: text)!
+              match.numberOfRanges >= 3,
+              let titleRange = Range(match.range(at: 2), in: text) else { return nil }
         return cleanEntity(String(text[titleRange]))
     }
     
@@ -170,8 +170,8 @@ class IntentRouter {
         let pattern = #"^(?:add|create|make|start)\s+(?:an?\s+)?(?:orb|project|workspace|space)\s*(?:called|named|titled)?\s*(.+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-              match.numberOfRanges >= 2 else { return nil }
-        let nameRange = Range(match.range(at: 1), in: text)!
+              match.numberOfRanges >= 2,
+              let nameRange = Range(match.range(at: 1), in: text) else { return nil }
         return cleanEntity(String(text[nameRange]))
     }
     

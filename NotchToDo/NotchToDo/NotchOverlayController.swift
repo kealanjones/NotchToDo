@@ -156,7 +156,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
         do {
             validatedTitle = try InputValidator.validateTaskTitle(title)
         } catch {
-            DebugLog.logValidationError(error as! InputValidator.ValidationError, category: .app)
+            if let validationError = error as? InputValidator.ValidationError {
+                DebugLog.logValidationError(validationError, category: .app)
+            }
             DebugLog.log("Task creation failed due to validation error", category: .app)
             // Use a safe fallback or show error to user
             return
@@ -1353,7 +1355,9 @@ class NotchOverlayController: ObservableObject, TaskDetailViewDelegate, SpeechCa
         do {
             validatedName = try InputValidator.validateOrbName(name)
         } catch {
-            DebugLog.logValidationError(error as! InputValidator.ValidationError, category: .app)
+            if let validationError = error as? InputValidator.ValidationError {
+                DebugLog.logValidationError(validationError, category: .app)
+            }
             DebugLog.log("Project creation failed due to validation error", category: .app)
             return
         }

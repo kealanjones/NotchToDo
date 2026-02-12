@@ -111,23 +111,27 @@ class RealSpeechRecognizer: SpeechRecognizer {
         isEnding = false
         externalSilenceHoldActive = false
 
-        // Release lock before audio operations (they can take time and block)
+        // Capture audio engine state while holding lock
+        let engineWasRunning = audioEngine.isRunning
         stateLock.unlock()
 
-        // Always try to stop and clean up audio engine (outside lock to avoid blocking)
-        if audioEngine.isRunning {
+        // Audio engine cleanup (safe outside lock - AVAudioEngine is thread-safe for stop/removeTap)
+        if engineWasRunning {
             DebugLog.log("Stopping running audio engine", category: .speech)
             audioEngine.stop()
         }
 
-        // Always remove tap to ensure clean state
         let inputNode = audioEngine.inputNode
         inputNode.removeTap(onBus: 0)
         DebugLog.log("Removed audio tap from input node", category: .speech)
 
-        // CRITICAL: Give audio engine time to fully release resources
+        // Give audio engine time to fully release resources (non-blocking)
         // This prevents conflicts when wake word engine just stopped
-        Thread.sleep(forTimeInterval: 0.15)
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.15) {
+            semaphore.signal()
+        }
+        semaphore.wait()
         
         // Configure audio session (iOS/tvOS only). On macOS, AVAudioSession APIs are unavailable.
         #if os(iOS) || os(tvOS)

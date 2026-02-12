@@ -152,11 +152,11 @@ final class SupabaseSyncManager {
         accessToken = token
         if let token {
             currentUserID = Self.extractUserID(from: token)
-            if currentUserID == nil {
-                DebugLog.log("Unable to decode Supabase user ID from access token", category: .sync)
+            if let userID = currentUserID {
+                DebugLog.log("Sync manager activated for user \(userID.uuidString.prefix(8))", category: .sync)
+                isActive = true
             } else {
-                DebugLog.log("✅ Sync manager activated for user \(currentUserID!.uuidString.prefix(8))", category: .sync)
-                isActive = true // Activate sync when authenticated
+                DebugLog.log("Unable to decode Supabase user ID from access token", category: .sync)
             }
         } else {
             currentUserID = nil
@@ -470,7 +470,7 @@ final class SupabaseSyncManager {
 
     // Utility to await inside non-async function context
     private func awaitResult<T>(_ body: (@escaping (T?, Error?) -> Void) -> Void) throws -> T {
-        var result: Result<T, Error>!
+        var result: Result<T, Error>?
         let group = DispatchGroup()
         group.enter()
         body { value, error in
@@ -478,7 +478,10 @@ final class SupabaseSyncManager {
             group.leave()
         }
         group.wait()
-        switch result! {
+        guard let result else {
+            throw SyncError.emptyResponse
+        }
+        switch result {
         case .success(let v): return v
         case .failure(let e): throw e
         }
