@@ -7,8 +7,19 @@ extension OrbManager {
         // Remove from source
         sourceOrb.deleteTask(task)
 
-        // Add to destination
-        destinationOrb.addTask(task)
+        // Add to destination via snapshot (addTask(_:Task) is private)
+        let snapshot = TaskSnapshot(
+            id: task.id,
+            title: task.title,
+            notes: task.details,
+            isCompleted: task.isCompleted,
+            priority: task.priority,
+            status: task.status,
+            createdAt: task.createdAt,
+            dueDate: task.deadline,
+            sortOrder: task.sortOrder
+        )
+        destinationOrb.addTask(from: snapshot)
 
         // Record feedback for ML training
         TaskClassifier.shared.recordFeedback(
