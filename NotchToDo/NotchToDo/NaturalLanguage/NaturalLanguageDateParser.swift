@@ -77,17 +77,18 @@ class NaturalLanguageDateParser {
         "thu": 5, "fri": 6, "sat": 7
     ]
 
-    // Month mappings
-    private let months: [String: Int] = [
-        "january": 1, "february": 2, "march": 3, "april": 4,
-        "may": 5, "june": 6, "july": 7, "august": 8,
-        "september": 9, "october": 10, "november": 11, "december": 12,
-        "jan": 1, "feb": 2, "mar": 3, "apr": 4,
-        "jun": 6, "jul": 7, "aug": 8,
-        "sep": 9, "oct": 10, "nov": 11, "dec": 12
-    ]
+    // Month mappings (built programmatically to avoid dictionary literal duplicate-key trap)
+    private let months: [String: Int]
 
     init() {
+        let fullNames = ["january", "february", "march", "april", "may", "june",
+                         "july", "august", "september", "october", "november", "december"]
+        let abbreviations = ["jan", "feb", "mar", "apr", "may", "jun",
+                             "jul", "aug", "sep", "oct", "nov", "dec"]
+        var m = [String: Int](minimumCapacity: 23)
+        for (i, name) in fullNames.enumerated() { m[name] = i + 1 }
+        for (i, abbr) in abbreviations.enumerated() { m[abbr] = i + 1 }
+        self.months = m
         self.dateDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
     }
 
