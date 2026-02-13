@@ -68,7 +68,7 @@
 		C2AA00112233445566778901 /* OrbRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556685 /* OrbRepository.swift */; };
 		C2AA00112233445566778902 /* TaskRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556686 /* TaskRepository.swift */; };
 		C2AA00112233445566778903 /* TaskEntity+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AA00990011223344556687 /* TaskEntity+CoreDataProperties.swift */; };
-		D2AA00112233445566778904 /* CelebrationEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AA00990011223344556688 /* CelebrationEffects.swift */; };
+
 		D2AA00112233445566778905 /* InputValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AA00990011223344556689 /* InputValidator.swift */; };
 		D2AA00112233445566778906 /* OrbSuggestionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AA00990011223344556690 /* OrbSuggestionView.swift */; };
 		D2AA00112233445566778907 /* SupabaseOAuthHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AA00990011223344556691 /* SupabaseOAuthHandler.swift */; };
@@ -152,7 +152,7 @@
 		C2AA00990011223344556685 /* OrbRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbRepository.swift; sourceTree = "<group>"; };
 		C2AA00990011223344556686 /* TaskRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRepository.swift; sourceTree = "<group>"; };
 		C2AA00990011223344556687 /* TaskEntity+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TaskEntity+CoreDataProperties.swift"; sourceTree = "<group>"; };
-		D2AA00990011223344556688 /* CelebrationEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CelebrationEffects.swift; sourceTree = "<group>"; };
+
 		D2AA00990011223344556689 /* InputValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Security/InputValidator.swift; sourceTree = "<group>"; };
 		D2AA00990011223344556690 /* OrbSuggestionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/OrbSuggestionView.swift; sourceTree = "<group>"; };
 		D2AA00990011223344556691 /* SupabaseOAuthHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseOAuthHandler.swift; sourceTree = "<group>"; };
@@ -241,7 +241,7 @@
 				A12345678901234567890179 /* IntentClassification.swift */,
 				D1E2F3C40123456789ABCDEF /* SemiCircleWithOrbsView.swift */,
 				A1234567890123456789014D /* IntentRouter.swift */,
-				D2AA00990011223344556688 /* CelebrationEffects.swift */,
+
 				D2AA00990011223344556689 /* InputValidator.swift */,
 				D2AA00990011223344556690 /* OrbSuggestionView.swift */,
 				C2AA00990011223344556680 /* Persistence */,
@@ -493,7 +493,7 @@
 				652342D02D7044DF5025E58B /* NaturalLanguageDateParser.swift in Sources */,
 				B4099054B322707B521886D2 /* FuzzyOrbMatcher.swift in Sources */,
 				68E7EA25302FC4762EF93F81 /* VoiceFeedback.swift in Sources */,
-				D2AA00112233445566778904 /* CelebrationEffects.swift in Sources */,
+
 				D2AA00112233445566778905 /* InputValidator.swift in Sources */,
 				D2AA00112233445566778906 /* OrbSuggestionView.swift in Sources */,
 				D2AA00112233445566778907 /* SupabaseOAuthHandler.swift in Sources */,
