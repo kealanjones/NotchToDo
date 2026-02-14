@@ -1528,30 +1528,50 @@ extension AppDelegate {
     @objc private func handleSupabaseSignOut() {
         guard let authManager = supabaseAuthManager else { return }
 
-        DebugLog.log("🔒 Starting logout process...", category: .sync)
+        DebugLog.log("🔒 Starting comprehensive logout process...", category: .sync)
 
-        // CRITICAL: Stop sync manager FIRST to prevent any ongoing operations
+        // STEP 1: Stop sync manager FIRST to prevent any ongoing operations
         supabaseSyncManager?.stop()
+        DebugLog.log("  ✓ Sync manager stopped", category: .sync)
 
-        // Clear auth session (tokens in Keychain)
+        // STEP 2: Clear auth session (tokens in Keychain)
         authManager.clearSession()
+        DebugLog.log("  ✓ Auth session cleared from Keychain", category: .sync)
 
-        // Clear access token from sync manager
+        // STEP 3: Clear access token from sync manager
         supabaseSyncManager?.updateAccessToken(nil)
+        DebugLog.log("  ✓ Sync manager token cleared", category: .sync)
 
-        // Clear last pull timestamp to prevent stale data on next login
-        UserDefaults.standard.removeObject(forKey: "SupabaseLastSuccessfulPullAt")
+        // STEP 4: Clear ALL user-specific data from UserDefaults
+        let userDefaultsKeysToClear = [
+            "SupabaseLastSuccessfulPullAt",
+            "OrbTrainingExamples",           // ML training data
+            "lastSyncTimestamp",
+            "lastPullTimestamp",
+            "pendingSyncCount"
+        ]
+        for key in userDefaultsKeysToClear {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        DebugLog.log("  ✓ User-specific UserDefaults cleared", category: .sync)
 
-        // Clear all local data (Core Data + in-memory orbs + OUTBOX)
+        // STEP 5: Clear all local data (Core Data + in-memory orbs + ML caches)
         overlayController?.clearLocalData()
+        DebugLog.log("  ✓ Local data cleared (Core Data, orbs, ML)", category: .sync)
 
-        // Clear onboarding state so auth window shows on next launch
+        // STEP 6: Clear onboarding state so auth window shows on next launch
         UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(false, forKey: "hasSeenTutorial")
+        DebugLog.log("  ✓ Onboarding state reset", category: .sync)
 
+        // STEP 7: Force synchronize UserDefaults to ensure all changes are persisted
+        UserDefaults.standard.synchronize()
+
+        // STEP 8: Update UI
         rebuildDebugMenu(debugMenu)
-        DebugLog.log("✅ Logout complete: cleared session, sync state, outbox, and all local data", category: .sync)
-        showInfoAlert(title: "Signed Out", message: "All data cleared. Ready for next login.")
+        
+        DebugLog.log("✅ Logout complete: All user data cleared. Ready for next login.", category: .sync)
+        showInfoAlert(title: "Signed Out", message: "All data cleared successfully. Ready for next login.")
 
         // Show auth window immediately
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in

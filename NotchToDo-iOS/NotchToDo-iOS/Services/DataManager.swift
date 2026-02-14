@@ -169,11 +169,51 @@ class DataManager: ObservableObject {
     }
 
     func signOut() {
+        DebugLog.log("🔒 Starting comprehensive logout process...", category: .sync)
+        
+        // 1. Clear auth session
         authManager?.clearSession()
+        
+        // 2. Clear in-memory orbs
         orbs.removeAll()
+        
+        // 3. Clear all Core Data records
+        persistence.deleteAllData()
+        
+        // 4. Clear user-specific UserDefaults
+        let keysToClear = [
+            "SupabaseLastSuccessfulPullAt",
+            "lastSyncTimestamp"
+        ]
+        for key in keysToClear {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        UserDefaults.standard.synchronize()
+        
+        DebugLog.log("✅ Logout complete: All user data cleared", category: .sync)
     }
 
     var isAuthenticated: Bool {
         authManager?.currentSession != nil
+    }
+    
+    // MARK: - Password Reset
+    
+    func resetPassword(email: String) async throws {
+        guard let supabaseService = supabaseService else {
+            throw NSError(domain: "DataManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Supabase service not initialized"])
+        }
+        
+        // Send password reset email via Supabase
+        let body: [String: Any] = ["email": email]
+        let request = try supabaseService.makeAuthRequest(path: "recover", body: body)
+        let _: EmptyResponse = try await supabaseService.performAuth(request, decode: EmptyResponse.self)
+    }
+}
+
+// Empty response for endpoints that don't return data
+private struct EmptyResponse: Decodable {
+    init(from decoder: Decoder) throws {
+        // Accept any response
     }
 }
